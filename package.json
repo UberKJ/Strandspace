@@ -1,0 +1,21 @@
+{
+  "name": "strandspace-garden-lab",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs",
+    "test": "node test/run-tests.mjs",
+    "build:catalog": "node scripts/build-common-plants.mjs",
+    "generate:plants": "node scripts/generate-synthetic-plants.mjs",
+    "generate:media": "node scripts/enrich-plant-media.mjs",
+    "localize:media": "node scripts/localize-plant-media.mjs",
+    "create:everything": "node scripts/create-strandspace-everything.mjs"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.6.205",
+    "pdfkit": "^0.17.2"
+  }
+}
