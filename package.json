@@ -6,14 +6,9 @@
   "scripts": {
     "start": "node server.mjs",
     "dev": "node server.mjs",
-    "test": "node test/run-tests.mjs",
-    "build:catalog": "node scripts/build-common-plants.mjs",
-    "generate:plants": "node scripts/generate-synthetic-plants.mjs",
-    "generate:media": "node scripts/enrich-plant-media.mjs",
-    "localize:media": "node scripts/localize-plant-media.mjs"
+    "test": "node test/run-tests.mjs"
   },
   "dependencies": {
-    "openai": "^6.34.0",
-    "pdfjs-dist": "^5.6.205"
+    "openai": "^6.34.0"
   }
 }

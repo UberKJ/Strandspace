@@ -1,55 +1,20 @@
 # Strandspace Studio
 
-Strandspace Studio is a local-first recall system for turning repeated workflows into reusable memory constructs.
-It started with gardening and sound workflows, and now includes a generic subject-memory layer seeded for music engineering.
+Strandspace Studio is a local-first recall workspace for storing reusable constructs and recalling them from partial cues.
+The current app is focused on two operating modes:
 
-The core idea is simple:
+- `Subjectspace` for general-purpose knowledge capture and recall
+- `Soundspace` for mixer, venue, and event setup memory
 
-1. Teach a construct once.
-2. Recall it later from partial cues.
-3. Use an LLM only when local memory is close but not quite complete.
-4. Learn the validated result back into Strandspace.
+Music engineering is seeded as the first subject, but the root flow is generic. Add a new subject once, teach a construct with context and steps, and Strandspace can recall it later without rebuilding the answer from scratch each time.
 
-## What this app includes
+## What the app does
 
-- Strand-based recall for plants and gardening workflows
-- `Soundspace`, a focused recall interface for mixer and live-audio setups
-- `Subjectspace`, a reusable subject-memory engine for any domain
-- A music-engineering seed library for recalling settings, scenes, and working patterns
-- OpenAI assist routing for validation and expansion when local recall is uncertain
-- A benchmark panel that compares local Strandbase recall against the LLM round-trip
-- SQLite-backed local memory and learning state
-
-## Subjectspace flow
-
-The generic subject-memory layer works like this:
-
-1. Save a construct with:
-   - subject
-   - construct label
-   - target
-   - objective
-   - context
-   - steps
-   - notes
-   - tags
-2. Ask a recall prompt in natural language.
-3. Strandspace scores the stored constructs and decides whether:
-   - local recall is stable
-   - local recall should be API-validated
-   - partial recall should be expanded
-   - a new construct should be taught first
-4. If API assist is used, the returned draft can be saved back into local memory.
-
-## Benchmarking
-
-The main UI includes a benchmark panel that measures:
-
-- local Strandbase recall latency
-- LLM assist round-trip latency
-- delta and speedup for the same prompt
-
-This keeps the tradeoff visible while you build the recall field.
+- Stores reusable subject constructs with target, objective, context, steps, notes, and tags
+- Recalls the closest construct from partial natural-language prompts
+- Routes borderline recalls toward OpenAI validation or expansion only when local memory is close enough
+- Compares local Strandbase recall speed against the LLM round-trip for the same prompt
+- Keeps a standalone Soundspace surface for live-audio setup recall
 
 ## Run locally
 
@@ -58,7 +23,9 @@ npm install
 npm run dev
 ```
 
-Then open the local server shown in the terminal, usually [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000).
+
+The main app is at `/` and the sound workflow is at `/soundspace`.
 
 ## Test
 
@@ -68,5 +35,6 @@ npm test
 
 ## Notes
 
-- Local secrets such as `.env*`, shell startup files, logs, and SQLite transient files are ignored and should not be committed.
-- `OPENAI_API_KEY` is only used for live assist and benchmark comparisons when available.
+- Local runtime state is stored in SQLite and is ignored by Git.
+- `OPENAI_API_KEY` enables live assist and benchmark comparisons when available.
+- Legacy local data can still be reused if an older database is present.

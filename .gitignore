@@ -1,5 +1,4 @@
 node_modules/
-node_modules/
 output/
 
 # Runtime logs
@@ -10,9 +9,9 @@ npm-debug.log*
 dev-server*.log
 
 # Local databases and transient learning state
-data/rootline.sqlite
-data/rootline.sqlite-shm
-data/rootline.sqlite-wal
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
 data/strand-learning.json
 
 # Local scratch files
