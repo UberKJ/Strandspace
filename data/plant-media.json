@@ -1,0 +1,2252 @@
+[
+  {
+    "id": "salvia-rosmarinus-spenn",
+    "strand": "salvia-rosmarinus-spenn",
+    "title": "Rosemary",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a3/Rosemary_in_bloom.JPG/330px-Rosemary_in_bloom.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Rosemary",
+    "pageUrl": "https://en.wikipedia.org/wiki/Rosemary",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "common-sunflower",
+    "strand": "common-sunflower",
+    "title": "Common sunflower",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/40/Sunflower_sky_backdrop.jpg/330px-Sunflower_sky_backdrop.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Common_sunflower",
+    "pageUrl": "https://en.wikipedia.org/wiki/Common_sunflower",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "basil",
+    "strand": "basil",
+    "title": "Basil",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/97/Ocimum_basilicum_8zz.jpg/330px-Ocimum_basilicum_8zz.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Basil",
+    "pageUrl": "https://en.wikipedia.org/wiki/Basil",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "lavandula-l",
+    "strand": "lavandula-l",
+    "title": "Lavandula",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Single_lavender_flower02.jpg/330px-Single_lavender_flower02.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Lavandula",
+    "pageUrl": "https://en.wikipedia.org/wiki/Lavandula",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "echinacea-moench",
+    "strand": "echinacea-moench",
+    "title": "Echinacea",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/EchinaceaPurpureaMaxima1a.UME.JPG/330px-EchinaceaPurpureaMaxima1a.UME.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Echinacea",
+    "pageUrl": "https://en.wikipedia.org/wiki/Echinacea",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "agave-spec-linnaeus-1753",
+    "strand": "agave-spec-linnaeus-1753",
+    "title": "Agave",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Agave_americana_R01.jpg/330px-Agave_americana_R01.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Agave",
+    "pageUrl": "https://en.wikipedia.org/wiki/Agave",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "monstera-deliciosa-liebm",
+    "strand": "monstera-deliciosa-liebm",
+    "title": "Monstera deliciosa",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2e/Monstera_deliciosa2.jpg/330px-Monstera_deliciosa2.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Monstera_deliciosa",
+    "pageUrl": "https://en.wikipedia.org/wiki/Monstera_deliciosa",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "hosta-is-a",
+    "strand": "hosta-is-a",
+    "title": "Hosta",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7d/Hosta_Bressingham_Blue.JPG/330px-Hosta_Bressingham_Blue.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Hosta",
+    "pageUrl": "https://en.wikipedia.org/wiki/Hosta",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "ficus-elastica-roxb",
+    "strand": "ficus-elastica-roxb",
+    "title": "Ficus elastica",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/Ficus_elastica_leaves_02.JPG/330px-Ficus_elastica_leaves_02.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Ficus_elastica",
+    "pageUrl": "https://en.wikipedia.org/wiki/Ficus_elastica",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "aloe-vera-l-burm-f",
+    "strand": "aloe-vera-l-burm-f",
+    "title": "Aloe vera",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Aloe_vera_flower_inset.png/330px-Aloe_vera_flower_inset.png",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Aloe_vera",
+    "pageUrl": "https://en.wikipedia.org/wiki/Aloe_vera",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "salvia-l",
+    "strand": "salvia-l",
+    "title": "Salvia",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Salvia_officinalis0.jpg/330px-Salvia_officinalis0.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Salvia",
+    "pageUrl": "https://en.wikipedia.org/wiki/Salvia",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "nepenthes-l",
+    "strand": "nepenthes-l",
+    "title": "Nepenthes",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/N.macrophylla_x_lowii.jpg/330px-N.macrophylla_x_lowii.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Nepenthes",
+    "pageUrl": "https://en.wikipedia.org/wiki/Nepenthes",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "ocimum-tenuiflorum-l",
+    "strand": "ocimum-tenuiflorum-l",
+    "title": "Ocimum tenuiflorum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/01/Tulsi_or_Tulasi_Holy_basil.jpg/330px-Tulsi_or_Tulasi_Holy_basil.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Ocimum_tenuiflorum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Ocimum_tenuiflorum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "strelitzia-banks",
+    "strand": "strelitzia-banks",
+    "title": "Strelitzia",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1c/Strelitzia_larger.jpg/330px-Strelitzia_larger.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Strelitzia",
+    "pageUrl": "https://en.wikipedia.org/wiki/Strelitzia",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "camellia-l",
+    "strand": "camellia-l",
+    "title": "Camellia",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f4/Camellia_sasanqua1JAM343.jpg/330px-Camellia_sasanqua1JAM343.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Camellia",
+    "pageUrl": "https://en.wikipedia.org/wiki/Camellia",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "adelonema-wallisii-regel-s-y-wong-croat",
+    "strand": "adelonema-wallisii-regel-s-y-wong-croat",
+    "title": "Adelonema wallisii",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ae/HomalomenaWallisii.jpg/330px-HomalomenaWallisii.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Adelonema_wallisii",
+    "pageUrl": "https://en.wikipedia.org/wiki/Adelonema_wallisii",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "adiantum-aethiopicum-l",
+    "strand": "adiantum-aethiopicum-l",
+    "title": "Adiantum aethiopicum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b5/Maidenhair_-_Chatswood_West.jpg/330px-Maidenhair_-_Chatswood_West.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Adiantum_aethiopicum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Adiantum_aethiopicum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "peace-rose",
+    "strand": "peace-rose",
+    "title": "Peace rose",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/58/Rose.A.Mailend1.jpg/330px-Rose.A.Mailend1.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Rosa_'Peace'",
+    "pageUrl": "https://en.wikipedia.org/wiki/Rosa_'Peace'",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "dahlia-cav",
+    "strand": "dahlia-cav",
+    "title": "Dahlia",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Dahlia_x_hybrida.jpg/330px-Dahlia_x_hybrida.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dahlia",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dahlia",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "daylily",
+    "strand": "daylily",
+    "title": "Daylily",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Hemerocallis_lilioasphodelus.jpg/330px-Hemerocallis_lilioasphodelus.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Daylily",
+    "pageUrl": "https://en.wikipedia.org/wiki/Daylily",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "adiantum-formosum-r-br",
+    "strand": "adiantum-formosum-r-br",
+    "title": "Adiantum formosum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a6/AdiantumSGNG.jpg/330px-AdiantumSGNG.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Adiantum_formosum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Adiantum_formosum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "adenium-obesum-forssk-roem-schult",
+    "strand": "adenium-obesum-forssk-roem-schult",
+    "title": "Adenium obesum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4a/Adenium_Obesum_Flower_Side_Macro_Mar22_D72_23052-58_ZS_P.jpg/330px-Adenium_Obesum_Flower_Side_Macro_Mar22_D72_23052-58_ZS_P.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Adenium_obesum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Adenium_obesum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "hemp",
+    "strand": "hemp",
+    "title": "Hemp",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/La_Roche_Jagu_chanvre_1.JPG/330px-La_Roche_Jagu_chanvre_1.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Hemp",
+    "pageUrl": "https://en.wikipedia.org/wiki/Hemp",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "adiantum-capillus-veneris-l",
+    "strand": "adiantum-capillus-veneris-l",
+    "title": "Adiantum capillus-veneris",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1c/Adiantum_capillus-veneris_2601.jpg/330px-Adiantum_capillus-veneris_2601.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Adiantum_capillus-veneris",
+    "pageUrl": "https://en.wikipedia.org/wiki/Adiantum_capillus-veneris",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "adiantum-peruvianum-klotzsch",
+    "strand": "adiantum-peruvianum-klotzsch",
+    "title": "Adiantum peruvianum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3f/Adiantum_peruvianum-2.jpg/330px-Adiantum_peruvianum-2.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Adiantum_peruvianum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Adiantum_peruvianum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "aechmea-chantinii-carrie-re-baker",
+    "strand": "aechmea-chantinii-carrie-re-baker",
+    "title": "Aechmea chantinii",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/86/Aechmea_chantinii_Variegata_BotGardBln1105a.jpg/330px-Aechmea_chantinii_Variegata_BotGardBln1105a.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Aechmea_chantinii",
+    "pageUrl": "https://en.wikipedia.org/wiki/Aechmea_chantinii",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "tulipa-l",
+    "strand": "tulipa-l",
+    "title": "Tulip",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9e/%D7%A6%D7%91%D7%A2%D7%95%D7%A0%D7%99%D7%9D.JPG/330px-%D7%A6%D7%91%D7%A2%D7%95%D7%A0%D7%99%D7%9D.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Tulip",
+    "pageUrl": "https://en.wikipedia.org/wiki/Tulip",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-brancifolia-schott-a-hay",
+    "strand": "alocasia-brancifolia-schott-a-hay",
+    "title": "Alocasia brancifolia",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/Alocasia_brancifolia_as_an_indoor_house_plant.jpg/330px-Alocasia_brancifolia_as_an_indoor_house_plant.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_brancifolia",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_brancifolia",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "aechmea-fasciata-lindl-baker",
+    "strand": "aechmea-fasciata-lindl-baker",
+    "title": "Aechmea fasciata",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/Aechmea_fasciata2.jpg/330px-Aechmea_fasciata2.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Aechmea_fasciata",
+    "pageUrl": "https://en.wikipedia.org/wiki/Aechmea_fasciata",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "aglaonema-commutatum-schott",
+    "strand": "aglaonema-commutatum-schott",
+    "title": "Aglaonema commutatum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c7/Aglaonema_commutatum_kz1.jpg/330px-Aglaonema_commutatum_kz1.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Aglaonema_commutatum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Aglaonema_commutatum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "aglaonema-modestum-schott-ex-engl",
+    "strand": "aglaonema-modestum-schott-ex-engl",
+    "title": "Aglaonema modestum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Chinese_Evergreen2013.JPG/330px-Chinese_Evergreen2013.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Aglaonema_modestum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Aglaonema_modestum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-baginda-kurniawan-p-c-boyce",
+    "strand": "alocasia-baginda-kurniawan-p-c-boyce",
+    "title": "Alocasia baginda",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PXL_20220721_201128151.jpg/330px-PXL_20220721_201128151.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_baginda",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_baginda",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "aichryson-webb-berthel",
+    "strand": "aichryson-webb-berthel",
+    "title": "Aichryson × aizoides",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/89/Aichryson_%C3%97_domesticum_%27Variegatum%27_kz01.jpg/330px-Aichryson_%C3%97_domesticum_%27Variegatum%27_kz01.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Aichryson_%C3%97_aizoides",
+    "pageUrl": "https://en.wikipedia.org/wiki/Aichryson_%C3%97_aizoides",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-nebula-a-hay",
+    "strand": "alocasia-nebula-a-hay",
+    "title": "Alocasia nebula",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/31/L%27Illustration_horticole_%28Plate_541%29.jpg/330px-L%27Illustration_horticole_%28Plate_541%29.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_nebula",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_nebula",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-schott-g-don",
+    "strand": "alocasia-schott-g-don",
+    "title": "Alocasia × mortfontanensis",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cf/Alocasia_x_amazonica_a1.jpg/330px-Alocasia_x_amazonica_a1.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_%C3%97_mortfontanensis",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_%C3%97_mortfontanensis",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-lauterbachiana-engl-a-hay",
+    "strand": "alocasia-lauterbachiana-engl-a-hay",
+    "title": "Alocasia lauterbachiana",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/9/98/Lauterbachiana.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_lauterbachiana",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_lauterbachiana",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-micholitziana-sander",
+    "strand": "alocasia-micholitziana-sander",
+    "title": "Alocasia micholitziana",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/72/Alocasia_micholitziana.JPG/330px-Alocasia_micholitziana.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_micholitziana",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_micholitziana",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-heterophylla-c-presl-merr",
+    "strand": "alocasia-heterophylla-c-presl-merr",
+    "title": "Alocasia heterophylla",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/46/Alocasia_heterophylla_%28Philippines%29_0003.jpg/330px-Alocasia_heterophylla_%28Philippines%29_0003.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_heterophylla",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_heterophylla",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-longiloba-miq",
+    "strand": "alocasia-longiloba-miq",
+    "title": "Alocasia longiloba",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0f/Alocasia_watsoniana_3zz.jpg/330px-Alocasia_watsoniana_3zz.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_longiloba",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_longiloba",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-portei-schott",
+    "strand": "alocasia-portei-schott",
+    "title": "Alocasia portei",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/13/Alocasia_portei_%28Philippines%29.jpg/330px-Alocasia_portei_%28Philippines%29.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_portei",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_portei",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-reginula-a-hay",
+    "strand": "alocasia-reginula-a-hay",
+    "title": "Alocasia reginula",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7d/Alocasia_reginula_%28Philippines%29_01.jpg/330px-Alocasia_reginula_%28Philippines%29_01.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_reginula",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_reginula",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-nycteris-medecilo-g-c-yao-madulid",
+    "strand": "alocasia-nycteris-medecilo-g-c-yao-madulid",
+    "title": "Alocasia nycteris",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/Alocasia_nycteris_%28Philippines%29_Batwing_alocasia_0002.jpg/330px-Alocasia_nycteris_%28Philippines%29_Batwing_alocasia_0002.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_nycteris",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_nycteris",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-sanderiana-w-bull",
+    "strand": "alocasia-sanderiana-w-bull",
+    "title": "Alocasia sanderiana",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d2/Alocasia_sanderiana_or_Kris_Plant.jpg/330px-Alocasia_sanderiana_or_Kris_Plant.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_sanderiana",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_sanderiana",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-scalprum-a-hay",
+    "strand": "alocasia-scalprum-a-hay",
+    "title": "Alocasia scalprum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f3/Alocasia_scalprum_NKS.jpg/330px-Alocasia_scalprum_NKS.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_scalprum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_scalprum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-reginae-n-e-br",
+    "strand": "alocasia-reginae-n-e-br",
+    "title": "Alocasia reginae",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/72/Alocasia_reginae.jpg/330px-Alocasia_reginae.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_reginae",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_reginae",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "anthurium-amnicola-dressler",
+    "strand": "anthurium-amnicola-dressler",
+    "title": "Anthurium amnicola",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/35/Anthurium_lilacinum_kz01.jpg/330px-Anthurium_lilacinum_kz01.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Anthurium_amnicola",
+    "pageUrl": "https://en.wikipedia.org/wiki/Anthurium_amnicola",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-sarawakensis-m-hotta",
+    "strand": "alocasia-sarawakensis-m-hotta",
+    "title": "Alocasia sarawakensis",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Elephant-ear_Plants_%28Alocasia_sarawakensis%29_%288415446715%29.jpg/330px-Elephant-ear_Plants_%28Alocasia_sarawakensis%29_%288415446715%29.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_sarawakensis",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_sarawakensis",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-zebrina-veitch-ex-j-dix",
+    "strand": "alocasia-zebrina-veitch-ex-j-dix",
+    "title": "Alocasia zebrina",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/17/Alocasia_zebrina_4zz.jpg/330px-Alocasia_zebrina_4zz.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_zebrina",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_zebrina",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-sinuata-n-e-br",
+    "strand": "alocasia-sinuata-n-e-br",
+    "title": "Alocasia sinuata",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ec/Alocasia_sinuata_%28Philippines%29_0010.jpg/330px-Alocasia_sinuata_%28Philippines%29_0010.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_sinuata",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_sinuata",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "angraecum-sesquipedale-thouars",
+    "strand": "angraecum-sesquipedale-thouars",
+    "title": "Angraecum sesquipedale",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/Angraecum_sesquipedale_-_Diogo_Correia.jpg/330px-Angraecum_sesquipedale_-_Diogo_Correia.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Angraecum_sesquipedale",
+    "pageUrl": "https://en.wikipedia.org/wiki/Angraecum_sesquipedale",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "anthurium-clarinervium-matuda",
+    "strand": "anthurium-clarinervium-matuda",
+    "title": "Anthurium clarinervium",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/65/Anthurium_clarinervium.jpg/330px-Anthurium_clarinervium.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Anthurium_clarinervium",
+    "pageUrl": "https://en.wikipedia.org/wiki/Anthurium_clarinervium",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "anthurium-scherzerianum-schott",
+    "strand": "anthurium-scherzerianum-schott",
+    "title": "Anthurium scherzerianum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Anthurium_scherzerianum_2.jpg/330px-Anthurium_scherzerianum_2.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Anthurium_scherzerianum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Anthurium_scherzerianum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "anthurium-bakeri-hook-f",
+    "strand": "anthurium-bakeri-hook-f",
+    "title": "Anthurium bakeri",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b7/Anthurium_bakeri_1.jpg/330px-Anthurium_bakeri_1.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Anthurium_bakeri",
+    "pageUrl": "https://en.wikipedia.org/wiki/Anthurium_bakeri",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "anguloa-ruiz-pav",
+    "strand": "anguloa-ruiz-pav",
+    "title": "Anguloa × ruckeri",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/Anguloa_%C3%97_ruckeri_Orchi_002.jpg/330px-Anguloa_%C3%97_ruckeri_Orchi_002.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Anguloa_%C3%97_ruckeri",
+    "pageUrl": "https://en.wikipedia.org/wiki/Anguloa_%C3%97_ruckeri",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "anthurium-vittariifolium-engl",
+    "strand": "anthurium-vittariifolium-engl",
+    "title": "Anthurium vittariifolium",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/%E5%9E%82%E8%91%89%E8%8A%B1%E7%87%AD_Anthurium_wendlingeri_20190806183918_12.jpg/330px-%E5%9E%82%E8%91%89%E8%8A%B1%E7%87%AD_Anthurium_wendlingeri_20190806183918_12.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Anthurium_vittariifolium",
+    "pageUrl": "https://en.wikipedia.org/wiki/Anthurium_vittariifolium",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "anthurium-crenatum-l-kunth",
+    "strand": "anthurium-crenatum-l-kunth",
+    "title": "Anthurium crenatum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f0/Anthurium_crenatum_3zz.jpg/330px-Anthurium_crenatum_3zz.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Anthurium_crenatum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Anthurium_crenatum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "anthurium-watermaliense-l-h-bailey-nash",
+    "strand": "anthurium-watermaliense-l-h-bailey-nash",
+    "title": "Anthurium watermaliense",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Anthurium_watermaliense_kz6.jpg/330px-Anthurium_watermaliense_kz6.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Anthurium_watermaliense",
+    "pageUrl": "https://en.wikipedia.org/wiki/Anthurium_watermaliense",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "anthurium-warocqueanum-t-moore",
+    "strand": "anthurium-warocqueanum-t-moore",
+    "title": "Anthurium warocqueanum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/L%27Illustration_horticole_%28Plate_392%29.jpg/330px-L%27Illustration_horticole_%28Plate_392%29.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Anthurium_warocqueanum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Anthurium_warocqueanum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "anthurium-gracile-rudge-lindl",
+    "strand": "anthurium-gracile-rudge-lindl",
+    "title": "Anthurium gracile",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Anthurium_gracile_IMG_1673.jpg/330px-Anthurium_gracile_IMG_1673.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Anthurium_gracile",
+    "pageUrl": "https://en.wikipedia.org/wiki/Anthurium_gracile",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "areca-catechu-l",
+    "strand": "areca-catechu-l",
+    "title": "Areca catechu",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cc/Areca_Palm_Seeds_Forming_Coorg_Feb24_A7C_09499.jpg/330px-Areca_Palm_Seeds_Forming_Coorg_Feb24_A7C_09499.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Areca_catechu",
+    "pageUrl": "https://en.wikipedia.org/wiki/Areca_catechu",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "aphelandra-squarrosa-nees",
+    "strand": "aphelandra-squarrosa-nees",
+    "title": "Aphelandra squarrosa",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/AphelandraSquarrosaWPC_edit.jpg/330px-AphelandraSquarrosaWPC_edit.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Aphelandra_squarrosa",
+    "pageUrl": "https://en.wikipedia.org/wiki/Aphelandra_squarrosa",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "asparagus-aethiopicus-l",
+    "strand": "asparagus-aethiopicus-l",
+    "title": "Asparagus aethiopicus",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b0/Asparagus_aethiopicus_5Dsr_7742.jpg/330px-Asparagus_aethiopicus_5Dsr_7742.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Asparagus_aethiopicus",
+    "pageUrl": "https://en.wikipedia.org/wiki/Asparagus_aethiopicus",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "asplenium-antiquum-makino",
+    "strand": "asplenium-antiquum-makino",
+    "title": "Asplenium antiquum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/Asplenium-nidus.JPG/330px-Asplenium-nidus.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Asplenium_antiquum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Asplenium_antiquum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "asplenium-bulbiferum-g-forst",
+    "strand": "asplenium-bulbiferum-g-forst",
+    "title": "Asplenium bulbiferum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4f/Asplenium_bulbiferum_kz3.jpg/330px-Asplenium_bulbiferum_kz3.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Asplenium_bulbiferum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Asplenium_bulbiferum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "begonia-conchifolia-a-dietr",
+    "strand": "begonia-conchifolia-a-dietr",
+    "title": "Begonia conchifolia",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b2/Begonia_conchifolia_-_Botanischer_Garten_-_Heidelberg%2C_Germany_-_DSC01023.jpg/330px-Begonia_conchifolia_-_Botanischer_Garten_-_Heidelberg%2C_Germany_-_DSC01023.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Begonia_conchifolia",
+    "pageUrl": "https://en.wikipedia.org/wiki/Begonia_conchifolia",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "apocissus-antarctica",
+    "strand": "apocissus-antarctica",
+    "title": "Apocissus antarctica",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/79/Cissus_antarctica_kz1.JPG/330px-Cissus_antarctica_kz1.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Apocissus_antarctica",
+    "pageUrl": "https://en.wikipedia.org/wiki/Apocissus_antarctica",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "asplenium-nidus-l",
+    "strand": "asplenium-nidus-l",
+    "title": "Asplenium nidus",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Asplenium_nidus_%28Bukidnon%2C_Philippines%29_02.jpg/330px-Asplenium_nidus_%28Bukidnon%2C_Philippines%29_02.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Asplenium_nidus",
+    "pageUrl": "https://en.wikipedia.org/wiki/Asplenium_nidus",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "begonia-venosa-skan-ex-hook-fil",
+    "strand": "begonia-venosa-skan-ex-hook-fil",
+    "title": "Begonia venosa",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/Begonia_venosa-IMG_4459.jpg/330px-Begonia_venosa-IMG_4459.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Begonia_venosa",
+    "pageUrl": "https://en.wikipedia.org/wiki/Begonia_venosa",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "begonia-maculata-raddi",
+    "strand": "begonia-maculata-raddi",
+    "title": "Begonia maculata",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/df/Begonia_maculata3073316230.jpg/330px-Begonia_maculata3073316230.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Begonia_maculata",
+    "pageUrl": "https://en.wikipedia.org/wiki/Begonia_maculata",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "astrophytum-asterias-zucc-lem",
+    "strand": "astrophytum-asterias-zucc-lem",
+    "title": "Astrophytum asterias",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/37/Astrophytum_asterias1.jpg/330px-Astrophytum_asterias1.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Astrophytum_asterias",
+    "pageUrl": "https://en.wikipedia.org/wiki/Astrophytum_asterias",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "caladium-praetermissum-bogner-hett",
+    "strand": "caladium-praetermissum-bogner-hett",
+    "title": "Caladium praetermissum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/Caladium_praetermissum_kz01.jpg/330px-Caladium_praetermissum_kz01.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Caladium_praetermissum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Caladium_praetermissum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "asplenium-l",
+    "strand": "asplenium-l",
+    "title": "Asplenium gracillimum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Mother_Spleenwort_frond_tips.jpg/330px-Mother_Spleenwort_frond_tips.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Asplenium_gracillimum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Asplenium_gracillimum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "begonia-rex-putz",
+    "strand": "begonia-rex-putz",
+    "title": "Begonia rex",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/62/Painted_Leaved_Begonia._Begonia_rex_Putz._Flore_des_serres_et_des_jardins_de_l%27Europe_v.12_%281857%29.jpg/330px-Painted_Leaved_Begonia._Begonia_rex_Putz._Flore_des_serres_et_des_jardins_de_l%27Europe_v.12_%281857%29.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Begonia_rex",
+    "pageUrl": "https://en.wikipedia.org/wiki/Begonia_rex",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "begonia-bowerae-ziesenh",
+    "strand": "begonia-bowerae-ziesenh",
+    "title": "Begonia bowerae",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/22/Begonia_boweri_3.jpg/330px-Begonia_boweri_3.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Begonia_bowerae",
+    "pageUrl": "https://en.wikipedia.org/wiki/Begonia_bowerae",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "campyloneurum-phyllitidis-l-c-presl",
+    "strand": "campyloneurum-phyllitidis-l-c-presl",
+    "title": "Campyloneurum phyllitidis",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/Matthaei_Botanical_Gardens_-_IMG_8985.JPG/330px-Matthaei_Botanical_Gardens_-_IMG_8985.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Campyloneurum_phyllitidis",
+    "pageUrl": "https://en.wikipedia.org/wiki/Campyloneurum_phyllitidis",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "campanula-isophylla-moretti",
+    "strand": "campanula-isophylla-moretti",
+    "title": "Campanula isophylla",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/0/08/Campanula_isophylla.png",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Campanula_isophylla",
+    "pageUrl": "https://en.wikipedia.org/wiki/Campanula_isophylla",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "calla-l",
+    "strand": "calla-l",
+    "title": "Calla",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9b/Calla_palustris2.jpg/330px-Calla_palustris2.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Calla",
+    "pageUrl": "https://en.wikipedia.org/wiki/Calla",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "chamaedorea-cataractarum-mart",
+    "strand": "chamaedorea-cataractarum-mart",
+    "title": "Chamaedorea cataractarum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/b/b9/Cat_palm_fruit_img_2192_s.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Chamaedorea_cataractarum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Chamaedorea_cataractarum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "ceropegia-woodii-schltr",
+    "strand": "ceropegia-woodii-schltr",
+    "title": "Ceropegia woodii",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/55/Ceropegia_linearis_subsp_woodii.jpg/330px-Ceropegia_linearis_subsp_woodii.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Ceropegia_woodii",
+    "pageUrl": "https://en.wikipedia.org/wiki/Ceropegia_woodii",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "chamaedorea-metallica-o-f-cook-ex-h-e-moore",
+    "strand": "chamaedorea-metallica-o-f-cook-ex-h-e-moore",
+    "title": "Chamaedorea metallica",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a8/ChamaedoreaMetallica.jpg/330px-ChamaedoreaMetallica.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Chamaedorea_metallica",
+    "pageUrl": "https://en.wikipedia.org/wiki/Chamaedorea_metallica",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "chlorophytum-comosum-thunb-jacques",
+    "strand": "chlorophytum-comosum-thunb-jacques",
+    "title": "Chlorophytum comosum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b1/Hierbabuena_0611_Revised.jpg/330px-Hierbabuena_0611_Revised.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Chlorophytum_comosum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Chlorophytum_comosum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "chamaedorea-seifrizii-burret",
+    "strand": "chamaedorea-seifrizii-burret",
+    "title": "Chamaedorea seifrizii",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/df/Chamaedorea_seifrizii7.jpg/330px-Chamaedorea_seifrizii7.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Chamaedorea_seifrizii",
+    "pageUrl": "https://en.wikipedia.org/wiki/Chamaedorea_seifrizii",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "codiaeum-variegatum-l-rumph-ex-a-juss",
+    "strand": "codiaeum-variegatum-l-rumph-ex-a-juss",
+    "title": "Codiaeum variegatum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bf/Colpfl05.jpg/330px-Colpfl05.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Codiaeum_variegatum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Codiaeum_variegatum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "cissus-discolor-blume",
+    "strand": "cissus-discolor-blume",
+    "title": "Cissus discolor",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/37/Cissus_javana%2C_jard%C3%ADn_bot%C3%A1nico_de_Tallinn%2C_Estonia%2C_2012-08-13%2C_DD_01.JPG/330px-Cissus_javana%2C_jard%C3%ADn_bot%C3%A1nico_de_Tallinn%2C_Estonia%2C_2012-08-13%2C_DD_01.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Cissus_discolor",
+    "pageUrl": "https://en.wikipedia.org/wiki/Cissus_discolor",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "coleus-scutellarioides-l-benth",
+    "strand": "coleus-scutellarioides-l-benth",
+    "title": "Coleus scutellarioides",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Plectranthus_scutellarioides_-_El_Yunque_nat_park_PR_IMG_2120.JPG/330px-Plectranthus_scutellarioides_-_El_Yunque_nat_park_PR_IMG_2120.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Coleus_scutellarioides",
+    "pageUrl": "https://en.wikipedia.org/wiki/Coleus_scutellarioides",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "clusia-rosea-jacq",
+    "strand": "clusia-rosea-jacq",
+    "title": "Clusia rosea",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2e/Starr_010330-0602_Clusia_rosea.jpg/330px-Starr_010330-0602_Clusia_rosea.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Clusia_rosea",
+    "pageUrl": "https://en.wikipedia.org/wiki/Clusia_rosea",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "crassula-ovata-mill-druce",
+    "strand": "crassula-ovata-mill-druce",
+    "title": "Crassula ovata",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Crassula_ovata_700.jpg/330px-Crassula_ovata_700.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Crassula_ovata",
+    "pageUrl": "https://en.wikipedia.org/wiki/Crassula_ovata",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "ctenanthe-lubbersiana-e-morren-eichler-ex-petersen",
+    "strand": "ctenanthe-lubbersiana-e-morren-eichler-ex-petersen",
+    "title": "Ctenanthe lubbersiana",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Ctenanthe_lubbersiana_-_Shinjuku_Gyo-en_Greenhouse_-_Tokyo%2C_Japan_-_DSC05842.jpg/330px-Ctenanthe_lubbersiana_-_Shinjuku_Gyo-en_Greenhouse_-_Tokyo%2C_Japan_-_DSC05842.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Ctenanthe_lubbersiana",
+    "pageUrl": "https://en.wikipedia.org/wiki/Ctenanthe_lubbersiana",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "curcuma-zedoaria-christm-roscoe",
+    "strand": "curcuma-zedoaria-christm-roscoe",
+    "title": "Curcuma zedoaria",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0e/Curcuma_zedoaria_-_K%C3%B6hler%E2%80%93s_Medizinal-Pflanzen-048.jpg/330px-Curcuma_zedoaria_-_K%C3%B6hler%E2%80%93s_Medizinal-Pflanzen-048.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Curcuma_zedoaria",
+    "pageUrl": "https://en.wikipedia.org/wiki/Curcuma_zedoaria",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "ctenanthe-burle-marxii-h-kenn",
+    "strand": "ctenanthe-burle-marxii-h-kenn",
+    "title": "Ctenanthe burle-marxii",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7d/Ctenanthe_burle-marxii.jpg/330px-Ctenanthe_burle-marxii.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Ctenanthe_burle-marxii",
+    "pageUrl": "https://en.wikipedia.org/wiki/Ctenanthe_burle-marxii",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "chamaedorea-elegans-mart",
+    "strand": "chamaedorea-elegans-mart",
+    "title": "Chamaedorea elegans",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/64/Chamaedorea_elegans_Mart.JPG/330px-Chamaedorea_elegans_Mart.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Chamaedorea_elegans",
+    "pageUrl": "https://en.wikipedia.org/wiki/Chamaedorea_elegans",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "colocasia-fallax-schott",
+    "strand": "colocasia-fallax-schott",
+    "title": "Colocasia fallax",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/Colocasia_fallax_1zz.jpg/330px-Colocasia_fallax_1zz.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Colocasia_fallax",
+    "pageUrl": "https://en.wikipedia.org/wiki/Colocasia_fallax",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "ctenanthe-oppenheimiana-e-morren-k-schum",
+    "strand": "ctenanthe-oppenheimiana-e-morren-k-schum",
+    "title": "Ctenanthe oppenheimiana",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bd/Ctenanthe_oppenheimiana_0zz.jpg/330px-Ctenanthe_oppenheimiana_0zz.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Ctenanthe_oppenheimiana",
+    "pageUrl": "https://en.wikipedia.org/wiki/Ctenanthe_oppenheimiana",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "curio-p-v-heath",
+    "strand": "curio-p-v-heath",
+    "title": "Curio × peregrinus",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/00/Dolphinplant.jpg/330px-Dolphinplant.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Curio_%C3%97_peregrinus",
+    "pageUrl": "https://en.wikipedia.org/wiki/Curio_%C3%97_peregrinus",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "cordyline-fruticosa-var-ti-schott",
+    "strand": "cordyline-fruticosa-var-ti-schott",
+    "title": "Cordyline fruticosa",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2d/Cordyline_fruticosa_%2820262433874%29.jpg/330px-Cordyline_fruticosa_%2820262433874%29.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Cordyline_fruticosa",
+    "pageUrl": "https://en.wikipedia.org/wiki/Cordyline_fruticosa",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "cyrtomium-falcatum-l-fil-c-presl",
+    "strand": "cyrtomium-falcatum-l-fil-c-presl",
+    "title": "Cyrtomium falcatum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cf/Cyrtomium_falcatum_3.jpg/330px-Cyrtomium_falcatum_3.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Cyrtomium_falcatum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Cyrtomium_falcatum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "crassula-muscosa-l",
+    "strand": "crassula-muscosa-l",
+    "title": "Crassula muscosa",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Crassula_muscosa_Grubosz_2006-05-03_01.jpg/330px-Crassula_muscosa_Grubosz_2006-05-03_01.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Crassula_muscosa",
+    "pageUrl": "https://en.wikipedia.org/wiki/Crassula_muscosa",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "cyclamen-persicum-mill",
+    "strand": "cyclamen-persicum-mill",
+    "title": "Cyclamen persicum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/Yagur_%E2%80%93_Nesher%2C_the_Green_Path_%E2%80%93_Mount_Carmel_016.JPG/330px-Yagur_%E2%80%93_Nesher%2C_the_Green_Path_%E2%80%93_Mount_Carmel_016.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Cyclamen_persicum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Cyclamen_persicum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "cyperus-alternifolius-l",
+    "strand": "cyperus-alternifolius-l",
+    "title": "Cyperus alternifolius",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/76/Cyperus_alternifolius_2.jpg/330px-Cyperus_alternifolius_2.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Cyperus_alternifolius",
+    "pageUrl": "https://en.wikipedia.org/wiki/Cyperus_alternifolius",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "curio-p-v-heath-2",
+    "strand": "curio-p-v-heath-2",
+    "title": "Curio 'Trident Blue'",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/en/thumb/6/6b/Senecio_trident_blue_%28Curio_hybrid%29.jpg/330px-Senecio_trident_blue_%28Curio_hybrid%29.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Curio_'Trident_Blue'",
+    "pageUrl": "https://en.wikipedia.org/wiki/Curio_'Trident_Blue'",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "davallia-tyermannii-t-moore-h-j-veitch",
+    "strand": "davallia-tyermannii-t-moore-h-j-veitch",
+    "title": "Davallia tyermanii",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9a/Starr_080117-1705_Davallia_tyermannii.jpg/330px-Starr_080117-1705_Davallia_tyermannii.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Davallia_tyermanii",
+    "pageUrl": "https://en.wikipedia.org/wiki/Davallia_tyermanii",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "delosperma-lehmannii-graessner",
+    "strand": "delosperma-lehmannii-graessner",
+    "title": "Delosperma lehmannii",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/Delosperma_lehmannii.jpg/330px-Delosperma_lehmannii.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Delosperma_lehmannii",
+    "pageUrl": "https://en.wikipedia.org/wiki/Delosperma_lehmannii",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "dracaena-fragrans-l-ker-gawl",
+    "strand": "dracaena-fragrans-l-ker-gawl",
+    "title": "Dracaena fragrans",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/db/Dracaena_fragrans_%282%29.jpg/330px-Dracaena_fragrans_%282%29.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dracaena_fragrans",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dracaena_fragrans",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "dieffenbachia-seguine-jacq-schott",
+    "strand": "dieffenbachia-seguine-jacq-schott",
+    "title": "Dieffenbachia seguine",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/Dieffenbachia_seguine1FKST.jpg/330px-Dieffenbachia_seguine1FKST.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dieffenbachia_seguine",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dieffenbachia_seguine",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "disocactus-phyllanthoides-dc-barthlott",
+    "strand": "disocactus-phyllanthoides-dc-barthlott",
+    "title": "Disocactus phyllanthoides",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2c/Nopalxochia-01.JPG/330px-Nopalxochia-01.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Disocactus_phyllanthoides",
+    "pageUrl": "https://en.wikipedia.org/wiki/Disocactus_phyllanthoides",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "davallia-fejeensis-hook",
+    "strand": "davallia-fejeensis-hook",
+    "title": "Davallia fejeensis",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6d/DavalliaFejeensis.jpg/330px-DavalliaFejeensis.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Davallia_fejeensis",
+    "pageUrl": "https://en.wikipedia.org/wiki/Davallia_fejeensis",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "dracaena-arborescens-cornu-ex-ge-ro-me-labroy-byng-christenh",
+    "strand": "dracaena-arborescens-cornu-ex-ge-ro-me-labroy-byng-christenh",
+    "title": "Dracaena arborescens",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/Sansevieria_arborescens_pm.jpg/330px-Sansevieria_arborescens_pm.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dracaena_arborescens",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dracaena_arborescens",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "dracaena-masoniana-chahin-byng-christenh",
+    "strand": "dracaena-masoniana-chahin-byng-christenh",
+    "title": "Dracaena masoniana",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Sansevieria_masoniana_-_Mounts_Botanical_Garden_-_Palm_Beach_County%2C_Florida_-_DSC03644.jpg/330px-Sansevieria_masoniana_-_Mounts_Botanical_Garden_-_Palm_Beach_County%2C_Florida_-_DSC03644.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dracaena_masoniana",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dracaena_masoniana",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "cane-like-is-an",
+    "strand": "cane-like-is-an",
+    "title": "Cane begonia",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2a/Carollinanamyshit.jpg/330px-Carollinanamyshit.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Cane_begonia",
+    "pageUrl": "https://en.wikipedia.org/wiki/Cane_begonia",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "dracaena-pethera-byng-christenh",
+    "strand": "dracaena-pethera-byng-christenh",
+    "title": "Dracaena pethera",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/55/Sansevieria_kirkii_-_Pemba_Bay_%288626399339%29.jpg/330px-Sansevieria_kirkii_-_Pemba_Bay_%288626399339%29.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dracaena_pethera",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dracaena_pethera",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "dracaena-braunii-engl",
+    "strand": "dracaena-braunii-engl",
+    "title": "Dracaena braunii",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/95/TD_311-Dracaena_braunii_%40_TK_08-05-2008_2008bg00032-3_Theo_Damen.jpg/330px-TD_311-Dracaena_braunii_%40_TK_08-05-2008_2008bg00032-3_Theo_Damen.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dracaena_braunii",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dracaena_braunii",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "dracaena-bagamoyensis-n-e-br-byng-christenh",
+    "strand": "dracaena-bagamoyensis-n-e-br-byng-christenh",
+    "title": "Dracaena bagamoyensis",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/Sansevieria_bagamoyensis_pm.jpg/330px-Sansevieria_bagamoyensis_pm.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dracaena_bagamoyensis",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dracaena_bagamoyensis",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "goeppertia-zebrina-sims-nees",
+    "strand": "goeppertia-zebrina-sims-nees",
+    "title": "Goeppertia zebrina",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/CalatheaZebrina.jpg/330px-CalatheaZebrina.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Goeppertia_zebrina",
+    "pageUrl": "https://en.wikipedia.org/wiki/Goeppertia_zebrina",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-melo-a-hay-p-c-boyce-k-m-wong",
+    "strand": "alocasia-melo-a-hay-p-c-boyce-k-m-wong",
+    "title": "Alocasia melo",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_melo",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_melo",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "dioscorea-elephantipes-l-he-r-engl",
+    "strand": "dioscorea-elephantipes-l-he-r-engl",
+    "title": "Dioscorea elephantipes",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/72/Dioscorea_elephantipes%2C_Cederberg%2C_Western_Cape%2C_South_Africa_1.jpg/330px-Dioscorea_elephantipes%2C_Cederberg%2C_Western_Cape%2C_South_Africa_1.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dioscorea_elephantipes",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dioscorea_elephantipes",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "curcuma-caesia-roxb",
+    "strand": "curcuma-caesia-roxb",
+    "title": "Curcuma caesia",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Black_Turmeric_3.jpg/330px-Black_Turmeric_3.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Curcuma_caesia",
+    "pageUrl": "https://en.wikipedia.org/wiki/Curcuma_caesia",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "ficus-religiosa-l",
+    "strand": "ficus-religiosa-l",
+    "title": "Ficus religiosa",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/94/Ficus_religiosa_Bo.jpg/330px-Ficus_religiosa_Bo.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Ficus_religiosa",
+    "pageUrl": "https://en.wikipedia.org/wiki/Ficus_religiosa",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-azlanii-k-m-wong-p-c-boyce",
+    "strand": "alocasia-azlanii-k-m-wong-p-c-boyce",
+    "title": "Alocasia azlanii",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_azlanii",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_azlanii",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "anthurium-radicans-k-koch-haage",
+    "strand": "anthurium-radicans-k-koch-haage",
+    "title": "Anthurium radicans",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Anthurium_radicans",
+    "pageUrl": "https://en.wikipedia.org/wiki/Anthurium_radicans",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "alocasia-wentii-engl-k-krause",
+    "strand": "alocasia-wentii-engl-k-krause",
+    "title": "Alocasia wentii",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_wentii",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_wentii",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "alocasia-infernalis-p-c-boyce",
+    "strand": "alocasia-infernalis-p-c-boyce",
+    "title": "Alocasia infernalis",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_infernalis",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_infernalis",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "crassula-l",
+    "strand": "crassula-l",
+    "title": "Crassula arborescens",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Crassula_arborescens.jpg/330px-Crassula_arborescens.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Crassula_arborescens",
+    "pageUrl": "https://en.wikipedia.org/wiki/Crassula_arborescens",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "hypochaeris-radicata-l",
+    "strand": "hypochaeris-radicata-l",
+    "title": "Hypochaeris radicata",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/07/Hypochaeris_radicata_at_Game_Farm_Park_in_Auburn%2C_Washington.jpg/330px-Hypochaeris_radicata_at_Game_Farm_Park_in_Auburn%2C_Washington.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Hypochaeris_radicata",
+    "pageUrl": "https://en.wikipedia.org/wiki/Hypochaeris_radicata",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-reversa-n-e-br",
+    "strand": "alocasia-reversa-n-e-br",
+    "title": "Alocasia reversa",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_reversa",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_reversa",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "gentiana-tourn-ex-l",
+    "strand": "gentiana-tourn-ex-l",
+    "title": "Gentiana",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cc/Gentiana-verna2.jpg/330px-Gentiana-verna2.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Gentiana",
+    "pageUrl": "https://en.wikipedia.org/wiki/Gentiana",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "alocasia-princeps-w-bull",
+    "strand": "alocasia-princeps-w-bull",
+    "title": "Alocasia princeps",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Alocasia_princeps",
+    "pageUrl": "https://en.wikipedia.org/wiki/Alocasia_princeps",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "asarum-spec-linnaeus-1753",
+    "strand": "asarum-spec-linnaeus-1753",
+    "title": "Asarum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/Asarum_caudatum_1117.JPG/330px-Asarum_caudatum_1117.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Asarum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Asarum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "dieffenbachia-schott",
+    "strand": "dieffenbachia-schott",
+    "title": "Dieffenbachia",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Dieffenbachia_oerstedii_kz2.jpg/330px-Dieffenbachia_oerstedii_kz2.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dieffenbachia",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dieffenbachia",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "aglaonema-schott",
+    "strand": "aglaonema-schott",
+    "title": "Aglaonema",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/07/Aglaonema_commutatum2.jpg/330px-Aglaonema_commutatum2.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Aglaonema",
+    "pageUrl": "https://en.wikipedia.org/wiki/Aglaonema",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "nasturtium-microphyllum-boenn-ex-rchb-rchb",
+    "strand": "nasturtium-microphyllum-boenn-ex-rchb-rchb",
+    "title": "Nasturtium microphyllum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/Slanke_waterkers_bloeiwijze_%28Rorippa_microphylla_inflorescens%29.jpg/330px-Slanke_waterkers_bloeiwijze_%28Rorippa_microphylla_inflorescens%29.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Nasturtium_microphyllum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Nasturtium_microphyllum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "lycium-barbarum-l",
+    "strand": "lycium-barbarum-l",
+    "title": "Lycium barbarum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/62/Lycium_barbarum_-_Wolfberries_China_7-05.jpg/330px-Lycium_barbarum_-_Wolfberries_China_7-05.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Lycium_barbarum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Lycium_barbarum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "nepeta-l",
+    "strand": "nepeta-l",
+    "title": "Nepeta",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9d/Catnip-blossom.jpg/330px-Catnip-blossom.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Nepeta",
+    "pageUrl": "https://en.wikipedia.org/wiki/Nepeta",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "boea-comm-ex-lam",
+    "strand": "boea-comm-ex-lam",
+    "title": "Boea",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/Boea_hygroscopica.jpg/330px-Boea_hygroscopica.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Boea",
+    "pageUrl": "https://en.wikipedia.org/wiki/Boea",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "fino-verde-basil",
+    "strand": "fino-verde-basil",
+    "title": "Fino verde basil",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Fino_verde_basil",
+    "pageUrl": "https://en.wikipedia.org/wiki/Fino_verde_basil",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "chisocheton-pohlianus-harms",
+    "strand": "chisocheton-pohlianus-harms",
+    "title": "Chisocheton pohlianus",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Chisocheton_pohlianus",
+    "pageUrl": "https://en.wikipedia.org/wiki/Chisocheton_pohlianus",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "ginkgo-biloba-l",
+    "strand": "ginkgo-biloba-l",
+    "title": "Ginkgo biloba",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/GINKGOBAUM-2.jpg/330px-GINKGOBAUM-2.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Ginkgo_biloba",
+    "pageUrl": "https://en.wikipedia.org/wiki/Ginkgo_biloba",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "papaver-somniferum-l",
+    "strand": "papaver-somniferum-l",
+    "title": "Papaver somniferum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/ce/Papaver_somniferum_flowers.jpg/330px-Papaver_somniferum_flowers.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Papaver_somniferum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Papaver_somniferum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "phygelius-e-mey-ex-benth",
+    "strand": "phygelius-e-mey-ex-benth",
+    "title": "Phygelius",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/55/Phygelius_capensis_form.jpg/330px-Phygelius_capensis_form.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Phygelius",
+    "pageUrl": "https://en.wikipedia.org/wiki/Phygelius",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "vachellia-rigidula-benth-seigler-ebinger",
+    "strand": "vachellia-rigidula-benth-seigler-ebinger",
+    "title": "Vachellia rigidula",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Acacia_rigidula.jpg/330px-Acacia_rigidula.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Vachellia_rigidula",
+    "pageUrl": "https://en.wikipedia.org/wiki/Vachellia_rigidula",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "cosmos-bipinnatus-cav",
+    "strand": "cosmos-bipinnatus-cav",
+    "title": "Cosmos bipinnatus",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/Cosmos_bipinnatus_pink%2C_Burdwan%2C_West_Bengal%2C_India_10_01_2013.jpg/330px-Cosmos_bipinnatus_pink%2C_Burdwan%2C_West_Bengal%2C_India_10_01_2013.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Cosmos_bipinnatus",
+    "pageUrl": "https://en.wikipedia.org/wiki/Cosmos_bipinnatus",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "lobelia-erinus-ssp-sond-l-f-sond",
+    "strand": "lobelia-erinus-ssp-sond-l-f-sond",
+    "title": "Lobelia erinus",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Lobelia_close-up_%28aka%29.jpg/330px-Lobelia_close-up_%28aka%29.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Lobelia_erinus",
+    "pageUrl": "https://en.wikipedia.org/wiki/Lobelia_erinus",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "berberis-nevinii-a-gray-ex-a-gray-s-watson",
+    "strand": "berberis-nevinii-a-gray-ex-a-gray-s-watson",
+    "title": "Berberis nevinii",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7f/Berberis_nevinii_2.jpg/330px-Berberis_nevinii_2.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Berberis_nevinii",
+    "pageUrl": "https://en.wikipedia.org/wiki/Berberis_nevinii",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "najas-l",
+    "strand": "najas-l",
+    "title": "Najas",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/Illustration_Najas_marina0.jpg/330px-Illustration_Najas_marina0.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Najas",
+    "pageUrl": "https://en.wikipedia.org/wiki/Najas",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "hydrocotyle-umbellata-l",
+    "strand": "hydrocotyle-umbellata-l",
+    "title": "Hydrocotyle umbellata",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/Dollarweed_Hydrocotyle_umbellata.jpg/330px-Dollarweed_Hydrocotyle_umbellata.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Hydrocotyle_umbellata",
+    "pageUrl": "https://en.wikipedia.org/wiki/Hydrocotyle_umbellata",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "cryptocoryne-mekongensis-t-idei-bastm-n-jacobsen",
+    "strand": "cryptocoryne-mekongensis-t-idei-bastm-n-jacobsen",
+    "title": "Cryptocoryne mekongensis",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Cryptocoryne_mekongensis",
+    "pageUrl": "https://en.wikipedia.org/wiki/Cryptocoryne_mekongensis",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "sweet-pea",
+    "strand": "sweet-pea",
+    "title": "Sweet pea",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d7/Sweet_Pea-7.jpg/330px-Sweet_Pea-7.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Sweet_pea",
+    "pageUrl": "https://en.wikipedia.org/wiki/Sweet_pea",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "aponogeton-longiplumulosus-h-bruggen",
+    "strand": "aponogeton-longiplumulosus-h-bruggen",
+    "title": "Aponogeton longiplumulosus",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Aponogeton_longiplumulosus",
+    "pageUrl": "https://en.wikipedia.org/wiki/Aponogeton_longiplumulosus",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "cola-urceolata-k-schum",
+    "strand": "cola-urceolata-k-schum",
+    "title": "Cola urceolata",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Cola_urceolata",
+    "pageUrl": "https://en.wikipedia.org/wiki/Cola_urceolata",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "diospyros-l",
+    "strand": "diospyros-l",
+    "title": "Diospyros",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/Diospyros_kaki3.jpg/330px-Diospyros_kaki3.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Diospyros",
+    "pageUrl": "https://en.wikipedia.org/wiki/Diospyros",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "limequat",
+    "strand": "limequat",
+    "title": "Limequat",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0c/Limequat.jpg/330px-Limequat.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Limequat",
+    "pageUrl": "https://en.wikipedia.org/wiki/Limequat",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "commonly-known-as",
+    "strand": "commonly-known-as",
+    "title": "Hellebore",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b0/Illustration_Helleborus_niger0.jpg/330px-Illustration_Helleborus_niger0.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Hellebore",
+    "pageUrl": "https://en.wikipedia.org/wiki/Hellebore",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "fennel-is-a",
+    "strand": "fennel-is-a",
+    "title": "Fennel",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c0/Foeniculum_July_2011-1a.jpg/330px-Foeniculum_July_2011-1a.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Fennel",
+    "pageUrl": "https://en.wikipedia.org/wiki/Fennel",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "limon-mill",
+    "strand": "limon-mill",
+    "title": "Lemon",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/P1030323.JPG/330px-P1030323.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Lemon",
+    "pageUrl": "https://en.wikipedia.org/wiki/Lemon",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "blueberries-are-a",
+    "strand": "blueberries-are-a",
+    "title": "Blueberry",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/Blueberries.jpg/330px-Blueberries.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Blueberry",
+    "pageUrl": "https://en.wikipedia.org/wiki/Blueberry",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "najas-pseudogracillima-l-triest",
+    "strand": "najas-pseudogracillima-l-triest",
+    "title": "Najas pseudogracillima",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Najas_pseudogracillima",
+    "pageUrl": "https://en.wikipedia.org/wiki/Najas_pseudogracillima",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "myrciaria-glanduliflora-kiaersk-mattos-d-legrand",
+    "strand": "myrciaria-glanduliflora-kiaersk-mattos-d-legrand",
+    "title": "Myrciaria glanduliflora",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Myrciaria_glanduliflora",
+    "pageUrl": "https://en.wikipedia.org/wiki/Myrciaria_glanduliflora",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "aristolochia-spec-linnaeus-1753",
+    "strand": "aristolochia-spec-linnaeus-1753",
+    "title": "Aristolochia",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b1/Round-leaved_Birthwort_%28Aristolochia_rotunda%29_%2814199253496%29.jpg/330px-Round-leaved_Birthwort_%28Aristolochia_rotunda%29_%2814199253496%29.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Aristolochia",
+    "pageUrl": "https://en.wikipedia.org/wiki/Aristolochia",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "dill-is-an",
+    "strand": "dill-is-an",
+    "title": "Dill",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Illustration_Anethum_graveolens_clean.jpg/330px-Illustration_Anethum_graveolens_clean.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dill",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dill",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "myrciaria-rojasii-d-legrand",
+    "strand": "myrciaria-rojasii-d-legrand",
+    "title": "Myrciaria rojasii",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Myrciaria_rojasii",
+    "pageUrl": "https://en.wikipedia.org/wiki/Myrciaria_rojasii",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "aristolochia-acuminata-lam",
+    "strand": "aristolochia-acuminata-lam",
+    "title": "Aristolochia acuminata",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/ff/Aristolochia_acuminata_Blanco1.104.png/330px-Aristolochia_acuminata_Blanco1.104.png",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Aristolochia_acuminata",
+    "pageUrl": "https://en.wikipedia.org/wiki/Aristolochia_acuminata",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "olive",
+    "strand": "olive",
+    "title": "Olive",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Olivesfromjordan.jpg/330px-Olivesfromjordan.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Olive",
+    "pageUrl": "https://en.wikipedia.org/wiki/Olive",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "oregano-is-a",
+    "strand": "oregano-is-a",
+    "title": "Oregano",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/14/Origanum_vulgare_-_harilik_pune.jpg/330px-Origanum_vulgare_-_harilik_pune.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Oregano",
+    "pageUrl": "https://en.wikipedia.org/wiki/Oregano",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "cobaea-scandens-cav",
+    "strand": "cobaea-scandens-cav",
+    "title": "Cobaea scandens",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/62/Cobaea_scandens_4259.jpg/330px-Cobaea_scandens_4259.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Cobaea_scandens",
+    "pageUrl": "https://en.wikipedia.org/wiki/Cobaea_scandens",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "clematis-spec-linnaeus-1753-mill",
+    "strand": "clematis-spec-linnaeus-1753-mill",
+    "title": "Clematis",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/70/Clematis_%27Nelly_Moser%27.JPG/330px-Clematis_%27Nelly_Moser%27.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Clematis",
+    "pageUrl": "https://en.wikipedia.org/wiki/Clematis",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "pistachio",
+    "strand": "pistachio",
+    "title": "Pistachio",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b5/Pistachio_vera.jpg/330px-Pistachio_vera.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Pistachio",
+    "pageUrl": "https://en.wikipedia.org/wiki/Pistachio",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "myrcia-pseudospectabilis-sobral",
+    "strand": "myrcia-pseudospectabilis-sobral",
+    "title": "Myrcia pseudospectabilis",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Myrcia_pseudospectabilis",
+    "pageUrl": "https://en.wikipedia.org/wiki/Myrcia_pseudospectabilis",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "ajuga-reptans-l",
+    "strand": "ajuga-reptans-l",
+    "title": "Ajuga reptans",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/65/Ajuga_reptans_20070429_132711_1.jpg/330px-Ajuga_reptans_20070429_132711_1.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Ajuga_reptans",
+    "pageUrl": "https://en.wikipedia.org/wiki/Ajuga_reptans",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "lonicera-japonica-thunb",
+    "strand": "lonicera-japonica-thunb",
+    "title": "Lonicera japonica",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/Honeysuckle-2.jpg/330px-Honeysuckle-2.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Lonicera_japonica",
+    "pageUrl": "https://en.wikipedia.org/wiki/Lonicera_japonica",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "jasminum-azoricum-l",
+    "strand": "jasminum-azoricum-l",
+    "title": "Jasminum azoricum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Jasminum_azoricum3.jpg/330px-Jasminum_azoricum3.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Jasminum_azoricum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Jasminum_azoricum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "soleirolia-soleirolii-req-dandy",
+    "strand": "soleirolia-soleirolii-req-dandy",
+    "title": "Soleirolia",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Soleirolia_soleirolii002.JPG/330px-Soleirolia_soleirolii002.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Soleirolia",
+    "pageUrl": "https://en.wikipedia.org/wiki/Soleirolia",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "indigofera-tinctoria-l",
+    "strand": "indigofera-tinctoria-l",
+    "title": "Indigofera tinctoria",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Indigofera_tinctoria1.jpg/330px-Indigofera_tinctoria1.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Indigofera_tinctoria",
+    "pageUrl": "https://en.wikipedia.org/wiki/Indigofera_tinctoria",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "chestnuts-are-the",
+    "strand": "chestnuts-are-the",
+    "title": "Chestnut",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2c/Ch%C3%A2taignier_120807_1.jpg/330px-Ch%C3%A2taignier_120807_1.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Chestnut",
+    "pageUrl": "https://en.wikipedia.org/wiki/Chestnut",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "leuenbergeria-bleo-kunth-lode",
+    "strand": "leuenbergeria-bleo-kunth-lode",
+    "title": "Leuenbergeria bleo",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/Leuenbergeria_bleo%2C_Parque_Nacional_Soberan%C3%ADa%2C_Panam%C3%A1_259293035.jpg/330px-Leuenbergeria_bleo%2C_Parque_Nacional_Soberan%C3%ADa%2C_Panam%C3%A1_259293035.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Leuenbergeria_bleo",
+    "pageUrl": "https://en.wikipedia.org/wiki/Leuenbergeria_bleo",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "dracaena-angolensis-welw-ex-carrie-re-byng-christenh",
+    "strand": "dracaena-angolensis-welw-ex-carrie-re-byng-christenh",
+    "title": "Dracaena angolensis",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Sansevieria_cylindrica_flowers_7.jpg/330px-Sansevieria_cylindrica_flowers_7.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dracaena_angolensis",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dracaena_angolensis",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "armeria-maritima-mill-willd",
+    "strand": "armeria-maritima-mill-willd",
+    "title": "Armeria maritima",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/Armeria_maritima_Dunnet_Head.jpg/330px-Armeria_maritima_Dunnet_Head.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Armeria_maritima",
+    "pageUrl": "https://en.wikipedia.org/wiki/Armeria_maritima",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "lychee-is-a",
+    "strand": "lychee-is-a",
+    "title": "Lychee",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/46/Litchi_chinensis_fruits.JPG/330px-Litchi_chinensis_fruits.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Lychee",
+    "pageUrl": "https://en.wikipedia.org/wiki/Lychee",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "bistorta-affinis-d-don-greene",
+    "strand": "bistorta-affinis-d-don-greene",
+    "title": "Bistorta affinis",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/Polygonum_affine2.jpg/330px-Polygonum_affine2.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Bistorta_affinis",
+    "pageUrl": "https://en.wikipedia.org/wiki/Bistorta_affinis",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "physocarpus-cambess-maxim",
+    "strand": "physocarpus-cambess-maxim",
+    "title": "Physocarpus",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f7/Physocarpus_opulifolius_Arkansas.jpg/330px-Physocarpus_opulifolius_Arkansas.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Physocarpus",
+    "pageUrl": "https://en.wikipedia.org/wiki/Physocarpus",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "dichapetalum-cymosum-hook-engl",
+    "strand": "dichapetalum-cymosum-hook-engl",
+    "title": "Dichapetalum cymosum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/76/Gifblaar.jpg/330px-Gifblaar.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dichapetalum_cymosum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dichapetalum_cymosum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "chives",
+    "strand": "chives",
+    "title": "Chives",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/Allium_schoenoprasum_-_Bombus_lapidarius_-_Tootsi.jpg/330px-Allium_schoenoprasum_-_Bombus_lapidarius_-_Tootsi.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Chives",
+    "pageUrl": "https://en.wikipedia.org/wiki/Chives",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "trillium-l",
+    "strand": "trillium-l",
+    "title": "Trillium",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/df/TrilliumErectum.jpg/330px-TrilliumErectum.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Trillium",
+    "pageUrl": "https://en.wikipedia.org/wiki/Trillium",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "heptapleurum-arboricola-hayata",
+    "strand": "heptapleurum-arboricola-hayata",
+    "title": "Heptapleurum arboricola",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Schefflera_arboricola%2C_vrugte%2C_a%2C_Pretoria.jpg/330px-Schefflera_arboricola%2C_vrugte%2C_a%2C_Pretoria.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Heptapleurum_arboricola",
+    "pageUrl": "https://en.wikipedia.org/wiki/Heptapleurum_arboricola",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "ocimum-americanum-l",
+    "strand": "ocimum-americanum-l",
+    "title": "Ocimum americanum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b0/ChristianBauer_stalk_of_basil.jpg/330px-ChristianBauer_stalk_of_basil.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Ocimum_americanum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Ocimum_americanum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "fragaria-chiloensis-l-mill",
+    "strand": "fragaria-chiloensis-l-mill",
+    "title": "Fragaria chiloensis",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d5/Fragariachileonsis.jpg/330px-Fragariachileonsis.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Fragaria_chiloensis",
+    "pageUrl": "https://en.wikipedia.org/wiki/Fragaria_chiloensis",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "acacia-aneura-f-muell-ex-benth",
+    "strand": "acacia-aneura-f-muell-ex-benth",
+    "title": "Acacia aneura var. intermedia",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Acacia_aneura_var._intermedia",
+    "pageUrl": "https://en.wikipedia.org/wiki/Acacia_aneura_var._intermedia",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "amelanchier-medik",
+    "strand": "amelanchier-medik",
+    "title": "Amelanchier",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/Amelanchier_grandiflora2.jpg/330px-Amelanchier_grandiflora2.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Amelanchier",
+    "pageUrl": "https://en.wikipedia.org/wiki/Amelanchier",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "athyrium-roth",
+    "strand": "athyrium-roth",
+    "title": "Athyrium",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/eb/Athyrium_filix-femina0.jpg/330px-Athyrium_filix-femina0.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Athyrium",
+    "pageUrl": "https://en.wikipedia.org/wiki/Athyrium",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "matthiola-incana-l-w-t-aiton",
+    "strand": "matthiola-incana-l-w-t-aiton",
+    "title": "Matthiola incana",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d6/Matthiola_incana6.jpg/330px-Matthiola_incana6.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Matthiola_incana",
+    "pageUrl": "https://en.wikipedia.org/wiki/Matthiola_incana",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "syringa-villosa-vahl",
+    "strand": "syringa-villosa-vahl",
+    "title": "Syringa villosa",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Syringa_bretschneideri_136-8292.jpg/330px-Syringa_bretschneideri_136-8292.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Syringa_villosa",
+    "pageUrl": "https://en.wikipedia.org/wiki/Syringa_villosa",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "phlomis-chrysophylla-boiss",
+    "strand": "phlomis-chrysophylla-boiss",
+    "title": "Phlomis chrysophylla",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/Phlomis_chrysophylla.jpg/330px-Phlomis_chrysophylla.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Phlomis_chrysophylla",
+    "pageUrl": "https://en.wikipedia.org/wiki/Phlomis_chrysophylla",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "damson",
+    "strand": "damson",
+    "title": "Damson",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/Damson_plum_fruit.jpg/330px-Damson_plum_fruit.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Damson",
+    "pageUrl": "https://en.wikipedia.org/wiki/Damson",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "anubias-gracilis-a-chev-ex-hutch",
+    "strand": "anubias-gracilis-a-chev-ex-hutch",
+    "title": "Anubias gracilis",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Anubias_gracilis",
+    "pageUrl": "https://en.wikipedia.org/wiki/Anubias_gracilis",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "commelina-fluviatilis-brenan",
+    "strand": "commelina-fluviatilis-brenan",
+    "title": "Commelina fluviatilis",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bf/Commelina_fluviatilis_Faden_et_al_96_510_Tanzania.jpg/330px-Commelina_fluviatilis_Faden_et_al_96_510_Tanzania.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Commelina_fluviatilis",
+    "pageUrl": "https://en.wikipedia.org/wiki/Commelina_fluviatilis",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "najas-filifolia-r-r-haynes",
+    "strand": "najas-filifolia-r-r-haynes",
+    "title": "Najas filifolia",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Najas_filifolia",
+    "pageUrl": "https://en.wikipedia.org/wiki/Najas_filifolia",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "montanoa-atriplicifolia-pers-sch-bip",
+    "strand": "montanoa-atriplicifolia-pers-sch-bip",
+    "title": "Montanoa atriplicifolia",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/96/Montanoa_atriplicifolia_%281%29.jpg/330px-Montanoa_atriplicifolia_%281%29.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Montanoa_atriplicifolia",
+    "pageUrl": "https://en.wikipedia.org/wiki/Montanoa_atriplicifolia",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "morus-nigra-l",
+    "strand": "morus-nigra-l",
+    "title": "Morus nigra",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/Illustration_Morus_nigra0.jpg/330px-Illustration_Morus_nigra0.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Morus_nigra",
+    "pageUrl": "https://en.wikipedia.org/wiki/Morus_nigra",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "helanthium-bolivianum-rusby-lehtonen-myllys",
+    "strand": "helanthium-bolivianum-rusby-lehtonen-myllys",
+    "title": "Helanthium bolivianum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4f/Echinodorus_tenellus_BB-1913.jpg/330px-Echinodorus_tenellus_BB-1913.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Helanthium_bolivianum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Helanthium_bolivianum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "euphorbia-hylonoma-hand-mazz",
+    "strand": "euphorbia-hylonoma-hand-mazz",
+    "title": "Euphorbia hylonoma",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4f/Specimen_of_Euphorbia_hylonoma_Hand.-Mazz.jpg/330px-Specimen_of_Euphorbia_hylonoma_Hand.-Mazz.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Euphorbia_hylonoma",
+    "pageUrl": "https://en.wikipedia.org/wiki/Euphorbia_hylonoma",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "astilbe-buch-ham",
+    "strand": "astilbe-buch-ham",
+    "title": "Astilbe",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e8/Astilbe_arendsii1.jpg/330px-Astilbe_arendsii1.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Astilbe",
+    "pageUrl": "https://en.wikipedia.org/wiki/Astilbe",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "jimbu-is-an",
+    "strand": "jimbu-is-an",
+    "title": "Jimbu",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/Jimbu.webp/330px-Jimbu.webp.png",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Jimbu",
+    "pageUrl": "https://en.wikipedia.org/wiki/Jimbu",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "achillea-millefolium-l",
+    "strand": "achillea-millefolium-l",
+    "title": "Achillea millefolium",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Achillea_millefolium_%28bright%29.jpg/330px-Achillea_millefolium_%28bright%29.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Achillea_millefolium",
+    "pageUrl": "https://en.wikipedia.org/wiki/Achillea_millefolium",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "calathea-g-mey",
+    "strand": "calathea-g-mey",
+    "title": "Calathea",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e7/Starr_080716-9470_Calathea_crotalifera.jpg/330px-Starr_080716-9470_Calathea_crotalifera.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Calathea",
+    "pageUrl": "https://en.wikipedia.org/wiki/Calathea",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "begonia-taliensis-gagnep",
+    "strand": "begonia-taliensis-gagnep",
+    "title": "Begonia taliensis",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Begonia_taliensis",
+    "pageUrl": "https://en.wikipedia.org/wiki/Begonia_taliensis",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "echites-yucatanensis-millsp-ex-standl",
+    "strand": "echites-yucatanensis-millsp-ex-standl",
+    "title": "Echites yucatanensis",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1f/Echites_yucatanensis_%281%29.jpg/330px-Echites_yucatanensis_%281%29.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Echites_yucatanensis",
+    "pageUrl": "https://en.wikipedia.org/wiki/Echites_yucatanensis",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "baileya-is-a",
+    "strand": "baileya-is-a",
+    "title": "Baileya (plant)",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/Baileya_multiradiata_flower_1.jpg/330px-Baileya_multiradiata_flower_1.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Baileya_(plant)",
+    "pageUrl": "https://en.wikipedia.org/wiki/Baileya_(plant)",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "coreopsis-l",
+    "strand": "coreopsis-l",
+    "title": "Coreopsis",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/Coreopsisgigantea.jpg/330px-Coreopsisgigantea.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Coreopsis",
+    "pageUrl": "https://en.wikipedia.org/wiki/Coreopsis",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "didymochlaena-desv",
+    "strand": "didymochlaena-desv",
+    "title": "Didymochlaena",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c0/DidymochlaenaTruncatula.jpg/330px-DidymochlaenaTruncatula.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Didymochlaena",
+    "pageUrl": "https://en.wikipedia.org/wiki/Didymochlaena",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "sempervivum-l",
+    "strand": "sempervivum-l",
+    "title": "Sempervivum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/Sempervirum_tectorum1.jpg/330px-Sempervirum_tectorum1.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Sempervivum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Sempervivum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "saxifraga-l",
+    "strand": "saxifraga-l",
+    "title": "Saxifraga",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Saxifraga_cochlearis1.jpg/330px-Saxifraga_cochlearis1.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Saxifraga",
+    "pageUrl": "https://en.wikipedia.org/wiki/Saxifraga",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "bird-s-nest-fern",
+    "strand": "bird-s-nest-fern",
+    "title": "Bird's-nest fern",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Bird's-nest_fern",
+    "pageUrl": "https://en.wikipedia.org/wiki/Bird's-nest_fern",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "dracaena-reflexa-lam",
+    "strand": "dracaena-reflexa-lam",
+    "title": "Dracaena reflexa",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/61/Dracaena_reflexa.JPG/330px-Dracaena_reflexa.JPG",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dracaena_reflexa",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dracaena_reflexa",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "dracaena-pinguicula-p-r-o-bally-byng-christenh",
+    "strand": "dracaena-pinguicula-p-r-o-bally-byng-christenh",
+    "title": "Dracaena pinguicula",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/Sansevieria_pinguicula_%28Scott_Zona%29.jpg/330px-Sansevieria_pinguicula_%28Scott_Zona%29.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dracaena_pinguicula",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dracaena_pinguicula",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "dracaena-suffruticosa-n-e-br-byng-christenh",
+    "strand": "dracaena-suffruticosa-n-e-br-byng-christenh",
+    "title": "Dracaena suffruticosa",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Sansevieria_suffruticosa_%284517547157%29.jpg/330px-Sansevieria_suffruticosa_%284517547157%29.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dracaena_suffruticosa",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dracaena_suffruticosa",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "dracaena-sanderiana-mast",
+    "strand": "dracaena-sanderiana-mast",
+    "title": "Dracaena sanderiana",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e2/Dracaena_sanderiana_2.jpg/330px-Dracaena_sanderiana_2.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dracaena_sanderiana",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dracaena_sanderiana",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "dracaena-surculosa-lindl",
+    "strand": "dracaena-surculosa-lindl",
+    "title": "Dracaena surculosa",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/Dracaena_surculosa_kz2.jpg/330px-Dracaena_surculosa_kz2.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dracaena_surculosa",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dracaena_surculosa",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "dracaena-spathulata-byng-christenh",
+    "strand": "dracaena-spathulata-byng-christenh",
+    "title": "Dracaena spathulata",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Sansevieria-concinna.jpg/330px-Sansevieria-concinna.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dracaena_spathulata",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dracaena_spathulata",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "orchis-tourn-ex-l",
+    "strand": "orchis-tourn-ex-l",
+    "title": "Orchid",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Plant_Orchid_Cymbidium_aloifolium_P1110661_05_-_cropped.jpg/330px-Plant_Orchid_Cymbidium_aloifolium_P1110661_05_-_cropped.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Orchid",
+    "pageUrl": "https://en.wikipedia.org/wiki/Orchid",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "epipremnum-pinnatum-l-engl",
+    "strand": "epipremnum-pinnatum-l-engl",
+    "title": "Epipremnum pinnatum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/Wild_Epipremnum_pinnatum_%28tibatib%29_-_Misamis_Oriental%2C_Philippines_04.jpg/330px-Wild_Epipremnum_pinnatum_%28tibatib%29_-_Misamis_Oriental%2C_Philippines_04.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Epipremnum_pinnatum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Epipremnum_pinnatum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "pothos-l",
+    "strand": "pothos-l",
+    "title": "Epipremnum aureum",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/62/Money_Plant_%28Epipremnum_aureum%29_4.jpg/330px-Money_Plant_%28Epipremnum_aureum%29_4.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Epipremnum_aureum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Epipremnum_aureum",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "dracaena-trifasciata-prain-mabb",
+    "strand": "dracaena-trifasciata-prain-mabb",
+    "title": "Dracaena trifasciata",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fb/Snake_Plant_%28Sansevieria_trifasciata_%27Laurentii%27%29.jpg/330px-Snake_Plant_%28Sansevieria_trifasciata_%27Laurentii%27%29.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Dracaena_trifasciata",
+    "pageUrl": "https://en.wikipedia.org/wiki/Dracaena_trifasciata",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "excoecaria-cochinchinensis-lour",
+    "strand": "excoecaria-cochinchinensis-lour",
+    "title": "Excoecaria cochinchinensis",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/Excoecaria_cochinchinensis_along_Jalan_Cecawi_6-29_in_Seksyen_6_Kota_Damansara_20231208_142327.jpg/330px-Excoecaria_cochinchinensis_along_Jalan_Cecawi_6-29_in_Seksyen_6_Kota_Damansara_20231208_142327.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Excoecaria_cochinchinensis",
+    "pageUrl": "https://en.wikipedia.org/wiki/Excoecaria_cochinchinensis",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "coneflower-is-a",
+    "strand": "coneflower-is-a",
+    "title": "Coneflower",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Coneflower",
+    "pageUrl": "https://en.wikipedia.org/wiki/Coneflower",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "englerarum-montanum-roxb-p-c-boyce-k-z-hein-a-hay",
+    "strand": "englerarum-montanum-roxb-p-c-boyce-k-z-hein-a-hay",
+    "title": "Englerarum",
+    "imageUrl": null,
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Englerarum",
+    "pageUrl": "https://en.wikipedia.org/wiki/Englerarum",
+    "source": "wikipedia",
+    "imageStatus": "missing"
+  },
+  {
+    "id": "fatsia-japonica-thunb-decne-planch",
+    "strand": "fatsia-japonica-thunb-decne-planch",
+    "title": "Fatsia japonica",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f4/Old_Fatsia_japonica_with_blosems.jpg/330px-Old_Fatsia_japonica_with_blosems.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Fatsia_japonica",
+    "pageUrl": "https://en.wikipedia.org/wiki/Fatsia_japonica",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  },
+  {
+    "id": "euphorbia-trigona-mill",
+    "strand": "euphorbia-trigona-mill",
+    "title": "Euphorbia trigona",
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/T%C3%ADas-Yaiza_-_LZ-2-LZ-706_-_Euphorbia_trigona_02_ies.jpg/330px-T%C3%ADas-Yaiza_-_LZ-2-LZ-706_-_Euphorbia_trigona_02_ies.jpg",
+    "fullImageUrl": "https://en.wikipedia.org/wiki/Euphorbia_trigona",
+    "pageUrl": "https://en.wikipedia.org/wiki/Euphorbia_trigona",
+    "source": "wikipedia",
+    "imageStatus": "resolved"
+  }
+]

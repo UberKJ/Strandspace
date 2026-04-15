@@ -1,0 +1,38 @@
+{
+  "temperate": {
+    "elevationRange": "0-6000 ft",
+    "bestNaturalRegions": ["Northeast", "Great Lakes", "Pacific Northwest valleys", "Appalachian foothills"]
+  },
+  "mediterranean": {
+    "elevationRange": "0-5000 ft",
+    "bestNaturalRegions": ["Coastal California", "Mediterranean Basin", "Central Chile", "South Africa's Cape region"]
+  },
+  "arid": {
+    "elevationRange": "0-7000 ft",
+    "bestNaturalRegions": ["Sonoran Desert", "Mojave Desert", "Chihuahuan Desert", "high desert basins"]
+  },
+  "coastal": {
+    "elevationRange": "0-3000 ft",
+    "bestNaturalRegions": ["Pacific coast", "Atlantic coast dunes", "salt-spray islands", "Great Lakes shoreline"]
+  },
+  "woodland": {
+    "elevationRange": "200-8000 ft",
+    "bestNaturalRegions": ["deciduous forest understories", "north-facing slopes", "woodland edges", "humid ravines"]
+  },
+  "tropical": {
+    "elevationRange": "0-4000 ft",
+    "bestNaturalRegions": ["lowland tropics", "warm humid gardens", "equatorial valleys", "rainforest edges"]
+  },
+  "alpine": {
+    "elevationRange": "4000-14000 ft",
+    "bestNaturalRegions": ["alpine scree", "mountain meadows", "subalpine slopes", "high cool rock gardens"]
+  },
+  "prairie": {
+    "elevationRange": "0-7000 ft",
+    "bestNaturalRegions": ["tallgrass prairie", "shortgrass prairie", "open meadow", "sun-baked grassland"]
+  },
+  "containers": {
+    "elevationRange": "any",
+    "bestNaturalRegions": ["patios", "balconies", "courtyards", "rooftop gardens"]
+  }
+}

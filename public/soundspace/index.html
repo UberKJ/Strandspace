@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Soundspace</title>
+    <link rel="stylesheet" href="/soundspace/style.css?v=2026-04-14-02" />
+    <script type="module" src="/soundspace/app.js?v=2026-04-14-02" defer></script>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">Strandspace Soundspace</p>
+        <h1>Recall-first live audio memory for mixers, venues, and event formats.</h1>
+        <p class="lede">
+          Ask for a setup using device, source, venue size, and event context like band, karaoke, or music bingo.
+          Soundspace recalls a stored construct first and only generates a new one when the context needs it.
+        </p>
+        <form id="soundspace-form" class="question-form">
+          <label class="sr-only" for="soundspace-question">Ask a sound setup question</label>
+          <input
+            id="soundspace-question"
+            name="soundspace-question"
+            type="search"
+            placeholder="What is a good karaoke mic setup for a Yamaha MG10XU in a large venue?"
+          />
+          <button type="submit">Build Or Recall</button>
+        </form>
+      </section>
+
+      <section class="dashboard">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Answer</h2>
+            <span id="soundspace-meta" class="meta">Ready</span>
+          </div>
+          <div id="soundspace-answer" class="answer-card empty">
+            <p>Ask a question to see whether Soundspace recalled or generated the setup.</p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Stored Constructs</h2>
+            <span id="soundspace-library-meta" class="meta">Loading Soundspace memory...</span>
+          </div>
+          <div id="soundspace-library" class="library empty">
+            <p>Loading Soundspace memory...</p>
+          </div>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>

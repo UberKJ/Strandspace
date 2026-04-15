@@ -1,0 +1,26 @@
+node_modules/
+node_modules/
+output/
+
+# Runtime logs
+server.log
+server.err
+npm-debug.log*
+*.log
+dev-server*.log
+
+# Local databases and transient learning state
+data/rootline.sqlite
+data/rootline.sqlite-shm
+data/rootline.sqlite-wal
+data/strand-learning.json
+
+# Local scratch files
+tmp_whitepaper_extract.txt
+tmp/
+.env
+.env.*
+.zshrc
+.zshrc.*
+.DS_Store
+Thumbs.db

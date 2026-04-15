@@ -1,0 +1,66 @@
+[
+  {
+    "id": "yamaha-mg10xu-live-vocal-small-room",
+    "name": "Yamaha MG10XU live vocal small-room setup",
+    "deviceBrand": "Yamaha",
+    "deviceModel": "MG10XU",
+    "deviceType": "mixer",
+    "sourceType": "microphone",
+    "goal": "live vocal clarity",
+    "venueSize": "small",
+    "eventType": "band",
+    "speakerConfig": "two mains on stands",
+    "tags": ["vocal", "gain staging", "reverb", "small venue"],
+    "setup": {
+      "gain": "Raise gain until the loudest vocal peaks cleanly without clipping.",
+      "eq": "Roll off low rumble, keep mids controlled, add a little presence only if the vocal sounds dull.",
+      "fx": "Use a light hall or plate reverb and keep it subtle.",
+      "monitor": "Keep the mic behind the mains and notch problem frequencies before adding more level.",
+      "notes": "Good default for spoken announcements or lead vocal in a compact room."
+    },
+    "strands": [
+      "device:yamaha_mg10xu",
+      "device_type:mixer",
+      "source:microphone",
+      "goal:live_vocal_clarity",
+      "venue:small",
+      "event:band",
+      "setup:gain_staging",
+      "setup:light_reverb",
+      "setup:feedback_control"
+    ],
+    "llmSummary": "Use this as a starting point for a clean live vocal on a Yamaha MG10XU in a small room."
+  },
+  {
+    "id": "bose-t8s-solo-vocal-karaoke",
+    "name": "Bose T8S solo vocal karaoke setup",
+    "deviceBrand": "Bose",
+    "deviceModel": "T8S",
+    "deviceType": "digital mixer",
+    "sourceType": "microphone",
+    "goal": "karaoke vocal support",
+    "venueSize": "small",
+    "eventType": "karaoke",
+    "speakerConfig": "portable powered speakers",
+    "tags": ["karaoke", "vocal", "tone match", "portable"],
+    "setup": {
+      "gain": "Set preamp conservatively and leave headroom for louder singers.",
+      "eq": "Start flat, cut mud before boosting highs, and use built-in vocal shaping carefully.",
+      "fx": "Use a short vocal reverb or delay so the singer feels supported without losing clarity.",
+      "monitor": "Keep speakers in front of the mic and watch for feedback if singers cup the microphone.",
+      "notes": "Useful for rotating singers where consistency matters more than a perfect individual mix."
+    },
+    "strands": [
+      "device:bose_t8s",
+      "device_type:digital_mixer",
+      "source:microphone",
+      "goal:karaoke_vocal_support",
+      "venue:small",
+      "event:karaoke",
+      "setup:portable_consistency",
+      "setup:headroom",
+      "setup:feedback_control"
+    ],
+    "llmSummary": "This is a stable karaoke starting point for a Bose T8S with portable speakers."
+  }
+]

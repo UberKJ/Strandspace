@@ -1,0 +1,110 @@
+[
+  {
+    "subjectLabel": "Music Engineering",
+    "constructLabel": "Small-room lead vocal recall",
+    "target": "Lead vocal on Yamaha MG10XU",
+    "objective": "clear lead vocal with safe feedback margin",
+    "context": {
+      "console": "Yamaha MG10XU",
+      "source": "wired cardioid vocal mic",
+      "room": "small club",
+      "ensemble": "4-piece band",
+      "pa": "two mains on stands"
+    },
+    "steps": [
+      "Set preamp so the loudest chorus peaks cleanly before the clip light threatens.",
+      "Trim rumble first, then pull muddy low mids before adding any vocal presence.",
+      "Use a short hall reverb sparingly so the singer feels support without washing out diction.",
+      "Solve feedback with mic position and speaker placement before chasing more gain.",
+      "Leave a little headroom for louder songs or crowd-noise spikes."
+    ],
+    "notes": "Reliable starting scene for compact rooms where clarity matters more than size.",
+    "tags": [
+      "live vocal",
+      "gain staging",
+      "feedback control",
+      "small venue"
+    ]
+  },
+  {
+    "subjectLabel": "Music Engineering",
+    "constructLabel": "Karaoke singer rotation preset",
+    "target": "Solo singer on Bose T8S",
+    "objective": "support inconsistent singers without losing intelligibility",
+    "context": {
+      "console": "Bose T8S",
+      "source": "handheld wireless mic",
+      "room": "private event room",
+      "show type": "karaoke",
+      "speakers": "portable powered pair"
+    },
+    "steps": [
+      "Keep the preamp conservative so sudden loud singers still have headroom.",
+      "Start flat, cut mud before boosting highs, and avoid over-shaping for any one voice.",
+      "Use a short vocal reverb or delay for confidence, but keep the tail controlled.",
+      "Keep speakers well in front of the microphone and watch for cupped-mic feedback.",
+      "Favor consistency over perfection because the singer changes every song."
+    ],
+    "notes": "This preset is for rotation and survivability, not for dialing in one perfect vocalist.",
+    "tags": [
+      "karaoke",
+      "portable mixer",
+      "vocal support",
+      "headroom"
+    ]
+  },
+  {
+    "subjectLabel": "Music Engineering",
+    "constructLabel": "Host-forward music bingo scene",
+    "target": "Host microphone with music playback",
+    "objective": "keep clue calls and transitions intelligible over backing tracks",
+    "context": {
+      "console": "Yamaha MG10XU",
+      "source": "host vocal mic and playback laptop",
+      "room": "medium brewery room",
+      "show type": "music bingo",
+      "monitor": "host wedge low and forward"
+    },
+    "steps": [
+      "Set speech gain for strong announcements with clean peaks and enough space for excited moments.",
+      "Cut mud first and add only enough presence to keep clue calls crisp over the track.",
+      "Keep host effects nearly dry so every instruction stays easy to parse.",
+      "Ride the playback level under the host instead of asking the mic channel to overpower the room.",
+      "Use speaker placement and conservative monitor level to stay ahead of feedback."
+    ],
+    "notes": "A host-driven event wins on diction, pacing, and transitions more than sonic size.",
+    "tags": [
+      "host mic",
+      "speech clarity",
+      "music bingo",
+      "playback balance"
+    ]
+  },
+  {
+    "subjectLabel": "Music Engineering",
+    "constructLabel": "Acoustic duo room-friendly start",
+    "target": "Vocal and acoustic guitar duo",
+    "objective": "balanced intimacy with low stage volume",
+    "context": {
+      "console": "Allen & Heath CQ-18T",
+      "sources": "lead vocal and DI acoustic guitar",
+      "room": "coffeehouse",
+      "ensemble": "acoustic duo",
+      "pa": "quiet mains with no sub"
+    },
+    "steps": [
+      "Build the vocal first, then add guitar until it supports the lyric instead of competing with it.",
+      "High-pass both channels enough to clear rumble while keeping warmth in the guitar body.",
+      "Use gentle ambience only; the room should still feel close and conversational.",
+      "Keep stage volume low so the front-of-house mix stays stable from song to song.",
+      "Listen for harsh pick attack or nasal vocal mids before boosting any sparkle."
+    ],
+    "notes": "Useful when intimacy and lyric focus matter more than impact.",
+    "tags": [
+      "acoustic duo",
+      "coffeehouse",
+      "vocal first",
+      "low stage volume"
+    ]
+  }
+]

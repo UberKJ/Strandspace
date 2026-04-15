@@ -1,0 +1,110 @@
+{
+  "temperate": {
+    "label": "Temperate",
+    "description": "Four-season beds with compost-rich soil, moderate moisture, and flexible light.",
+    "aliases": ["four season", "four-season", "mixed climate"],
+    "light": "full sun to partial shade",
+    "moisture": "moderate moisture",
+    "soil": "loam with compost",
+    "fertilizer": "balanced slow-release fertilizer in spring",
+    "mulch": "2 to 3 inches of mulch helps stabilize the root zone",
+    "warnings": ["watch spring frost", "water deeply instead of lightly every day"],
+    "keywords": ["temperate", "loam", "moderate", "balanced", "compost", "full sun", "partial shade"]
+  },
+  "mediterranean": {
+    "label": "Mediterranean",
+    "description": "Hot, dry summers and mild winters with excellent drainage and light feeding.",
+    "aliases": ["dry summer", "dry climate"],
+    "light": "full sun",
+    "moisture": "low to moderate moisture",
+    "soil": "sandy or gravelly, sharply drained soil",
+    "fertilizer": "light compost or a low-nitrogen feed",
+    "mulch": "gravel mulch or thin organic mulch",
+    "warnings": ["avoid soggy soils", "feed lightly to prevent lush weak growth"],
+    "keywords": ["mediterranean", "dry", "sandy", "gravel", "drained", "low moisture", "full sun", "herb"]
+  },
+  "arid": {
+    "label": "Arid",
+    "description": "Desert and drought-prone beds that reward restraint, drainage, and careful watering.",
+    "aliases": ["desert", "drought"],
+    "light": "full sun",
+    "moisture": "very low moisture",
+    "soil": "fast-draining mineral soil",
+    "fertilizer": "very light feeding or compost only once a season",
+    "mulch": "stone mulch or thin gravel",
+    "warnings": ["never keep roots wet for long", "wind can desiccate exposed foliage"],
+    "keywords": ["arid", "desert", "drought", "dry", "sandy", "gravelly", "low moisture", "full sun"]
+  },
+  "coastal": {
+    "label": "Coastal",
+    "description": "Windy, salty, changeable gardens near the ocean or large lakes.",
+    "aliases": ["seaside", "salt air"],
+    "light": "full sun to part shade",
+    "moisture": "moderate moisture with fast drainage",
+    "soil": "sandy loam enriched with organic matter",
+    "fertilizer": "gentle compost and seaweed-style feeding",
+    "mulch": "salt-tolerant organic mulch",
+    "warnings": ["protect from salt spray if the plant is tender", "choose sheltered positions"],
+    "keywords": ["coastal", "wind", "salt", "sandy loam", "drained", "moderate moisture", "part shade"]
+  },
+  "woodland": {
+    "label": "Woodland",
+    "description": "Dappled shade, humus-rich soil, and steadier moisture under trees.",
+    "aliases": ["shade garden", "forest edge"],
+    "light": "partial shade to shade",
+    "moisture": "moderate to moist",
+    "soil": "humus-rich woodland soil",
+    "fertilizer": "leaf mold, compost, or a light organic feed",
+    "mulch": "leaf litter or shredded bark",
+    "warnings": ["avoid hot afternoon sun", "keep mulch off the crown"],
+    "keywords": ["woodland", "shade", "part shade", "humus", "moist", "forest", "understory"]
+  },
+  "tropical": {
+    "label": "Tropical",
+    "description": "Warm, humid spaces with rich soil, filtered light, and steady growth.",
+    "aliases": ["humid", "jungle"],
+    "light": "bright light or filtered sun",
+    "moisture": "high moisture",
+    "soil": "rich, moisture-retentive soil",
+    "fertilizer": "regular diluted balanced fertilizer",
+    "mulch": "organic mulch to hold humidity",
+    "warnings": ["watch for fungal pressure in still air", "feed in the growing season only"],
+    "keywords": ["tropical", "humid", "rich soil", "moisture", "bright light", "filtered sun"]
+  },
+  "alpine": {
+    "label": "Alpine",
+    "description": "Cool, windy, high-drainage conditions with lean soil and quick root drying.",
+    "aliases": ["mountain", "rock garden"],
+    "light": "full sun",
+    "moisture": "low to moderate moisture",
+    "soil": "gritty, sharply drained soil",
+    "fertilizer": "very light feeding",
+    "mulch": "grit or gravel",
+    "warnings": ["avoid rich wet soil", "protect from winter heave"],
+    "keywords": ["alpine", "mountain", "grit", "drained", "cool", "sun", "compact", "lean soil"]
+  },
+  "prairie": {
+    "label": "Prairie",
+    "description": "Open sunny beds with deeper soils, seasonal swings, and strong pollinator value.",
+    "aliases": ["meadow", "grassland"],
+    "light": "full sun",
+    "moisture": "moderate moisture",
+    "soil": "deep loam with organic matter",
+    "fertilizer": "spring compost or balanced slow-release fertilizer",
+    "mulch": "straw or shredded leaves",
+    "warnings": ["allow roots to establish before drought stress", "support tall stems if needed"],
+    "keywords": ["prairie", "meadow", "full sun", "loam", "deep soil", "moderate moisture"]
+  },
+  "containers": {
+    "label": "Containers",
+    "description": "Pot culture for patios, porches, balconies, and compact spaces.",
+    "aliases": ["container", "pots", "patio"],
+    "light": "full sun to part shade",
+    "moisture": "even moisture with excellent drainage",
+    "soil": "high-quality potting mix",
+    "fertilizer": "regular dilute feeding during active growth",
+    "mulch": "light organic mulch or topdress",
+    "warnings": ["check pots daily in hot weather", "refresh the mix yearly"],
+    "keywords": ["container", "pot", "balcony", "patio", "compact", "full sun", "part shade"]
+  }
+}

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="220" viewBox="0 0 240 180" role="img" aria-labelledby="title desc">
+  <title>Rose Lavender</title>
+  <desc>Rose Lavender strand thumbnail for bulb</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="hsl(207 82% 94%)" />
+      <stop offset="100%" stop-color="hsl(245 78% 84%)" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="rgba(31,44,38,0.16)" />
+    </filter>
+  </defs>
+  <rect x="0" y="0" width="240" height="180" rx="28" fill="url(#bg)" />
+  <circle cx="200" cy="38" r="26" fill="hsl(245 74% 72%)" opacity="0.45" />
+  <circle cx="38" cy="30" r="18" fill="hsl(15 64% 78%)" opacity="0.55" />
+  <rect x="20" y="20" width="200" height="140" rx="22" fill="rgba(255,255,255,0.42)" filter="url(#shadow)" />
+  <g transform="translate(0 2)">
+    
+      <path d="M120 54c-24 0-42 18-42 42c0 18 10 28 18 38c8 10 12 20 12 30h24c0-10 4-20 12-30c8-10 18-20 18-38c0-24-18-42-42-42Z" fill="hsl(245 58% 62%)" />
+      <path d="M120 42v16" stroke="hsl(15 34% 28%)" stroke-width="7" stroke-linecap="round" />
+      <path d="M104 62c8 4 14 10 16 18c-8 2-16 0-22-6" fill="hsl(15 34% 28%)" opacity="0.45" />
+    
+  </g>
+  <rect x="24" y="142" width="192" height="26" rx="13" fill="rgba(255,255,255,0.72)" />
+  <text x="120" y="159" font-family="Georgia, 'Times New Roman', serif" font-size="14" font-weight="700" text-anchor="middle" fill="hsl(15 34% 28%)">Rose Lavender</text>
+  <text x="120" y="170" font-family="system-ui, sans-serif" font-size="9" text-anchor="middle" letter-spacing="1.2" fill="hsl(15 34% 28%)" opacity="0.72">BULB</text>
+  <text x="28" y="36" font-family="system-ui, sans-serif" font-size="8" font-weight="700" letter-spacing="2" fill="hsl(15 34% 28%)" opacity="0.65">gen_0712_rose_lavender</text>
+</svg>
