@@ -84,9 +84,13 @@
               </label>
               <div class="action-row builder-actions">
                 <button type="submit" class="secondary-button">Build construct draft</button>
-                <p class="meta">Uses OpenAI when available, otherwise local Strandspace parsing.</p>
+                <p class="meta">Checks related constructs first, then uses OpenAI when available or local Strandspace parsing when it is not.</p>
               </div>
             </form>
+
+            <div id="builder-checks" class="builder-checks empty">
+              <p>Builder checks will appear here after you draft a construct.</p>
+            </div>
           </section>
 
           <form id="learn-form" class="learn-form">

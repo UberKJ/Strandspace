@@ -2,13 +2,15 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const rootDir = join(__dirname, "..");
+const docsDir = join(rootDir, "docs");
 const tempDir = join(rootDir, "tmp", "tests");
 const tempDatabasePath = join(tempDir, `strandspace-test-${Date.now()}.sqlite`);
+const tempDocPaths = [];
 
 await mkdir(tempDir, { recursive: true });
 process.env.STRANDSPACE_DB_PATH = tempDatabasePath;
@@ -50,6 +52,17 @@ async function postJson(url, payload) {
     body: JSON.stringify(payload)
   });
   return response;
+}
+
+async function createTempDocFixture(name = `subjectspace-test-manual-${Date.now()}.pdf`) {
+  await mkdir(docsDir, { recursive: true });
+  const filePath = join(docsDir, name);
+  await writeFile(filePath, "manual fixture");
+  tempDocPaths.push(filePath);
+  return {
+    fileName: name,
+    filePath
+  };
 }
 
 async function createSubjectConstruct(port, overrides = {}) {
@@ -222,6 +235,39 @@ await check("POST /api/subjectspace/build drafts a construct from freeform input
   });
 });
 
+await check("manual construct sources resolve to /docs and docs files open through the app", async () => {
+  const doc = await createTempDocFixture();
+
+  await withServer(async (address) => {
+    const construct = await createSubjectConstruct(address.port, {
+      subjectLabel: `Manual Source Subject ${Date.now()}`,
+      constructLabel: "Bose T8S manual-backed construct",
+      target: "Bose T8S ToneMatch mixer",
+      objective: "reference the local Bose owner guide while building microphone settings",
+      context: `manual_scope: owner guide reference\nOwner Guide PDF: sandbox:/mnt/data/${doc.fileName}\ncontrol panel reference: Figure 3, page 8`,
+      notes: "Manual-backed construct for the Bose owner guide.",
+      tags: "bose, t8s, manual, guide",
+      provenance: {
+        source: "manual",
+        learnedFromQuestion: null
+      }
+    });
+
+    const libraryResponse = await fetch(`http://127.0.0.1:${address.port}/api/subjectspace/library?subjectId=${encodeURIComponent(construct.subjectId)}`);
+    assert.equal(libraryResponse.status, 200);
+    const libraryPayload = await libraryResponse.json();
+    const stored = libraryPayload.constructs.find((item) => item.id === construct.id);
+    assert.ok(stored);
+    assert.ok(Array.isArray(stored.sources));
+    assert.ok(stored.sources.some((source) => source.url.endsWith(encodeURIComponent(doc.fileName))));
+
+    const docResponse = await fetch(`http://127.0.0.1:${address.port}/docs/${encodeURIComponent(doc.fileName)}`);
+    assert.equal(docResponse.status, 200);
+    assert.match(String(docResponse.headers.get("content-type") ?? ""), /application\/pdf/i);
+    assert.equal(await docResponse.text(), "manual fixture");
+  });
+});
+
 await check("POST /api/subjectspace/learn updates an existing construct in place", async () => {
   await withServer(async (address) => {
     const construct = await createSubjectConstruct(address.port, {
@@ -260,6 +306,42 @@ await check("POST /api/subjectspace/learn updates an existing construct in place
     assert.equal(recalled.recall.ready, true);
     assert.equal(recalled.construct.id, construct.id);
     assert.match(recalled.answer, /separation|charcoal/i);
+  });
+});
+
+await check("POST /api/subjectspace/build checks manual references before drafting a Bose microphone construct", async () => {
+  const doc = await createTempDocFixture(`subjectspace-bose-manual-${Date.now()}.pdf`);
+
+  await withServer(async (address) => {
+    await createSubjectConstruct(address.port, {
+      subjectLabel: "Bose T8S Mixer",
+      constructLabel: "Bose T8S microphone manual reference",
+      target: "Bose T8S handheld vocal microphone starting point",
+      objective: "manual-backed reference for microphone gain staging and scene recall limits",
+      context: `Owner Guide PDF: sandbox:/mnt/data/${doc.fileName}\nscene limits: scenes do not store trim or phantom power state`,
+      steps: "Choose a vocal preset first\nSet trim carefully before saving a scene\nCheck phantom power state every time",
+      notes: "Manual reference for building new Bose microphone constructs from the T8S guide.",
+      tags: "bose, t8s, manual, microphone, guide",
+      provenance: {
+        source: "manual",
+        learnedFromQuestion: null
+      }
+    });
+
+    const response = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/build`, {
+      preferApi: false,
+      subjectLabel: "Music Engineering",
+      input: "Build a Bose T8S handheld vocal microphone starting construct with scene recall and trim checks."
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.ok(Array.isArray(payload.checkedReferences));
+    assert.ok(payload.checkedReferences.some((reference) => /Bose T8S microphone manual reference/i.test(reference.constructLabel)));
+    assert.ok(payload.checkedReferences.some((reference) => Array.isArray(reference.sources) && reference.sources.some((source) => source.url.endsWith(encodeURIComponent(doc.fileName)))));
+    assert.ok(Array.isArray(payload.buildChecks));
+    assert.ok(payload.buildChecks.some((check) => /Checked .* related construct/i.test(check)));
+    assert.ok(payload.buildChecks.some((check) => /Consulted manual reference/i.test(check)));
   });
 });
 
@@ -533,6 +615,9 @@ try {
   await rm(tempDatabasePath, { force: true });
   await rm(`${tempDatabasePath}-shm`, { force: true });
   await rm(`${tempDatabasePath}-wal`, { force: true });
+  for (const docPath of tempDocPaths) {
+    await rm(docPath, { force: true });
+  }
 } catch {
   // Best effort cleanup for temporary test data.
 }

@@ -15,6 +15,7 @@ const libraryListEl = document.getElementById("library-list");
 const builderForm = document.getElementById("builder-form");
 const builderMetaEl = document.getElementById("builder-meta");
 const builderInput = document.getElementById("builder-input");
+const builderChecksEl = document.getElementById("builder-checks");
 const learnForm = document.getElementById("learn-form");
 const learnMetaEl = document.getElementById("learn-meta");
 const learnModeMetaEl = document.getElementById("learn-mode-meta");
@@ -109,6 +110,21 @@ function previewQuestion(value = "", limit = 112) {
   }
 
   return `${normalized.slice(0, limit - 1)}...`;
+}
+
+function renderSourceLinks(sources = [], { compact = false } = {}) {
+  const items = Array.isArray(sources) ? sources : [];
+  if (!items.length) {
+    return "";
+  }
+
+  return items
+    .map((source) => `
+      <a class="source-link${compact ? " compact" : ""}" href="${escapeHtml(source.url ?? "#")}" target="_blank" rel="noreferrer">
+        ${escapeHtml(source.label ?? source.fileName ?? "Open source")}
+      </a>
+    `)
+    .join("");
 }
 
 function activeBenchmarkQuestion() {
@@ -210,11 +226,19 @@ function previewPayload(construct) {
         missingKeywords: []
       },
       trace: previewTrace(construct)
-    }
+    },
+    checkedReferences: [],
+    buildChecks: []
   };
 }
 
-function draftPayload(construct, { source = "heuristic", input = "", mergeMode = "draft" } = {}) {
+function draftPayload(construct, {
+  source = "heuristic",
+  input = "",
+  mergeMode = "draft",
+  checkedReferences = [],
+  buildChecks = []
+} = {}) {
   const confidence = source === "openai" ? 0.86 : 0.72;
   const draft = {
     ...construct,
@@ -270,7 +294,9 @@ function draftPayload(construct, { source = "heuristic", input = "", mergeMode =
         missingKeywords: []
       },
       trace: previewTrace(draft)
-    }
+    },
+    checkedReferences,
+    buildChecks
   };
 }
 
@@ -307,6 +333,49 @@ function clearLearnForm({ subjectLabel = "" } = {}) {
   learnStepsInput.value = "";
   learnNotesInput.value = "";
   learnTagsInput.value = "";
+}
+
+function renderBuilderChecks({ buildChecks = [], checkedReferences = [] } = {}) {
+  if (!builderChecksEl) {
+    return;
+  }
+
+  const checks = Array.isArray(buildChecks) ? buildChecks : [];
+  const references = Array.isArray(checkedReferences) ? checkedReferences : [];
+
+  if (!checks.length && !references.length) {
+    builderChecksEl.className = "builder-checks empty";
+    builderChecksEl.innerHTML = "<p>Builder checks will appear here after you draft a construct.</p>";
+    return;
+  }
+
+  builderChecksEl.className = "builder-checks";
+  builderChecksEl.innerHTML = `
+    ${checks.length
+      ? `
+        <div class="builder-check-list">
+          ${checks.map((check) => `<p>${escapeHtml(check)}</p>`).join("")}
+        </div>
+      `
+      : ""}
+    ${references.length
+      ? `
+        <div class="builder-reference-list">
+          ${references.map((reference) => `
+            <article class="builder-reference-item">
+              <div>
+                <strong>${escapeHtml(reference.constructLabel ?? "Reference construct")}</strong>
+                <span>${escapeHtml(reference.matchReason || reference.subjectLabel || "Checked reference")}</span>
+              </div>
+              <div class="source-row">
+                ${renderSourceLinks(reference.sources ?? [], { compact: true })}
+              </div>
+            </article>
+          `).join("")}
+        </div>
+      `
+      : ""}
+  `;
 }
 
 function hasEditorBaseConstruct() {
@@ -373,6 +442,7 @@ function setEditorState(mode = "new", construct = {}) {
   };
   syncEditorUi();
   renderLibrary();
+  renderBuilderChecks();
 }
 
 function clearEditorState({ resetForm = false, subjectLabel = "" } = {}) {
@@ -392,6 +462,7 @@ function clearEditorState({ resetForm = false, subjectLabel = "" } = {}) {
 
   syncEditorUi();
   renderLibrary();
+  renderBuilderChecks();
 }
 
 function buildLearnPayload() {
@@ -841,6 +912,9 @@ function renderAnswer(payload = null) {
   const context = contextEntries(construct.context);
   const steps = Array.isArray(construct.steps) ? construct.steps : [];
   const tags = Array.isArray(construct.tags) ? construct.tags : [];
+  const sources = Array.isArray(construct.sources) ? construct.sources : [];
+  const checkedReferences = Array.isArray(payload.checkedReferences) ? payload.checkedReferences : [];
+  const buildChecks = Array.isArray(payload.buildChecks) ? payload.buildChecks : [];
   const stableScore = Number(readiness.matchedScore ?? 0);
   const answerKicker = payload.source === "preview"
     ? "Stored construct preview"
@@ -878,6 +952,56 @@ function renderAnswer(payload = null) {
     ${answerActions}
     ${renderRoutingPanel(routing, readiness)}
     ${renderAssistResult()}
+    ${sources.length
+      ? `
+        <div class="answer-sources">
+          <p class="answer-label">Source documents</p>
+          <div class="source-row">
+            ${renderSourceLinks(sources)}
+          </div>
+        </div>
+      `
+      : ""}
+    ${buildChecks.length || checkedReferences.length
+      ? `
+        <div class="answer-references">
+          <p class="answer-label">Checked before draft</p>
+          ${buildChecks.length
+            ? `
+              <div class="reference-checks">
+                ${buildChecks.map((check) => `<p>${escapeHtml(check)}</p>`).join("")}
+              </div>
+            `
+            : ""}
+          ${checkedReferences.length
+            ? `
+              <div class="reference-list">
+                ${checkedReferences.map((reference) => `
+                  <article class="reference-card">
+                    <div class="reference-copy">
+                      <strong>${escapeHtml(reference.constructLabel ?? "Reference construct")}</strong>
+                      <span>${escapeHtml(reference.subjectLabel ?? "")}</span>
+                      <small>${escapeHtml(reference.matchReason || reference.objective || reference.target || "")}</small>
+                    </div>
+                    <div class="reference-actions">
+                      <button
+                        type="button"
+                        class="assist-action-button"
+                        data-construct-action="edit"
+                        data-construct-id="${escapeHtml(reference.id ?? "")}"
+                      >Load reference</button>
+                      <div class="source-row">
+                        ${renderSourceLinks(reference.sources ?? [], { compact: true })}
+                      </div>
+                    </div>
+                  </article>
+                `).join("")}
+              </div>
+            `
+            : ""}
+        </div>
+      `
+      : ""}
     ${context.length
       ? `
         <div class="answer-context">
@@ -1121,6 +1245,10 @@ async function handleBuilderSubmit(event) {
 
     applyConstructDraftToLearnForm(draft);
     setEditorState(editorState.mode === "saved" ? "saved" : "draft", draft);
+    renderBuilderChecks({
+      buildChecks: response.buildChecks ?? [],
+      checkedReferences: response.checkedReferences ?? []
+    });
     resetTransientState();
     learnMetaEl.textContent = response.mergeMode === "extend"
       ? "Merged the new input into the current construct. Review the changes, then save them."
@@ -1137,7 +1265,9 @@ async function handleBuilderSubmit(event) {
     renderAnswer(draftPayload(draft, {
       source: response.source ?? "heuristic",
       input,
-      mergeMode: response.mergeMode ?? "draft"
+      mergeMode: response.mergeMode ?? "draft",
+      checkedReferences: response.checkedReferences ?? [],
+      buildChecks: response.buildChecks ?? []
     }));
   } catch (error) {
     builderMetaEl.textContent = error instanceof Error ? error.message : "Unable to build a construct draft.";
@@ -1301,13 +1431,20 @@ answerPanelEl?.addEventListener("click", (event) => {
   const constructAction = button.getAttribute("data-construct-action");
   if (constructAction === "edit") {
     const constructId = button.getAttribute("data-construct-id");
-    const previewConstruct = library.find((item) => item.id === constructId) ?? lastPayload?.construct ?? null;
+    const previewConstruct = library.find((item) => item.id === constructId)
+      ?? (Array.isArray(lastPayload?.checkedReferences)
+        ? lastPayload.checkedReferences.find((item) => item.id === constructId)
+        : null)
+      ?? lastPayload?.construct
+      ?? null;
 
     if (previewConstruct) {
       loadConstructIntoEditor(previewConstruct, {
-        mode: library.some((item) => item.id === previewConstruct.id) ? "saved" : "draft",
+        mode: previewConstruct.id ? "saved" : "draft",
         focus: true
       });
+      recallQuestionInput.value = buildExampleQuestion(previewConstruct);
+      renderAnswer(previewPayload(previewConstruct));
     }
   }
 });
@@ -1317,6 +1454,7 @@ speedCompareButton?.addEventListener("click", () => {
 });
 
 syncEditorUi();
+renderBuilderChecks();
 
 Promise.all([loadAssistStatus(), loadSubjects()]).catch((error) => {
   subjectMetaEl.textContent = error instanceof Error ? error.message : "Unable to load Strandspace Studio.";

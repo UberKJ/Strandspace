@@ -251,12 +251,43 @@ function buildBuilderInstructions() {
     "You convert freeform notes into a reusable Strandspace subject construct draft.",
     "Return only JSON that matches the provided schema.",
     "Prefer apiAction draft unless the input clearly describes an existing construct that only needs validation.",
+    "Use supplied checked references and manual documents when they are relevant.",
     "Preserve concrete details from the source notes and keep them teachable back into Strandspace.",
-    "Keep context entries short, steps actionable, and notes concise."
+    "Keep context entries short, steps actionable, and notes concise.",
+    "If a checked manual reference contains a constraint or limitation, carry that forward into the draft notes."
   ].join(" ");
 }
 
-function buildBuilderInput({ input = "", subjectId = "", subjectLabel = "General Recall", seedDraft = {} } = {}) {
+function summarizeBuilderReferences(references = []) {
+  if (!Array.isArray(references) || !references.length) {
+    return [];
+  }
+
+  return references.slice(0, 4).map((reference) => ({
+    subjectLabel: reference.subjectLabel ?? "",
+    constructLabel: reference.constructLabel ?? "",
+    target: reference.target ?? "",
+    objective: reference.objective ?? "",
+    notes: reference.notes ?? "",
+    tags: Array.isArray(reference.tags) ? reference.tags.slice(0, 8) : [],
+    context: reference.context ?? {},
+    sources: Array.isArray(reference.sources)
+      ? reference.sources.map((source) => ({
+        label: source.label ?? "",
+        fileName: source.fileName ?? "",
+        url: source.url ?? ""
+      }))
+      : []
+  }));
+}
+
+function buildBuilderInput({
+  input = "",
+  subjectId = "",
+  subjectLabel = "General Recall",
+  seedDraft = {},
+  references = []
+} = {}) {
   return [
     `Subject id: ${subjectId || "new-subject"}`,
     `Subject label: ${subjectLabel}`,
@@ -270,6 +301,7 @@ function buildBuilderInput({ input = "", subjectId = "", subjectLabel = "General
       notes: seedDraft.notes ?? "",
       tags: seedDraft.tags ?? []
     }, null, 2)}`,
+    `Checked references: ${JSON.stringify(summarizeBuilderReferences(references), null, 2)}`,
     "Produce the strongest reusable Strandspace construct draft you can derive from these notes."
   ].join("\n\n");
 }
@@ -380,7 +412,8 @@ export async function generateOpenAiSubjectConstructBuilder({
   input = "",
   subjectId = "",
   subjectLabel = "General Recall",
-  seedDraft = {}
+  seedDraft = {},
+  references = []
 } = {}) {
   if (mockAssistRunner) {
     return mockAssistRunner({
@@ -389,7 +422,8 @@ export async function generateOpenAiSubjectConstructBuilder({
       question: input,
       subjectId,
       subjectLabel,
-      seedDraft
+      seedDraft,
+      references
     });
   }
 
@@ -402,7 +436,8 @@ export async function generateOpenAiSubjectConstructBuilder({
       input,
       subjectId,
       subjectLabel,
-      seedDraft
+      seedDraft,
+      references
     }),
     text: {
       format: {

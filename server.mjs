@@ -1,6 +1,7 @@
 import http from "node:http";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { dirname, extname, isAbsolute, join, normalize } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, normalize } from "node:path";
+import { readdirSync } from "node:fs";
 import { access, readFile, readdir } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { DatabaseSync } from "node:sqlite";
@@ -17,6 +18,7 @@ import {
   buildSubjectConstructDraftFromInput,
   estimateTextTokens,
   ensureSubjectspaceTables,
+  getSubjectConstruct,
   mergeSubjectConstruct,
   listSubjectConstructs,
   listSubjectSpaces,
@@ -34,20 +36,49 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const publicDir = join(__dirname, "public");
+const docsDir = join(__dirname, "docs");
 const configuredDatabasePath = String(process.env.STRANDSPACE_DB_PATH ?? "").trim();
 const dataDir = join(__dirname, "data");
 const preferredDatabasePath = join(__dirname, "data", "strandspace.sqlite");
+const docFileExtensions = new Set([".pdf", ".docx", ".patch", ".txt", ".md"]);
+const builderReferenceStopwords = new Set([
+  "a",
+  "an",
+  "and",
+  "build",
+  "checks",
+  "construct",
+  "for",
+  "from",
+  "handheld",
+  "in",
+  "microphone",
+  "new",
+  "of",
+  "scene",
+  "settings",
+  "starting",
+  "the",
+  "trim",
+  "use",
+  "with"
+]);
 
 const mimeTypes = {
   ".css": "text/css; charset=utf-8",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".gif": "image/gif",
   ".html": "text/html; charset=utf-8",
   ".jpeg": "image/jpeg",
   ".jpg": "image/jpeg",
   ".js": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8",
+  ".patch": "text/x-diff; charset=utf-8",
+  ".pdf": "application/pdf",
   ".png": "image/png",
   ".svg": "image/svg+xml; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
   ".webp": "image/webp"
 };
 
@@ -111,14 +142,19 @@ function readSubjectspaceParams(source = null) {
 }
 
 function buildSubjectspaceAnswerPayload(recall, { question = "", subjectId = "" } = {}) {
+  const hydratedConstruct = hydrateConstructForClient(recall.matched);
+
   return {
     ok: true,
     source: recall.ready ? "strandspace" : "unresolved",
     question,
-    subjectId: recall.matched?.subjectId ?? subjectId,
+    subjectId: hydratedConstruct?.subjectId ?? recall.matched?.subjectId ?? subjectId,
     answer: recall.answer,
-    construct: recall.matched,
-    recall
+    construct: hydratedConstruct,
+    recall: {
+      ...recall,
+      matched: hydratedConstruct
+    }
   };
 }
 
@@ -141,6 +177,312 @@ function buildPromptMetrics(question = "") {
     wordCount: normalized ? normalized.split(/\s+/).length : 0,
     estimatedTokens: estimateTextTokens(normalized)
   };
+}
+
+function humanizeDocName(value = "") {
+  return String(value ?? "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeConstructText(construct = {}) {
+  return [
+    construct.subjectId,
+    construct.subjectLabel,
+    construct.constructLabel,
+    construct.target,
+    construct.objective,
+    construct.notes,
+    ...(construct.tags ?? []),
+    ...Object.keys(construct.context ?? {}),
+    ...Object.values(construct.context ?? {})
+  ]
+    .map((item) => String(item ?? "").toLowerCase())
+    .join(" ");
+}
+
+function extractReferenceTokens(value = "") {
+  return [...new Set(
+    normalizePromptText(value)
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean)
+      .filter((token) => token.length > 2 && !builderReferenceStopwords.has(token))
+  )];
+}
+
+function listDocAssets() {
+  try {
+    return readdirSync(docsDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .filter((entry) => docFileExtensions.has(extname(entry.name).toLowerCase()))
+      .map((entry) => ({
+        fileName: entry.name,
+        fullPath: join(docsDir, entry.name),
+        lowerName: entry.name.toLowerCase(),
+        url: `/docs/${encodeURIComponent(entry.name)}`
+      }))
+      .sort((left, right) => left.fileName.localeCompare(right.fileName));
+  } catch {
+    return [];
+  }
+}
+
+function extractReferencedDocNames(value = "") {
+  const text = String(value ?? "");
+  const matches = text.match(/[A-Za-z0-9 _.-]+\.(?:pdf|docx|patch|txt|md)/gi) ?? [];
+  return matches
+    .map((item) => basename(item.trim()))
+    .filter(Boolean);
+}
+
+function isManualConstruct(construct = {}) {
+  const provenanceSource = String(construct.provenance?.source ?? "").trim().toLowerCase();
+  const tags = Array.isArray(construct.tags) ? construct.tags : [];
+  const signature = normalizeConstructText(construct);
+  const manualSignal = /\bmanual\b|\bowner'?s guide\b|\bquick start\b|\breference\b/.test(signature)
+    || tags.some((tag) => /\bmanual\b|\bguide\b|\breference\b/i.test(String(tag ?? "")));
+
+  return provenanceSource === "manual" && manualSignal;
+}
+
+function buildConstructSources(construct = {}) {
+  if (!construct || typeof construct !== "object") {
+    return [];
+  }
+
+  const docs = listDocAssets();
+  if (!docs.length) {
+    return [];
+  }
+
+  const sources = new Map();
+  const textBuckets = [
+    ...Object.entries(construct.context ?? {}).map(([key, value]) => ({
+      label: String(key ?? "").replace(/^\s*[-*]\s*/, "").trim() || "Referenced manual",
+      value
+    })),
+    {
+      label: "Notes",
+      value: construct.notes
+    },
+    {
+      label: "Imported from",
+      value: construct.provenance?.importedFrom
+    },
+    {
+      label: "Learned from",
+      value: construct.provenance?.learnedFromQuestion
+    }
+  ];
+
+  for (const bucket of textBuckets) {
+    for (const fileName of extractReferencedDocNames(bucket.value)) {
+      const asset = docs.find((entry) => entry.lowerName === fileName.toLowerCase());
+      if (!asset || sources.has(asset.fileName)) {
+        continue;
+      }
+
+      sources.set(asset.fileName, {
+        label: bucket.label || humanizeDocName(asset.fileName),
+        fileName: asset.fileName,
+        url: asset.url,
+        kind: extname(asset.fileName).slice(1).toLowerCase()
+      });
+    }
+  }
+
+  if (!sources.size && isManualConstruct(construct)) {
+    const signature = normalizeConstructText(construct);
+    const relatedAssets = (
+      /\bt8s\b|\bt4s\b|\btonematch\b|\bbose\b/.test(signature)
+        ? docs.filter((entry) => /t4s-t8s|tonematch/i.test(entry.lowerName))
+        : []
+    ).slice(0, 2);
+
+    for (const asset of relatedAssets) {
+      if (sources.has(asset.fileName)) {
+        continue;
+      }
+
+      sources.set(asset.fileName, {
+        label: /qsg|quick/i.test(asset.fileName) ? "Quick Start Guide" : "Owner's Guide",
+        fileName: asset.fileName,
+        url: asset.url,
+        kind: extname(asset.fileName).slice(1).toLowerCase()
+      });
+    }
+  }
+
+  return [...sources.values()];
+}
+
+function hydrateConstructForClient(construct = null) {
+  if (!construct) {
+    return null;
+  }
+
+  return {
+    ...construct,
+    provenanceSource: String(construct.provenance?.source ?? "").trim() || null,
+    isManualReference: isManualConstruct(construct),
+    sources: buildConstructSources(construct)
+  };
+}
+
+function buildReferencePayload(construct = null, meta = {}) {
+  const hydrated = hydrateConstructForClient(construct);
+  if (!hydrated) {
+    return null;
+  }
+
+  return {
+    ...hydrated,
+    matchScore: Number.isFinite(Number(meta.matchScore)) ? Number(meta.matchScore) : null,
+    matchReason: String(meta.matchReason ?? "").trim(),
+    matchRoute: String(meta.matchRoute ?? "").trim()
+  };
+}
+
+function collectReferenceIds(recall = {}) {
+  return [
+    recall.matched?.id,
+    ...(recall.candidates ?? []).map((candidate) => candidate.id)
+  ].filter(Boolean);
+}
+
+function buildBuilderReferenceSet(db, {
+  input = "",
+  subjectId = "",
+  subjectLabel = "",
+  baseConstruct = null,
+  limit = 4
+} = {}) {
+  const references = [];
+  const seen = new Set();
+  const tokens = extractReferenceTokens(`${subjectLabel} ${input}`.trim());
+  const lookups = [
+    {
+      label: subjectId ? "Active subject recall" : "Recall check",
+      recall: recallSubjectSpace(db, {
+        question: input,
+        subjectId
+      })
+    },
+    {
+      label: "Global recall check",
+      recall: recallSubjectSpace(db, {
+        question: input
+      })
+    }
+  ];
+
+  if (subjectLabel) {
+    lookups.push({
+      label: "Subject-guided recall check",
+      recall: recallSubjectSpace(db, {
+        question: `${subjectLabel} ${input}`.trim()
+      })
+    });
+  }
+
+  const manualMatches = listSubjectConstructs(db)
+    .map((construct) => ({
+      construct,
+      tokenMatches: tokens.filter((token) => normalizeConstructText(construct).includes(token)).length
+    }))
+    .filter((entry) => isManualConstruct(entry.construct) && entry.tokenMatches >= 2)
+    .sort((left, right) => right.tokenMatches - left.tokenMatches || left.construct.constructLabel.localeCompare(right.construct.constructLabel))
+    .slice(0, 2);
+
+  function pushReference(record, meta = {}) {
+    const construct = record
+      && typeof record.context === "object"
+      && !Array.isArray(record.context)
+      ? record
+      : getSubjectConstruct(db, record?.id);
+    if (!construct || seen.has(construct.id)) {
+      return;
+    }
+
+    seen.add(construct.id);
+    const reference = buildReferencePayload(construct, meta);
+    if (reference) {
+      references.push(reference);
+    }
+  }
+
+  if (baseConstruct) {
+    pushReference(baseConstruct, {
+      matchReason: "Active construct in the editor",
+      matchRoute: "editor",
+      matchScore: Number(baseConstruct.learnedCount ?? 1)
+    });
+  }
+
+  for (const lookup of lookups) {
+    const ids = collectReferenceIds(lookup.recall).slice(0, 3);
+
+    for (const id of ids) {
+      const candidate = getSubjectConstruct(db, id);
+      const candidateMeta = (lookup.recall.candidates ?? []).find((item) => item.id === id);
+
+      pushReference(candidate, {
+        matchReason: lookup.label,
+        matchRoute: lookup.recall.routing?.mode ?? "",
+        matchScore: candidateMeta?.score ?? lookup.recall.readiness?.matchedScore ?? null
+      });
+    }
+  }
+
+  for (const match of manualMatches) {
+    pushReference(match.construct, {
+      matchReason: "Manual reference scan",
+      matchRoute: "manual_scan",
+      matchScore: 500 + match.tokenMatches
+    });
+  }
+
+  return references
+    .sort((left, right) => {
+      const leftPriority = Number(left.matchRoute === "editor") * 1000
+        + Number(left.matchRoute === "manual_scan") * 900
+        + Number(left.isManualReference) * 100
+        + Number(left.matchScore ?? 0);
+      const rightPriority = Number(right.matchRoute === "editor") * 1000
+        + Number(right.matchRoute === "manual_scan") * 900
+        + Number(right.isManualReference) * 100
+        + Number(right.matchScore ?? 0);
+
+      return rightPriority - leftPriority
+        || left.constructLabel.localeCompare(right.constructLabel);
+    })
+    .slice(0, limit);
+}
+
+function buildBuilderChecks(references = []) {
+  if (!references.length) {
+    return [
+      "No strong existing construct matched the new input, so the builder drafted from the prompt alone."
+    ];
+  }
+
+  const checks = [
+    `Checked ${references.length} related construct${references.length === 1 ? "" : "s"} before drafting.`
+  ];
+  const manualReferences = references.filter((reference) => reference.isManualReference);
+
+  for (const reference of manualReferences.slice(0, 2)) {
+    checks.push(
+      reference.sources?.length
+        ? `Consulted manual reference "${reference.constructLabel}" with ${reference.sources.length} local document link${reference.sources.length === 1 ? "" : "s"}.`
+        : `Consulted manual reference "${reference.constructLabel}" while shaping the new draft.`
+    );
+  }
+
+  return checks.slice(0, 4);
 }
 
 function hasBuilderField(input = "", labels = []) {
@@ -371,6 +713,25 @@ async function resolveDatabasePath() {
   return databasePath;
 }
 
+function resolvePublicPath(pathname = "") {
+  return pathname === "/"
+    ? "/index.html"
+    : (pathname === "/soundspace" || pathname === "/soundspace/" ? "/soundspace/index.html" : pathname);
+}
+
+function resolveStaticFilePath(rootDir, relativePath) {
+  const cleanedPath = String(relativePath ?? "").replace(/^\/+/, "");
+  const filePath = join(rootDir, cleanedPath);
+  const normalizedRoot = normalize(rootDir.endsWith("\\") ? rootDir : `${rootDir}\\`);
+  const normalizedFile = normalize(filePath);
+
+  if (!normalizedFile.startsWith(normalizedRoot)) {
+    throw Object.assign(new Error("Invalid path"), { statusCode: 400 });
+  }
+
+  return filePath;
+}
+
 function openMemoryDatabase() {
   if (database) {
     return database;
@@ -389,31 +750,22 @@ function openMemoryDatabase() {
   return database;
 }
 
-async function readStaticFile(urlPath) {
-  const cleaned =
-    urlPath === "/"
-      ? "/index.html"
-      : (urlPath === "/soundspace" || urlPath === "/soundspace/" ? "/soundspace/index.html" : urlPath);
-  const filePath = join(publicDir, cleaned.replace(/^\/+/, ""));
-
-  if (!normalize(filePath).startsWith(normalize(publicDir))) {
-    throw Object.assign(new Error("Invalid path"), { statusCode: 400 });
-  }
-
+async function readStaticFile(urlPath, rootDir = publicDir) {
+  const filePath = resolveStaticFilePath(rootDir, urlPath);
   return readFile(filePath);
 }
 
 async function handleStatic(req, res) {
   const url = new URL(req.url, "http://localhost");
   const pathname = decodeURIComponent(url.pathname);
-  const resolvedPath =
-    pathname === "/"
-      ? "/index.html"
-      : (pathname === "/soundspace" || pathname === "/soundspace/" ? "/soundspace/index.html" : pathname);
+  const isDocsRequest = pathname.startsWith("/docs/");
+  const resolvedPath = isDocsRequest
+    ? pathname.replace(/^\/docs\/+/, "")
+    : resolvePublicPath(pathname);
   const extension = extname(resolvedPath);
 
   try {
-    const data = await readStaticFile(pathname);
+    const data = await readStaticFile(resolvedPath, isDocsRequest ? docsDir : publicDir);
     res.writeHead(200, {
       "Cache-Control": "no-store",
       "Content-Type": mimeTypes[extension] ?? "application/octet-stream"
@@ -468,7 +820,7 @@ async function handleApi(req, res) {
     }
 
     const subjectId = url.searchParams.get("subjectId") ?? url.searchParams.get("subject") ?? "";
-    const constructs = listSubjectConstructs(db, subjectId);
+    const constructs = listSubjectConstructs(db, subjectId).map((construct) => hydrateConstructForClient(construct));
 
     sendJson(res, 200, {
       ok: true,
@@ -529,6 +881,13 @@ async function handleApi(req, res) {
       subjectLabel: requestedSubjectLabel
     }), input);
     const mergeMode = baseConstruct ? "extend" : "draft";
+    const checkedReferences = buildBuilderReferenceSet(db, {
+      input,
+      subjectId,
+      subjectLabel: requestedSubjectLabel,
+      baseConstruct
+    });
+    const buildChecks = buildBuilderChecks(checkedReferences);
     const heuristicConstruct = baseConstruct
       ? mergeSubjectConstruct(baseConstruct, heuristicDraft, {
         preserveId: true,
@@ -551,7 +910,8 @@ async function handleApi(req, res) {
           input,
           subjectId: heuristicConstruct.subjectId,
           subjectLabel: heuristicConstruct.subjectLabel,
-          seedDraft: heuristicConstruct
+          seedDraft: heuristicConstruct,
+          references: checkedReferences
         });
         const apiConstruct = buildSuggestedConstructFromAssist({
           subjectId: heuristicConstruct.subjectId,
@@ -581,12 +941,14 @@ async function handleApi(req, res) {
       source,
       input,
       mergeMode,
+      buildChecks,
+      checkedReferences,
       warning,
       promptMetrics: buildPromptMetrics(input),
       config,
-      heuristicConstruct,
+      heuristicConstruct: hydrateConstructForClient(heuristicConstruct),
       assist,
-      suggestedConstruct,
+      suggestedConstruct: hydrateConstructForClient(suggestedConstruct),
       responseId
     });
     return;
@@ -647,7 +1009,7 @@ async function handleApi(req, res) {
 
     sendJson(res, 200, {
       ok: true,
-      construct: saved,
+      construct: hydrateConstructForClient(saved),
       subjects: listSubjectSpaces(db),
       count: listSubjectConstructs(db, saved.subjectId).length
     });
@@ -730,8 +1092,8 @@ async function handleApi(req, res) {
       },
       recall,
       assist: assistResult.assist,
-      suggestedConstruct,
-      savedConstruct,
+      suggestedConstruct: hydrateConstructForClient(suggestedConstruct),
+      savedConstruct: hydrateConstructForClient(savedConstruct),
       responseId: assistResult.responseId
     });
     return;
