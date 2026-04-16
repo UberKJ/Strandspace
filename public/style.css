@@ -34,6 +34,10 @@ body {
     linear-gradient(180deg, #fbf4eb 0%, var(--bg) 45%, #f5e8d8 100%);
 }
 
+a {
+  color: inherit;
+}
+
 button,
 input,
 textarea,
@@ -49,6 +53,62 @@ button {
   width: min(1380px, calc(100% - 32px));
   margin: 0 auto;
   padding: 20px 0 40px;
+}
+
+.page-switch {
+  width: min(1380px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 18px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand-mark {
+  color: var(--ink);
+  text-decoration: none;
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.page-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.switch-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(71, 48, 31, 0.12);
+  background: rgba(255, 252, 247, 0.76);
+  color: var(--muted);
+  text-decoration: none;
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease, color 180ms ease;
+}
+
+.switch-link:hover {
+  transform: translateY(-1px);
+  border-color: rgba(181, 109, 54, 0.28);
+  color: var(--ink);
+}
+
+.switch-link.is-active {
+  border-color: rgba(181, 109, 54, 0.34);
+  background: linear-gradient(135deg, rgba(181, 109, 54, 0.12), rgba(255, 252, 247, 0.94));
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.builder-shell {
+  padding-top: 14px;
 }
 
 .hero,
@@ -634,6 +694,10 @@ h3 {
   background: linear-gradient(180deg, rgba(255, 252, 247, 0.96), rgba(252, 244, 236, 0.84));
 }
 
+.builder-hero .builder-card {
+  margin-top: 4px;
+}
+
 .builder-head {
   align-items: start;
 }
@@ -851,6 +915,10 @@ h3 {
   margin-top: 18px;
 }
 
+.recall-panel {
+  margin-top: 18px;
+}
+
 .speed-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1059,8 +1127,13 @@ h3 {
 }
 
 @media (max-width: 720px) {
+  .page-switch,
   .studio-shell {
     width: min(100%, calc(100% - 20px));
+  }
+
+  .page-switch {
+    padding-top: 14px;
   }
 
   .hero,

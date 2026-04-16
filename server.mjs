@@ -85,6 +85,195 @@ const mimeTypes = {
 let database = null;
 let databasePath = "";
 
+export function sanitizeLegacyProvenance(provenance = null) {
+  if (!provenance || typeof provenance !== "object" || Array.isArray(provenance)) {
+    return null;
+  }
+
+  const sanitized = Object.fromEntries(
+    Object.entries(provenance)
+      .filter(([, value]) => value !== null && value !== undefined && value !== "")
+      .filter(([key, value]) => !(key === "audience" && String(value).trim().toLowerCase() === "gardener"))
+  );
+
+  return Object.keys(sanitized).length ? sanitized : null;
+}
+
+function upsertMigratedSubjectConstruct(targetDb, construct = {}) {
+  ensureSubjectspaceTables(targetDb);
+  const provenance = sanitizeLegacyProvenance(construct.provenance);
+
+  targetDb.prepare(`
+    INSERT INTO subject_constructs (
+      id, subjectId, subjectLabel, constructLabel, target, objective, contextJson,
+      stepsJson, notes, tagsJson, strandsJson, provenanceJson, learnedCount, updatedAt
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      subjectId = excluded.subjectId,
+      subjectLabel = excluded.subjectLabel,
+      constructLabel = excluded.constructLabel,
+      target = excluded.target,
+      objective = excluded.objective,
+      contextJson = excluded.contextJson,
+      stepsJson = excluded.stepsJson,
+      notes = excluded.notes,
+      tagsJson = excluded.tagsJson,
+      strandsJson = excluded.strandsJson,
+      provenanceJson = excluded.provenanceJson,
+      learnedCount = excluded.learnedCount,
+      updatedAt = excluded.updatedAt
+  `).run(
+    String(construct.id ?? ""),
+    String(construct.subjectId ?? ""),
+    String(construct.subjectLabel ?? ""),
+    String(construct.constructLabel ?? ""),
+    construct.target ? String(construct.target) : null,
+    construct.objective ? String(construct.objective) : null,
+    JSON.stringify(construct.context ?? {}),
+    JSON.stringify(Array.isArray(construct.steps) ? construct.steps : []),
+    construct.notes ? String(construct.notes) : null,
+    JSON.stringify(Array.isArray(construct.tags) ? construct.tags : []),
+    JSON.stringify(Array.isArray(construct.strands) ? construct.strands : []),
+    provenance ? JSON.stringify(provenance) : null,
+    Math.max(Number(construct.learnedCount ?? 1) || 1, 1),
+    String(construct.updatedAt ?? new Date().toISOString())
+  );
+}
+
+function upsertMigratedSoundConstruct(targetDb, construct = {}) {
+  ensureSoundspaceTables(targetDb);
+  const provenance = sanitizeLegacyProvenance(construct.provenance);
+
+  targetDb.prepare(`
+    INSERT INTO sound_constructs (
+      id, name, deviceBrand, deviceModel, deviceType, sourceType, goal, venueSize,
+      eventType, speakerConfig, setupJson, tagsJson, strandsJson, llmSummary,
+      provenanceJson, learnedCount, updatedAt
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      deviceBrand = excluded.deviceBrand,
+      deviceModel = excluded.deviceModel,
+      deviceType = excluded.deviceType,
+      sourceType = excluded.sourceType,
+      goal = excluded.goal,
+      venueSize = excluded.venueSize,
+      eventType = excluded.eventType,
+      speakerConfig = excluded.speakerConfig,
+      setupJson = excluded.setupJson,
+      tagsJson = excluded.tagsJson,
+      strandsJson = excluded.strandsJson,
+      llmSummary = excluded.llmSummary,
+      provenanceJson = excluded.provenanceJson,
+      learnedCount = excluded.learnedCount,
+      updatedAt = excluded.updatedAt
+  `).run(
+    String(construct.id ?? ""),
+    String(construct.name ?? ""),
+    construct.deviceBrand ? String(construct.deviceBrand) : null,
+    construct.deviceModel ? String(construct.deviceModel) : null,
+    construct.deviceType ? String(construct.deviceType) : null,
+    construct.sourceType ? String(construct.sourceType) : null,
+    construct.goal ? String(construct.goal) : null,
+    construct.venueSize ? String(construct.venueSize) : null,
+    construct.eventType ? String(construct.eventType) : null,
+    construct.speakerConfig ? String(construct.speakerConfig) : null,
+    JSON.stringify(construct.setup ?? {}),
+    JSON.stringify(Array.isArray(construct.tags) ? construct.tags : []),
+    JSON.stringify(Array.isArray(construct.strands) ? construct.strands : []),
+    construct.llmSummary ? String(construct.llmSummary) : null,
+    provenance ? JSON.stringify(provenance) : null,
+    Math.max(Number(construct.learnedCount ?? 1) || 1, 1),
+    String(construct.updatedAt ?? new Date().toISOString())
+  );
+}
+
+function countConstructs(db) {
+  ensureSubjectspaceTables(db);
+  ensureSoundspaceTables(db);
+
+  const subjectCount = Number(db.prepare("SELECT COUNT(*) as count FROM subject_constructs").get().count ?? 0);
+  const soundCount = Number(db.prepare("SELECT COUNT(*) as count FROM sound_constructs").get().count ?? 0);
+
+  return {
+    subjectCount,
+    soundCount
+  };
+}
+
+async function listLegacyDatabaseCandidates() {
+  try {
+    return (await readdir(dataDir))
+      .filter((name) => name.endsWith(".sqlite") && name !== "strandspace.sqlite")
+      .sort((left, right) => {
+        const leftLower = left.toLowerCase();
+        const rightLower = right.toLowerCase();
+        const leftPenalty = Number(/backup|copy|test|tmp/.test(leftLower));
+        const rightPenalty = Number(/backup|copy|test|tmp/.test(rightLower));
+
+        return leftPenalty - rightPenalty
+          || left.length - right.length
+          || left.localeCompare(right);
+      });
+  } catch {
+    return [];
+  }
+}
+
+export function migrateLegacyDatabase(sourcePath, targetPath = preferredDatabasePath) {
+  const sourceDb = new DatabaseSync(sourcePath);
+  const targetDb = new DatabaseSync(targetPath);
+
+  try {
+    targetDb.exec("PRAGMA journal_mode = WAL;");
+    ensureSubjectspaceTables(targetDb);
+    ensureSoundspaceTables(targetDb);
+
+    const subjectConstructs = listSubjectConstructs(sourceDb);
+    const soundConstructs = listSoundConstructs(sourceDb);
+
+    targetDb.exec("BEGIN");
+
+    try {
+      for (const construct of subjectConstructs) {
+        upsertMigratedSubjectConstruct(targetDb, construct);
+      }
+
+      for (const construct of soundConstructs) {
+        upsertMigratedSoundConstruct(targetDb, construct);
+      }
+
+      targetDb.exec("COMMIT");
+    } catch (error) {
+      try {
+        targetDb.exec("ROLLBACK");
+      } catch {
+        // Best effort rollback.
+      }
+      throw error;
+    }
+
+    return {
+      subjectCount: subjectConstructs.length,
+      soundCount: soundConstructs.length
+    };
+  } finally {
+    try {
+      sourceDb.close();
+    } catch {
+      // Database may already be closed.
+    }
+
+    try {
+      targetDb.close();
+    } catch {
+      // Database may already be closed.
+    }
+  }
+}
+
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
     "Cache-Control": "no-store",
@@ -679,34 +868,42 @@ async function resolveDatabasePath() {
     return databasePath;
   }
 
+  let preferredExists = false;
   try {
     await access(preferredDatabasePath);
-    databasePath = preferredDatabasePath;
-    return databasePath;
+    preferredExists = true;
   } catch {
-    // Fall through.
+    preferredExists = false;
   }
 
-  try {
-    const entries = (await readdir(dataDir))
-      .filter((name) => name.endsWith(".sqlite") && name !== "strandspace.sqlite")
-      .sort((left, right) => {
-        const leftLower = left.toLowerCase();
-        const rightLower = right.toLowerCase();
-        const leftPenalty = Number(/backup|copy|test|tmp/.test(leftLower));
-        const rightPenalty = Number(/backup|copy|test|tmp/.test(rightLower));
+  const legacyCandidates = await listLegacyDatabaseCandidates();
+  const legacyPath = legacyCandidates[0] ? join(dataDir, legacyCandidates[0]) : "";
 
-        return leftPenalty - rightPenalty
-          || left.length - right.length
-          || left.localeCompare(right);
-      });
+  if (preferredExists) {
+    try {
+      const preferredDb = new DatabaseSync(preferredDatabasePath);
+      const counts = countConstructs(preferredDb);
+      preferredDb.close();
 
-    if (entries[0]) {
-      databasePath = join(dataDir, entries[0]);
-      return databasePath;
+      if (counts.subjectCount === 0 && counts.soundCount === 0 && legacyPath) {
+        const migrated = migrateLegacyDatabase(legacyPath, preferredDatabasePath);
+        console.log(
+          `Migrated Strandspace data to ${preferredDatabasePath} from ${legacyPath} (${migrated.subjectCount} subject, ${migrated.soundCount} sound).`
+        );
+      }
+    } catch {
+      // If inspection fails, keep the preferred database path and let normal startup surface any issue.
     }
-  } catch {
-    // Fall through to the preferred path.
+
+    databasePath = preferredDatabasePath;
+    return databasePath;
+  }
+
+  if (legacyPath) {
+    const migrated = migrateLegacyDatabase(legacyPath, preferredDatabasePath);
+    console.log(
+      `Migrated Strandspace data to ${preferredDatabasePath} from ${legacyPath} (${migrated.subjectCount} subject, ${migrated.soundCount} sound).`
+    );
   }
 
   databasePath = preferredDatabasePath;
@@ -714,9 +911,19 @@ async function resolveDatabasePath() {
 }
 
 function resolvePublicPath(pathname = "") {
-  return pathname === "/"
-    ? "/index.html"
-    : (pathname === "/soundspace" || pathname === "/soundspace/" ? "/soundspace/index.html" : pathname);
+  if (pathname === "/" || pathname === "/builder" || pathname === "/builder/") {
+    return "/index.html";
+  }
+
+  if (pathname === "/studio" || pathname === "/studio/") {
+    return "/studio/index.html";
+  }
+
+  if (pathname === "/soundspace" || pathname === "/soundspace/") {
+    return "/soundspace/index.html";
+  }
+
+  return pathname;
 }
 
 function resolveStaticFilePath(rootDir, relativePath) {
@@ -788,6 +995,20 @@ function soundConstructAnswerPayload(source, question, construct, recall) {
   };
 }
 
+function pickDefaultSubjectId(subjects = []) {
+  const items = Array.isArray(subjects) ? subjects : [];
+  if (!items.length) {
+    return "";
+  }
+
+  return [...items]
+    .sort((left, right) => {
+      const leftTime = Date.parse(String(left.updatedAt ?? "")) || 0;
+      const rightTime = Date.parse(String(right.updatedAt ?? "")) || 0;
+      return rightTime - leftTime || left.subjectLabel.localeCompare(right.subjectLabel);
+    })[0]?.subjectId ?? items[0]?.subjectId ?? "";
+}
+
 async function handleApi(req, res) {
   const url = new URL(req.url, "http://localhost");
   const db = openMemoryDatabase();
@@ -800,9 +1021,7 @@ async function handleApi(req, res) {
     }
 
     const subjects = listSubjectSpaces(db);
-    const defaultSubjectId = subjects.find((item) => item.subjectId === "music-engineering")?.subjectId
-      ?? subjects[0]?.subjectId
-      ?? "";
+    const defaultSubjectId = pickDefaultSubjectId(subjects);
 
     sendJson(res, 200, {
       ok: true,
@@ -1360,6 +1579,7 @@ async function handleApi(req, res) {
 export async function createApp() {
   await resolveDatabasePath();
   openMemoryDatabase();
+  console.log(`Using Strandspace database at ${databasePath}`);
 
   return http.createServer(async (req, res) => {
     try {

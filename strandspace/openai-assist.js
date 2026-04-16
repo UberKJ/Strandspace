@@ -1,7 +1,13 @@
 import OpenAI from "openai";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const DEFAULT_MODEL = process.env.SUBJECTSPACE_OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-5.4-mini";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const projectRoot = join(__dirname, "..");
 
 let client = null;
 let mockAssistRunner = null;
@@ -108,14 +114,56 @@ function readWindowsUserEnvironment(name) {
   }
 }
 
+function parseApiKeyAssignment(content = "") {
+  const text = String(content ?? "");
+  const envMatch = text.match(/^\s*OPENAI_API_KEY\s*=\s*["']?([^"'`\r\n]+)["']?/m);
+  if (envMatch?.[1]) {
+    return envMatch[1].trim();
+  }
+
+  const exportMatch = text.match(/^\s*export\s+OPENAI_API_KEY\s*=\s*["']?([^"'`\r\n]+)["']?/m);
+  if (exportMatch?.[1]) {
+    return exportMatch[1].trim();
+  }
+
+  const setxMatch = text.match(/^\s*setx\s+OPENAI_API_KEY\s+"([^"\r\n]+)"/mi);
+  if (setxMatch?.[1]) {
+    return setxMatch[1].trim();
+  }
+
+  return "";
+}
+
+function readProjectConfigApiKey() {
+  if (process.env.SUBJECTSPACE_DISABLE_USER_ENV_LOOKUP === "1") {
+    return "";
+  }
+
+  const candidates = [
+    ".env",
+    ".env.local",
+    ".zshrc",
+    ".zshrc.txt"
+  ];
+
+  for (const name of candidates) {
+    try {
+      const value = parseApiKeyAssignment(readFileSync(join(projectRoot, name), "utf8"));
+      if (value) {
+        return value;
+      }
+    } catch {
+      // Ignore missing or unreadable local config files.
+    }
+  }
+
+  return "";
+}
+
 function resolveOpenAiApiKey() {
   const processKey = String(process.env.OPENAI_API_KEY ?? "").trim();
   if (processKey) {
     return processKey;
-  }
-
-  if (!canUseWindowsEnvFallback()) {
-    return "";
   }
 
   if (resolvedApiKeyLoaded) {
@@ -123,7 +171,11 @@ function resolveOpenAiApiKey() {
   }
 
   resolvedApiKeyLoaded = true;
-  resolvedApiKey = readWindowsUserEnvironment("OPENAI_API_KEY");
+  resolvedApiKey = readProjectConfigApiKey();
+
+  if (!resolvedApiKey && canUseWindowsEnvFallback()) {
+    resolvedApiKey = readWindowsUserEnvironment("OPENAI_API_KEY");
+  }
 
   if (resolvedApiKey) {
     process.env.OPENAI_API_KEY = resolvedApiKey;

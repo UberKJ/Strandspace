@@ -29,6 +29,8 @@ const learnContextInput = document.getElementById("learn-context");
 const learnStepsInput = document.getElementById("learn-steps");
 const learnNotesInput = document.getElementById("learn-notes");
 const learnTagsInput = document.getElementById("learn-tags");
+const isBuilderPage = document.body?.classList.contains("builder-page");
+const subjectStorageKey = "strandspace:last-subject-id";
 
 let subjects = [];
 let library = [];
@@ -53,6 +55,27 @@ let editorState = {
   constructLabel: "",
   subjectLabel: ""
 };
+
+function readStoredSubjectId() {
+  try {
+    return String(window.localStorage.getItem(subjectStorageKey) ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function storeSubjectId(subjectId = "") {
+  const value = String(subjectId ?? "").trim();
+  if (!value) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(subjectStorageKey, value);
+  } catch {
+    // Ignore localStorage failures.
+  }
+}
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -1107,7 +1130,7 @@ function renderLibrary() {
 }
 
 function renderIdleState() {
-  if (library[0]) {
+  if (!isBuilderPage && library[0]) {
     renderAnswer(previewPayload(library[0]));
     return;
   }
@@ -1129,15 +1152,20 @@ async function loadLibrary() {
 async function loadSubjects(preferredSubjectId = "") {
   const payload = await fetchJson("/api/subjectspace/subjects");
   subjects = payload.subjects ?? [];
+  const storedSubjectId = readStoredSubjectId();
   const preferredExists = preferredSubjectId && subjects.some((subject) => subject.subjectId === preferredSubjectId);
+  const storedExists = storedSubjectId && subjects.some((subject) => subject.subjectId === storedSubjectId);
   const currentExists = currentSubjectId && subjects.some((subject) => subject.subjectId === currentSubjectId);
 
   currentSubjectId = preferredExists
     ? preferredSubjectId
+    : storedExists
+      ? storedSubjectId
     : currentExists
       ? currentSubjectId
       : payload.defaultSubjectId ?? subjects[0]?.subjectId ?? "";
 
+  storeSubjectId(currentSubjectId);
   renderSubjectPicker();
   await loadLibrary();
 }
@@ -1200,6 +1228,7 @@ async function handleLearnSubmit(event) {
 
     const saved = response.construct;
     currentSubjectId = saved.subjectId;
+    storeSubjectId(currentSubjectId);
     resetTransientState();
     await loadSubjects(saved.subjectId);
     recallQuestionInput.value = buildExampleQuestion(saved);
@@ -1309,6 +1338,7 @@ async function saveApiAssist() {
 
     latestAssist.savedConstruct = response.construct;
     currentSubjectId = response.construct.subjectId;
+    storeSubjectId(currentSubjectId);
     latestComparison = null;
     await loadSubjects(response.construct.subjectId);
     recallQuestionInput.value = buildExampleQuestion(response.construct);
@@ -1363,6 +1393,7 @@ async function runSpeedCompare() {
 
 subjectSelect?.addEventListener("change", async () => {
   currentSubjectId = subjectSelect.value;
+  storeSubjectId(currentSubjectId);
   resetTransientState();
   renderSubjectPicker();
   await loadLibrary();

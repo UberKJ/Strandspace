@@ -3,6 +3,7 @@ import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import { DatabaseSync } from "node:sqlite";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -11,12 +12,24 @@ const docsDir = join(rootDir, "docs");
 const tempDir = join(rootDir, "tmp", "tests");
 const tempDatabasePath = join(tempDir, `strandspace-test-${Date.now()}.sqlite`);
 const tempDocPaths = [];
+const tempDatabasePaths = [tempDatabasePath];
 
 await mkdir(tempDir, { recursive: true });
 process.env.STRANDSPACE_DB_PATH = tempDatabasePath;
 
-const { createApp } = await import("../server.mjs");
+const { createApp, migrateLegacyDatabase, sanitizeLegacyProvenance } = await import("../server.mjs");
 const { __setOpenAiAssistMock } = await import("../strandspace/openai-assist.js");
+const {
+  ensureSubjectspaceTables,
+  getSubjectConstruct,
+  listSubjectConstructs,
+  upsertSubjectConstruct
+} = await import("../strandspace/subjectspace.js");
+const {
+  ensureSoundspaceTables,
+  listSoundConstructs,
+  upsertSoundConstruct
+} = await import("../strandspace/soundspace.js");
 
 const results = [];
 
@@ -65,6 +78,11 @@ async function createTempDocFixture(name = `subjectspace-test-manual-${Date.now(
   };
 }
 
+async function registerTempDatabasePath(filePath) {
+  tempDatabasePaths.push(filePath);
+  return filePath;
+}
+
 async function createSubjectConstruct(port, overrides = {}) {
   const payload = {
     subjectLabel: `Subjectspace Test ${Date.now()}`,
@@ -84,9 +102,20 @@ async function createSubjectConstruct(port, overrides = {}) {
   return learned.construct;
 }
 
-await check("GET / serves Strandspace Studio", async () => {
+await check("GET / serves the construct builder page", async () => {
   await withServer(async (address) => {
     const response = await fetch(`http://127.0.0.1:${address.port}/`);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /Strandspace Construct Builder/);
+    assert.match(html, /Turn rough notes into a reusable Strandspace construct/i);
+    assert.match(html, /Construct Builder/);
+  });
+});
+
+await check("GET /studio serves Strandspace Studio", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(`http://127.0.0.1:${address.port}/studio`);
     assert.equal(response.status, 200);
     const html = await response.text();
     assert.match(html, /Strandspace Studio/);
@@ -113,6 +142,137 @@ await check("GET /api/subjectspace/subjects exposes music engineering seeds", as
     assert.ok(payload.subjects.some((subject) => subject.subjectId === "music-engineering"));
     assert.ok(payload.defaultSubjectId);
   });
+});
+
+await check("GET /api/subjectspace/subjects prefers the most recently updated subject", async () => {
+  await withServer(async (address) => {
+    const first = await createSubjectConstruct(address.port, {
+      subjectLabel: `Recent Subject A ${Date.now()}`
+    });
+
+    const second = await createSubjectConstruct(address.port, {
+      subjectLabel: `Recent Subject B ${Date.now() + 1}`
+    });
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/subjectspace/subjects`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.defaultSubjectId, second.subjectId);
+    assert.notEqual(payload.defaultSubjectId, first.subjectId);
+  });
+});
+
+await check("legacy provenance cleanup removes gardener audience markers", async () => {
+  assert.deepEqual(
+    sanitizeLegacyProvenance({
+      source: "openai-responses",
+      learnedFromQuestion: "What is my setup?",
+      audience: "gardener"
+    }),
+    {
+      source: "openai-responses",
+      learnedFromQuestion: "What is my setup?"
+    }
+  );
+
+  assert.equal(
+    sanitizeLegacyProvenance({
+      audience: "gardener"
+    }),
+    null
+  );
+});
+
+await check("legacy database migration creates a clean strandspace database", async () => {
+  const legacyPath = await registerTempDatabasePath(join(tempDir, `rootline-legacy-${Date.now()}.sqlite`));
+  const preferredPath = await registerTempDatabasePath(join(tempDir, `strandspace-preferred-${Date.now()}.sqlite`));
+  const legacyDb = new DatabaseSync(legacyPath);
+
+  try {
+    ensureSubjectspaceTables(legacyDb);
+    ensureSoundspaceTables(legacyDb);
+
+    const subjectConstruct = upsertSubjectConstruct(legacyDb, {
+      subjectLabel: "Portrait Lighting",
+      constructLabel: "Gallery interview key light recall",
+      target: "Key light for a seated interview",
+      objective: "soft face lighting with gentle background separation",
+      context: {
+        room: "small gallery",
+        camera: "medium close-up"
+      },
+      steps: [
+        "Raise the key until the cheek has shape",
+        "Add negative fill only if the jaw disappears"
+      ],
+      notes: "Legacy construct that should migrate cleanly.",
+      tags: ["lighting", "interview"],
+      provenance: {
+        source: "manual",
+        audience: "gardener"
+      }
+    });
+
+    legacyDb.prepare("UPDATE subject_constructs SET learnedCount = ?, updatedAt = ? WHERE id = ?").run(
+      5,
+      "2026-04-15T15:02:17.569Z",
+      subjectConstruct.id
+    );
+
+    const soundConstruct = upsertSoundConstruct(legacyDb, {
+      id: "yamaha-mg10xu-test-host",
+      name: "Yamaha MG10XU test host setup",
+      deviceBrand: "Yamaha",
+      deviceModel: "MG10XU",
+      deviceType: "mixer",
+      sourceType: "microphone",
+      goal: "clear host mic",
+      venueSize: "medium",
+      eventType: "music bingo",
+      speakerConfig: "two powered speakers",
+      setup: {
+        gain: "Set clean speech gain."
+      },
+      tags: ["host mic"],
+      strands: ["device:yamaha_mg10xu"],
+      provenance: {
+        source: "openai-responses",
+        audience: "gardener"
+      }
+    });
+
+    legacyDb.prepare("UPDATE sound_constructs SET learnedCount = ?, updatedAt = ? WHERE id = ?").run(
+      3,
+      "2026-04-15T05:45:13.768Z",
+      soundConstruct.id
+    );
+  } finally {
+    legacyDb.close();
+  }
+
+  const migrated = migrateLegacyDatabase(legacyPath, preferredPath);
+  assert.equal(migrated.subjectCount, 1);
+  assert.equal(migrated.soundCount, 1);
+
+  const preferredDb = new DatabaseSync(preferredPath);
+
+  try {
+    const migratedSubject = getSubjectConstruct(preferredDb, "portrait-lighting-gallery-interview-key-light-recall");
+    assert.ok(migratedSubject);
+    assert.equal(migratedSubject.learnedCount, 5);
+    assert.equal(migratedSubject.updatedAt, "2026-04-15T15:02:17.569Z");
+    assert.equal(migratedSubject.provenance?.audience, undefined);
+
+    const migratedSounds = listSoundConstructs(preferredDb);
+    assert.equal(migratedSounds.length, 1);
+    assert.equal(migratedSounds[0].learnedCount, 3);
+    assert.equal(migratedSounds[0].provenance?.audience, undefined);
+
+    const migratedSubjects = listSubjectConstructs(preferredDb);
+    assert.equal(migratedSubjects.length, 1);
+  } finally {
+    preferredDb.close();
+  }
 });
 
 await check("POST /api/subjectspace/learn stores and recalls a custom construct", async () => {
@@ -612,9 +772,11 @@ for (const result of results) {
 }
 
 try {
-  await rm(tempDatabasePath, { force: true });
-  await rm(`${tempDatabasePath}-shm`, { force: true });
-  await rm(`${tempDatabasePath}-wal`, { force: true });
+  for (const filePath of tempDatabasePaths) {
+    await rm(filePath, { force: true });
+    await rm(`${filePath}-shm`, { force: true });
+    await rm(`${filePath}-wal`, { force: true });
+  }
   for (const docPath of tempDocPaths) {
     await rm(docPath, { force: true });
   }
