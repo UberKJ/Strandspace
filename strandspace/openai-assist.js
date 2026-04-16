@@ -246,6 +246,34 @@ function buildInput({ question, subjectId, subjectLabel, recall }) {
   ].join("\n\n");
 }
 
+function buildBuilderInstructions() {
+  return [
+    "You convert freeform notes into a reusable Strandspace subject construct draft.",
+    "Return only JSON that matches the provided schema.",
+    "Prefer apiAction draft unless the input clearly describes an existing construct that only needs validation.",
+    "Preserve concrete details from the source notes and keep them teachable back into Strandspace.",
+    "Keep context entries short, steps actionable, and notes concise."
+  ].join(" ");
+}
+
+function buildBuilderInput({ input = "", subjectId = "", subjectLabel = "General Recall", seedDraft = {} } = {}) {
+  return [
+    `Subject id: ${subjectId || "new-subject"}`,
+    `Subject label: ${subjectLabel}`,
+    `Builder input: ${input}`,
+    `Heuristic draft: ${JSON.stringify({
+      constructLabel: seedDraft.constructLabel ?? "",
+      target: seedDraft.target ?? "",
+      objective: seedDraft.objective ?? "",
+      context: seedDraft.context ?? {},
+      steps: seedDraft.steps ?? [],
+      notes: seedDraft.notes ?? "",
+      tags: seedDraft.tags ?? []
+    }, null, 2)}`,
+    "Produce the strongest reusable Strandspace construct draft you can derive from these notes."
+  ].join("\n\n");
+}
+
 function normalizeAssistPayload(payload = {}, meta = {}) {
   const contextEntries = normalizeContextEntries(payload.contextEntries);
   const tags = normalizeArray(payload.tags, 8);
@@ -267,6 +295,22 @@ function normalizeAssistPayload(payload = {}, meta = {}) {
   };
 }
 
+function normalizeUsagePayload(usage = null) {
+  if (!usage || typeof usage !== "object") {
+    return null;
+  }
+
+  const inputTokens = Number(usage.input_tokens ?? usage.inputTokens);
+  const outputTokens = Number(usage.output_tokens ?? usage.outputTokens);
+  const totalTokens = Number(usage.total_tokens ?? usage.totalTokens);
+
+  return {
+    input_tokens: Number.isFinite(inputTokens) ? inputTokens : null,
+    output_tokens: Number.isFinite(outputTokens) ? outputTokens : null,
+    total_tokens: Number.isFinite(totalTokens) ? totalTokens : null
+  };
+}
+
 export function getOpenAiAssistStatus() {
   const enabled = Boolean(mockAssistRunner || resolveOpenAiApiKey());
 
@@ -276,7 +320,7 @@ export function getOpenAiAssistStatus() {
     model: DEFAULT_MODEL,
     reason: enabled
       ? `OpenAI assist is ready on ${DEFAULT_MODEL}.`
-      : "Set OPENAI_API_KEY to enable live API validation and expansion."
+      : "Set OPENAI_API_KEY to enable live API validation, expansion, and construct drafting."
   };
 }
 
@@ -327,6 +371,60 @@ export async function generateOpenAiSubjectAssist({
   return {
     responseId: response.id,
     model: response.model ?? DEFAULT_MODEL,
+    usage: normalizeUsagePayload(response.usage),
+    assist
+  };
+}
+
+export async function generateOpenAiSubjectConstructBuilder({
+  input = "",
+  subjectId = "",
+  subjectLabel = "General Recall",
+  seedDraft = {}
+} = {}) {
+  if (mockAssistRunner) {
+    return mockAssistRunner({
+      mode: "builder",
+      input,
+      question: input,
+      subjectId,
+      subjectLabel,
+      seedDraft
+    });
+  }
+
+  const openai = getClient();
+  const response = await openai.responses.create({
+    model: DEFAULT_MODEL,
+    store: false,
+    instructions: buildBuilderInstructions(),
+    input: buildBuilderInput({
+      input,
+      subjectId,
+      subjectLabel,
+      seedDraft
+    }),
+    text: {
+      format: {
+        type: "json_schema",
+        name: "subjectspace_construct_builder",
+        strict: true,
+        schema: assistSchema()
+      }
+    }
+  });
+
+  const parsed = JSON.parse(response.output_text);
+  const assist = normalizeAssistPayload(parsed, {
+    constructLabel: seedDraft.constructLabel,
+    target: seedDraft.target,
+    objective: seedDraft.objective
+  });
+
+  return {
+    responseId: response.id,
+    model: response.model ?? DEFAULT_MODEL,
+    usage: normalizeUsagePayload(response.usage),
     assist
   };
 }

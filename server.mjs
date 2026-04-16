@@ -13,7 +13,11 @@ import {
 } from "./strandspace/soundspace.js";
 import { buildSoundConstructFromQuestion } from "./strandspace/sound-llm.js";
 import {
+  buildSubjectBenchmarkQuestionCandidates,
+  buildSubjectConstructDraftFromInput,
+  estimateTextTokens,
   ensureSubjectspaceTables,
+  mergeSubjectConstruct,
   listSubjectConstructs,
   listSubjectSpaces,
   recallSubjectSpace,
@@ -22,6 +26,7 @@ import {
 } from "./strandspace/subjectspace.js";
 import {
   buildSuggestedConstructFromAssist,
+  generateOpenAiSubjectConstructBuilder,
   generateOpenAiSubjectAssist,
   getOpenAiAssistStatus
 } from "./strandspace/openai-assist.js";
@@ -124,14 +129,160 @@ function resolveSubjectspaceLabel(db, subjectId, recall, subjects = null) {
     ?? "General Recall";
 }
 
-function buildSubjectspaceBenchmark(localLatencyMs, llm = {}) {
+function normalizePromptText(value = "") {
+  return String(value ?? "").trim().replace(/\s+/g, " ");
+}
+
+function buildPromptMetrics(question = "") {
+  const normalized = normalizePromptText(question);
+  return {
+    question: normalized,
+    characterCount: normalized.length,
+    wordCount: normalized ? normalized.split(/\s+/).length : 0,
+    estimatedTokens: estimateTextTokens(normalized)
+  };
+}
+
+function hasBuilderField(input = "", labels = []) {
+  return labels.some((label) => new RegExp(`(^|\\n)\\s*${label}\\s*:`, "i").test(input));
+}
+
+function preserveBaseFieldsForExtension(baseConstruct = null, patch = {}, input = "") {
+  if (!baseConstruct || typeof baseConstruct !== "object") {
+    return patch;
+  }
+
+  const explicitSubject = hasBuilderField(input, ["subject", "subject label", "subject name"]);
+  const explicitConstructLabel = hasBuilderField(input, ["construct", "construct label", "name", "title"]);
+  const explicitTarget = hasBuilderField(input, ["target", "focus", "device", "topic"]);
+  const explicitObjective = hasBuilderField(input, ["objective", "goal", "use case"]);
+
+  return {
+    ...patch,
+    subjectId: String(baseConstruct.subjectId ?? patch.subjectId ?? "").trim() || patch.subjectId,
+    subjectLabel: explicitSubject ? patch.subjectLabel : (baseConstruct.subjectLabel ?? patch.subjectLabel),
+    constructLabel: explicitConstructLabel ? patch.constructLabel : (baseConstruct.constructLabel ?? patch.constructLabel),
+    target: explicitTarget ? patch.target : (baseConstruct.target ?? patch.target),
+    objective: explicitObjective ? patch.objective : (baseConstruct.objective ?? patch.objective)
+  };
+}
+
+function normalizeUsageMetrics(usage = null) {
+  if (!usage || typeof usage !== "object") {
+    return null;
+  }
+
+  const inputTokens = Number(usage.input_tokens ?? usage.inputTokens);
+  const outputTokens = Number(usage.output_tokens ?? usage.outputTokens);
+  const totalTokens = Number(usage.total_tokens ?? usage.totalTokens);
+
+  return {
+    inputTokens: Number.isFinite(inputTokens) ? inputTokens : null,
+    outputTokens: Number.isFinite(outputTokens) ? outputTokens : null,
+    totalTokens: Number.isFinite(totalTokens) ? totalTokens : null
+  };
+}
+
+function selectSubjectspaceBenchmarkPrompt(db, { question = "", subjectId = "", recall = null } = {}) {
+  const original = buildPromptMetrics(question);
+  const matched = recall?.matched ?? null;
+
+  if (!matched) {
+    return {
+      question: original.question,
+      original: {
+        ...original,
+        constructId: null,
+        constructLabel: null
+      },
+      benchmark: {
+        ...original,
+        constructId: null,
+        constructLabel: null,
+        optimized: false,
+        equivalentRecall: false,
+        tokenSavings: 0,
+        characterSavings: 0,
+        selectionReason: "No stable local construct was available to shorten the benchmark prompt.",
+        usedForTiming: true
+      }
+    };
+  }
+
+  let selectedQuestion = original.question;
+  let selectedRecall = recall;
+  let selectedMetrics = original;
+
+  for (const candidateQuestion of buildSubjectBenchmarkQuestionCandidates(matched, recall?.parsed)) {
+    const candidateMetrics = buildPromptMetrics(candidateQuestion);
+    if (!candidateMetrics.question || candidateMetrics.question === original.question) {
+      continue;
+    }
+    if (
+      candidateMetrics.estimatedTokens >= original.estimatedTokens
+      && candidateMetrics.characterCount >= original.characterCount
+    ) {
+      continue;
+    }
+
+    const candidateRecall = recallSubjectSpace(db, {
+      question: candidateMetrics.question,
+      subjectId
+    });
+    if (!candidateRecall.ready || candidateRecall.matched?.id !== matched.id) {
+      continue;
+    }
+
+    if (
+      candidateMetrics.estimatedTokens < selectedMetrics.estimatedTokens
+      || (
+        candidateMetrics.estimatedTokens === selectedMetrics.estimatedTokens
+        && candidateMetrics.characterCount < selectedMetrics.characterCount
+      )
+    ) {
+      selectedQuestion = candidateMetrics.question;
+      selectedRecall = candidateRecall;
+      selectedMetrics = candidateMetrics;
+    }
+  }
+
+  const optimized = selectedQuestion !== original.question;
+
+  return {
+    question: selectedQuestion,
+    original: {
+      ...original,
+      constructId: matched.id,
+      constructLabel: matched.constructLabel
+    },
+    benchmark: {
+      ...selectedMetrics,
+      constructId: selectedRecall.matched?.id ?? matched.id,
+      constructLabel: selectedRecall.matched?.constructLabel ?? matched.constructLabel,
+      optimized,
+      equivalentRecall: Boolean(selectedRecall.ready && selectedRecall.matched?.id === matched.id),
+      tokenSavings: Math.max(original.estimatedTokens - selectedMetrics.estimatedTokens, 0),
+      characterSavings: Math.max(original.characterCount - selectedMetrics.characterCount, 0),
+      selectionReason: optimized
+        ? "A shorter benchmark prompt recalled the same construct locally, so the timing run uses the compact version."
+        : "No shorter prompt could recall the same construct locally, so the timing run stayed on the original question.",
+      usedForTiming: true
+    }
+  };
+}
+
+function buildSubjectspaceBenchmark(localLatencyMs, llm = {}, prompts = null) {
+  const promptNote = prompts?.benchmark?.tokenSavings > 0
+    ? ` Compact benchmark prompt saved about ${prompts.benchmark.tokenSavings} estimated token${prompts.benchmark.tokenSavings === 1 ? "" : "s"}.`
+    : "";
+
   if (!llm.enabled) {
     return {
       available: false,
       faster: "strandbase",
       speedup: null,
       deltaMs: null,
-      summary: `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. ${llm.reason}`
+      summary: `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. ${llm.reason}${promptNote}`.trim()
     };
   }
 
@@ -142,8 +293,8 @@ function buildSubjectspaceBenchmark(localLatencyMs, llm = {}) {
       speedup: null,
       deltaMs: Number.isFinite(llm.latencyMs) ? toLatencyMs(Math.abs(Number(llm.latencyMs) - localLatencyMs)) : null,
       summary: Number.isFinite(llm.latencyMs)
-        ? `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. The LLM path failed after ${Number(llm.latencyMs).toFixed(3)} ms: ${llm.error}`
-        : `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. The LLM benchmark failed: ${llm.error}`
+        ? `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. The LLM path failed after ${Number(llm.latencyMs).toFixed(3)} ms: ${llm.error}${promptNote}`
+        : `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. The LLM benchmark failed: ${llm.error}${promptNote}`
     };
   }
 
@@ -153,7 +304,7 @@ function buildSubjectspaceBenchmark(localLatencyMs, llm = {}) {
       faster: "strandbase",
       speedup: null,
       deltaMs: null,
-      summary: `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. The LLM benchmark failed${llm.error ? `: ${llm.error}` : "."}`
+      summary: `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. The LLM benchmark failed${llm.error ? `: ${llm.error}` : "."}${promptNote}`.trim()
     };
   }
 
@@ -169,8 +320,8 @@ function buildSubjectspaceBenchmark(localLatencyMs, llm = {}) {
     speedup,
     deltaMs,
     summary: faster === "strandbase"
-      ? `Strandbase recall was ${speedup}x faster than the LLM assist round-trip for this prompt.`
-      : `The LLM assist round-trip was ${speedup}x faster than Strandbase recall for this prompt.`
+      ? `Strandbase recall was ${speedup}x faster than the LLM assist round-trip for this prompt.${promptNote}`
+      : `The LLM assist round-trip was ${speedup}x faster than Strandbase recall for this prompt.${promptNote}`
   };
 }
 
@@ -197,7 +348,16 @@ async function resolveDatabasePath() {
   try {
     const entries = (await readdir(dataDir))
       .filter((name) => name.endsWith(".sqlite") && name !== "strandspace.sqlite")
-      .sort((left, right) => left.localeCompare(right));
+      .sort((left, right) => {
+        const leftLower = left.toLowerCase();
+        const rightLower = right.toLowerCase();
+        const leftPenalty = Number(/backup|copy|test|tmp/.test(leftLower));
+        const rightPenalty = Number(/backup|copy|test|tmp/.test(rightLower));
+
+        return leftPenalty - rightPenalty
+          || left.length - right.length
+          || left.localeCompare(right);
+      });
 
     if (entries[0]) {
       databasePath = join(dataDir, entries[0]);
@@ -329,6 +489,105 @@ async function handleApi(req, res) {
     sendJson(res, 200, {
       ok: true,
       ...getOpenAiAssistStatus()
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/subjectspace/build") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const input = String(payload.input ?? payload.text ?? payload.sourceText ?? payload.notes ?? "").trim();
+    const subjectId = String(payload.subjectId ?? payload.subject ?? "").trim();
+    const baseConstruct = payload.baseConstruct && typeof payload.baseConstruct === "object"
+      ? payload.baseConstruct
+      : null;
+    const subjects = listSubjectSpaces(db);
+    const requestedSubjectLabel = String(payload.subjectLabel ?? payload.subjectLabelText ?? "").trim()
+      || String(baseConstruct?.subjectLabel ?? "").trim()
+      || subjects.find((item) => item.subjectId === subjectId)?.subjectLabel
+      || "Custom Subject";
+
+    if (!input) {
+      sendJson(res, 400, { error: "input is required" });
+      return;
+    }
+
+    const heuristicDraft = preserveBaseFieldsForExtension(baseConstruct, buildSubjectConstructDraftFromInput(input, {
+      subjectId,
+      subjectLabel: requestedSubjectLabel
+    }), input);
+    const mergeMode = baseConstruct ? "extend" : "draft";
+    const heuristicConstruct = baseConstruct
+      ? mergeSubjectConstruct(baseConstruct, heuristicDraft, {
+        preserveId: true,
+        provenance: {
+          ...(heuristicDraft.provenance ?? {}),
+          source: "builder-heuristic-merge"
+        }
+      })
+      : heuristicDraft;
+    const config = getOpenAiAssistStatus();
+    let source = "heuristic";
+    let assist = null;
+    let responseId = null;
+    let warning = "";
+    let suggestedConstruct = heuristicConstruct;
+
+    if (payload.preferApi !== false && config.enabled) {
+      try {
+        const assistResult = await generateOpenAiSubjectConstructBuilder({
+          input,
+          subjectId: heuristicConstruct.subjectId,
+          subjectLabel: heuristicConstruct.subjectLabel,
+          seedDraft: heuristicConstruct
+        });
+        const apiConstruct = buildSuggestedConstructFromAssist({
+          subjectId: heuristicConstruct.subjectId,
+          subjectLabel: heuristicConstruct.subjectLabel,
+          assist: assistResult.assist,
+          question: input,
+          routingMode: "builder"
+        });
+
+        suggestedConstruct = mergeSubjectConstruct(heuristicConstruct, preserveBaseFieldsForExtension(baseConstruct, apiConstruct, input), {
+          preserveId: true,
+          provenance: {
+            ...(apiConstruct.provenance ?? {}),
+            source: mergeMode === "extend" ? "builder-openai-merge" : "builder-openai"
+          }
+        });
+        source = "openai";
+        assist = assistResult.assist;
+        responseId = assistResult.responseId;
+      } catch (error) {
+        warning = error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      source,
+      input,
+      mergeMode,
+      warning,
+      promptMetrics: buildPromptMetrics(input),
+      config,
+      heuristicConstruct,
+      assist,
+      suggestedConstruct,
+      responseId
     });
     return;
   }
@@ -500,10 +759,22 @@ async function handleApi(req, res) {
     }
 
     const subjects = listSubjectSpaces(db);
-    const local = measureSync(() => recallSubjectSpace(db, {
+    const originalLocal = measureSync(() => recallSubjectSpace(db, {
       question,
       subjectId
     }));
+    const prompts = selectSubjectspaceBenchmarkPrompt(db, {
+      question,
+      subjectId,
+      recall: originalLocal.result
+    });
+    const benchmarkQuestion = prompts.question || question;
+    const local = prompts.benchmark.optimized
+      ? measureSync(() => recallSubjectSpace(db, {
+        question: benchmarkQuestion,
+        subjectId
+      }))
+      : originalLocal;
     const recall = local.result;
     const subjectLabel = resolveSubjectspaceLabel(db, subjectId, recall, subjects);
     const config = getOpenAiAssistStatus();
@@ -513,9 +784,14 @@ async function handleApi(req, res) {
       provider: config.provider,
       model: config.model,
       mode: "assist_round_trip",
+      question: benchmarkQuestion,
       latencyMs: null,
       apiAction: null,
       constructLabel: null,
+      promptTokens: prompts.benchmark.estimatedTokens,
+      promptTokenSource: "estimate",
+      outputTokens: null,
+      totalTokens: null,
       reason: config.reason,
       error: null
     };
@@ -524,18 +800,23 @@ async function handleApi(req, res) {
       const started = performance.now();
       try {
         const assistResult = await generateOpenAiSubjectAssist({
-          question,
+          question: benchmarkQuestion,
           subjectId,
           subjectLabel,
           recall
         });
+        const usage = normalizeUsageMetrics(assistResult.usage);
 
         llm = {
           ...llm,
           model: assistResult.model ?? llm.model,
           latencyMs: toLatencyMs(performance.now() - started),
           apiAction: assistResult.assist?.apiAction ?? null,
-          constructLabel: assistResult.assist?.constructLabel ?? null
+          constructLabel: assistResult.assist?.constructLabel ?? null,
+          promptTokens: usage?.inputTokens ?? llm.promptTokens,
+          promptTokenSource: usage?.inputTokens ? "usage" : llm.promptTokenSource,
+          outputTokens: usage?.outputTokens ?? null,
+          totalTokens: usage?.totalTokens ?? null
         };
       } catch (error) {
         llm = {
@@ -551,8 +832,10 @@ async function handleApi(req, res) {
       question,
       subjectLabel,
       subjectId: recall.matched?.subjectId ?? subjectId,
+      prompts,
       local: {
         label: "Strandbase recall",
+        question: benchmarkQuestion,
         latencyMs: local.latencyMs,
         ready: recall.ready,
         route: recall.routing?.mode ?? null,
@@ -561,7 +844,7 @@ async function handleApi(req, res) {
         constructLabel: recall.matched?.constructLabel ?? null
       },
       llm,
-      comparison: buildSubjectspaceBenchmark(local.latencyMs, llm),
+      comparison: buildSubjectspaceBenchmark(local.latencyMs, llm, prompts),
       recall
     });
     return;

@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Strandspace Studio</title>
-    <link rel="stylesheet" href="/style.css?v=2026-04-15-speed-compare-02" />
-    <script type="module" src="/app.js?v=2026-04-15-speed-compare-02" defer></script>
+    <link rel="stylesheet" href="/style.css?v=2026-04-15-construct-edit-01" />
+    <script type="module" src="/app.js?v=2026-04-15-construct-edit-01" defer></script>
   </head>
   <body>
     <main class="studio-shell">
@@ -63,7 +63,37 @@
             <p id="learn-meta" class="meta">New subjects appear the first time you save one.</p>
           </div>
 
+          <section class="builder-card">
+            <div class="section-head builder-head">
+              <div>
+                <p class="eyebrow small">Extension</p>
+                <h3>Build from input</h3>
+              </div>
+              <p id="builder-meta" class="meta">Paste rough notes and draft a Strandspace construct before saving it.</p>
+            </div>
+
+            <form id="builder-form" class="builder-form">
+              <label for="builder-input">
+                <span>Builder input</span>
+                <textarea
+                  id="builder-input"
+                  name="builder-input"
+                  rows="7"
+                  placeholder="Subject: Portrait Lighting&#10;Target: Key light for a seated interview&#10;Objective: soft face lighting with gentle background separation&#10;Context:&#10;room: small gallery&#10;camera: medium close-up&#10;Steps:&#10;- Raise the key until the cheek has shape&#10;- Add negative fill only if the jaw disappears&#10;Notes: Use this when speed matters more than dramatic contrast.&#10;Tags: lighting, interview, softbox"
+                ></textarea>
+              </label>
+              <div class="action-row builder-actions">
+                <button type="submit" class="secondary-button">Build construct draft</button>
+                <p class="meta">Uses OpenAI when available, otherwise local Strandspace parsing.</p>
+              </div>
+            </form>
+          </section>
+
           <form id="learn-form" class="learn-form">
+            <div class="editor-toolbar">
+              <p id="learn-mode-meta" class="meta">Create a new construct or load one from the library to edit it.</p>
+              <button id="learn-cancel-edit" type="button" class="secondary-button subtle-button" hidden>Stop editing</button>
+            </div>
             <label>
               <span>Subject</span>
               <input id="learn-subject" name="subject" type="text" placeholder="Music Engineering" />
@@ -111,7 +141,9 @@
               <span>Tags</span>
               <input id="learn-tags" name="tags" type="text" placeholder="live vocal, gain staging, small venue" />
             </label>
-            <button type="submit" class="primary-button">Store construct</button>
+            <div class="action-row learn-actions">
+              <button id="learn-submit-button" type="submit" class="primary-button">Store construct</button>
+            </div>
           </form>
         </section>
 

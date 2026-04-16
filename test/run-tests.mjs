@@ -54,7 +54,7 @@ async function postJson(url, payload) {
 
 async function createSubjectConstruct(port, overrides = {}) {
   const payload = {
-    subjectLabel: `Lighting Recall ${Date.now()}`,
+    subjectLabel: `Subjectspace Test ${Date.now()}`,
     constructLabel: "Gallery interview key light recall",
     target: "Key light for a seated interview",
     objective: "soft face lighting with gentle background separation",
@@ -105,7 +105,7 @@ await check("GET /api/subjectspace/subjects exposes music engineering seeds", as
 await check("POST /api/subjectspace/learn stores and recalls a custom construct", async () => {
   await withServer(async (address) => {
     const construct = await createSubjectConstruct(address.port, {
-      subjectLabel: `Portrait Lighting Recall ${Date.now()}`
+      subjectLabel: `Recall Test Subject ${Date.now()}`
     });
 
     const response = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/answer`, {
@@ -129,7 +129,7 @@ await check("POST /api/subjectspace/learn stores and recalls a custom construct"
 await check("subjectspace routes narrow-but-ambiguous recall toward API validation", async () => {
   await withServer(async (address) => {
     const construct = await createSubjectConstruct(address.port, {
-      subjectLabel: `Portrait Lighting Validation ${Date.now()}`
+      subjectLabel: `Validation Test Subject ${Date.now()}`
     });
 
     const response = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/answer`, {
@@ -173,13 +173,162 @@ await check("GET /api/subjectspace/assist/status reports disabled without an API
   }
 });
 
-await check("POST /api/subjectspace/compare shows Strandbase faster than the mocked LLM round-trip", async () => {
+await check("POST /api/subjectspace/build drafts a construct from freeform input and the draft can be saved", async () => {
+  await withServer(async (address) => {
+    const response = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/build`, {
+      preferApi: false,
+      subjectLabel: "Portrait Lighting",
+      input: [
+        "Subject: Portrait Lighting",
+        "Target: Key light for a seated interview",
+        "Objective: soft face lighting with gentle background separation",
+        "Context:",
+        "room: small gallery",
+        "camera: medium close-up",
+        "key light: large softbox at 45 degrees",
+        "Steps:",
+        "- Raise the key until the cheek has shape",
+        "- Add negative fill only if the jaw disappears",
+        "- Keep the background about one stop under the face",
+        "Notes: Use this when speed matters more than dramatic contrast.",
+        "Tags: lighting, interview, softbox"
+      ].join("\n")
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.source, "heuristic");
+    assert.equal(payload.suggestedConstruct.subjectLabel, "Portrait Lighting");
+    assert.equal(payload.suggestedConstruct.target, "Key light for a seated interview");
+    assert.match(payload.suggestedConstruct.constructLabel, /recall/i);
+    assert.equal(payload.suggestedConstruct.context.room, "small gallery");
+    assert.equal(payload.suggestedConstruct.context.camera, "medium close-up");
+    assert.ok((payload.suggestedConstruct.steps?.length ?? 0) >= 3);
+    assert.ok((payload.promptMetrics?.estimatedTokens ?? 0) > 0);
+
+    const saveResponse = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/learn`, payload.suggestedConstruct);
+    assert.equal(saveResponse.status, 200);
+    const saved = await saveResponse.json();
+    assert.equal(saved.construct.subjectId, "portrait-lighting");
+
+    const recallResponse = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/answer`, {
+      subjectId: saved.construct.subjectId,
+      question: "Recall my key light for a seated interview in the small gallery."
+    });
+    assert.equal(recallResponse.status, 200);
+    const recalled = await recallResponse.json();
+    assert.equal(recalled.recall.ready, true);
+    assert.equal(recalled.construct.subjectId, "portrait-lighting");
+  });
+});
+
+await check("POST /api/subjectspace/learn updates an existing construct in place", async () => {
+  await withServer(async (address) => {
+    const construct = await createSubjectConstruct(address.port, {
+      subjectLabel: `Editable Subject ${Date.now()}`
+    });
+
+    const updateResponse = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/learn`, {
+      id: construct.id,
+      subjectId: construct.subjectId,
+      subjectLabel: construct.subjectLabel,
+      constructLabel: "Gallery interview key light recall refined",
+      target: construct.target,
+      objective: "soft face lighting with shoulder separation for interview framing",
+      context: "room: small gallery\ncamera: medium close-up\nbackground: charcoal paper roll",
+      steps: "Raise the key until the cheek has shape\nAdd negative fill only if the jaw disappears\nAdd a light shoulder edge if the background eats the jacket",
+      notes: "Updated construct for cleaner separation when the jacket is dark.",
+      tags: "lighting, interview, separation"
+    });
+
+    assert.equal(updateResponse.status, 200);
+    const updated = await updateResponse.json();
+    assert.equal(updated.construct.id, construct.id);
+    assert.equal(updated.construct.subjectId, construct.subjectId);
+    assert.equal(updated.construct.constructLabel, "Gallery interview key light recall refined");
+    assert.equal(updated.construct.context.background, "charcoal paper roll");
+    assert.match(updated.construct.notes, /cleaner separation/i);
+    assert.ok(Number(updated.construct.learnedCount) > Number(construct.learnedCount));
+
+    const recallResponse = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/answer`, {
+      subjectId: construct.subjectId,
+      question: "Recall my gallery interview key light refined setup with shoulder separation."
+    });
+
+    assert.equal(recallResponse.status, 200);
+    const recalled = await recallResponse.json();
+    assert.equal(recalled.recall.ready, true);
+    assert.equal(recalled.construct.id, construct.id);
+    assert.match(recalled.answer, /separation|charcoal/i);
+  });
+});
+
+await check("POST /api/subjectspace/build can merge new notes into an existing construct", async () => {
+  await withServer(async (address) => {
+    const construct = await createSubjectConstruct(address.port, {
+      subjectLabel: `Builder Merge Subject ${Date.now()}`
+    });
+
+    const buildResponse = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/build`, {
+      preferApi: false,
+      subjectId: construct.subjectId,
+      subjectLabel: construct.subjectLabel,
+      baseConstruct: construct,
+      input: [
+        "Context:",
+        "background: charcoal paper roll",
+        "Steps:",
+        "- Add a flagged hair light for shoulder separation",
+        "Notes: Add this when a dark jacket starts blending into the background.",
+        "Tags: separation, hair light"
+      ].join("\n")
+    });
+
+    assert.equal(buildResponse.status, 200);
+    const merged = await buildResponse.json();
+    assert.equal(merged.mergeMode, "extend");
+    assert.equal(merged.source, "heuristic");
+    assert.equal(merged.suggestedConstruct.id, construct.id);
+    assert.equal(merged.suggestedConstruct.constructLabel, construct.constructLabel);
+    assert.equal(merged.suggestedConstruct.target, construct.target);
+    assert.equal(merged.suggestedConstruct.context.room, "small gallery");
+    assert.equal(merged.suggestedConstruct.context.background, "charcoal paper roll");
+    assert.ok(merged.suggestedConstruct.steps.includes("Add a flagged hair light for shoulder separation"));
+    assert.ok(merged.suggestedConstruct.tags.includes("softbox"));
+    assert.ok(merged.suggestedConstruct.tags.includes("hair light"));
+    assert.match(merged.suggestedConstruct.notes, /speed matters/i);
+    assert.match(merged.suggestedConstruct.notes, /dark jacket/i);
+
+    const saveResponse = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/learn`, merged.suggestedConstruct);
+    assert.equal(saveResponse.status, 200);
+    const saved = await saveResponse.json();
+    assert.equal(saved.construct.id, construct.id);
+
+    const recallResponse = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/answer`, {
+      subjectId: construct.subjectId,
+      question: "Recall my gallery interview key light with shoulder separation and a dark jacket."
+    });
+
+    assert.equal(recallResponse.status, 200);
+    const recalled = await recallResponse.json();
+    assert.equal(recalled.recall.ready, true);
+    assert.equal(recalled.construct.id, construct.id);
+    assert.match(recalled.answer, /separation|dark jacket|charcoal/i);
+  });
+});
+
+await check("POST /api/subjectspace/compare compacts the prompt and shows Strandbase faster than the mocked LLM round-trip", async () => {
   __setOpenAiAssistMock(async ({ question, subjectLabel }) => {
     await new Promise((resolve) => setTimeout(resolve, 35));
 
     return {
       responseId: "resp_mock_compare_subjectspace",
       model: "gpt-5.4-mini",
+      usage: {
+        input_tokens: 18,
+        output_tokens: 52,
+        total_tokens: 70
+      },
       assist: {
         apiAction: "validate",
         constructLabel: `${subjectLabel} speed benchmark draft`,
@@ -208,20 +357,31 @@ await check("POST /api/subjectspace/compare shows Strandbase faster than the moc
     });
     const response = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/compare`, {
       subjectId: construct.subjectId,
-      question: "What is my gallery interview tungsten setup?"
+      question: "What is my gallery interview key light setup with the softbox at 45 degrees in the small gallery when I need soft face lighting and gentle background separation?"
     });
 
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.equal(payload.local.label, "Strandbase recall");
     assert.ok(Number(payload.local.latencyMs) > 0);
+    assert.equal(payload.prompts.original.constructId, construct.id);
+    assert.equal(payload.prompts.benchmark.constructId, construct.id);
+    assert.equal(payload.prompts.benchmark.equivalentRecall, true);
+    assert.equal(payload.prompts.benchmark.usedForTiming, true);
+    assert.ok(payload.prompts.benchmark.optimized);
+    assert.ok(Number(payload.prompts.original.estimatedTokens) > Number(payload.prompts.benchmark.estimatedTokens));
+    assert.ok(String(payload.prompts.benchmark.question).length < String(payload.prompts.original.question).length);
     assert.equal(payload.llm.enabled, true);
     assert.equal(payload.llm.mode, "assist_round_trip");
     assert.ok(Number(payload.llm.latencyMs) >= 30);
+    assert.equal(payload.llm.promptTokens, 18);
+    assert.equal(payload.llm.promptTokenSource, "usage");
+    assert.equal(payload.llm.totalTokens, 70);
     assert.equal(payload.comparison.available, true);
     assert.equal(payload.comparison.faster, "strandbase");
     assert.ok(Number(payload.comparison.speedup) >= 1);
     assert.match(String(payload.comparison.summary), /Strandbase recall was/i);
+    assert.match(String(payload.comparison.summary), /estimated token/i);
   });
 
   __setOpenAiAssistMock(null);

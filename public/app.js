@@ -12,8 +12,14 @@ const speedReportEl = document.getElementById("speed-report");
 const speedCompareButton = document.getElementById("speed-compare-button");
 const libraryMetaEl = document.getElementById("library-meta");
 const libraryListEl = document.getElementById("library-list");
+const builderForm = document.getElementById("builder-form");
+const builderMetaEl = document.getElementById("builder-meta");
+const builderInput = document.getElementById("builder-input");
 const learnForm = document.getElementById("learn-form");
 const learnMetaEl = document.getElementById("learn-meta");
+const learnModeMetaEl = document.getElementById("learn-mode-meta");
+const learnCancelEditButton = document.getElementById("learn-cancel-edit");
+const learnSubmitButton = document.getElementById("learn-submit-button");
 const learnSubjectInput = document.getElementById("learn-subject");
 const learnConstructInput = document.getElementById("learn-construct");
 const learnTargetInput = document.getElementById("learn-target");
@@ -38,6 +44,13 @@ let latestComparison = null;
 let benchmarkState = {
   phase: "idle",
   message: ""
+};
+let editorState = {
+  mode: "new",
+  constructId: "",
+  subjectId: "",
+  constructLabel: "",
+  subjectLabel: ""
 };
 
 function escapeHtml(value) {
@@ -80,6 +93,15 @@ function formatMilliseconds(value) {
   return `${Number(value).toFixed(Number(value) >= 10 ? 1 : 3)} ms`;
 }
 
+function formatTokenCount(value, { approximate = false } = {}) {
+  if (!Number.isFinite(Number(value))) {
+    return "n/a";
+  }
+
+  const rounded = Math.round(Number(value));
+  return `${approximate ? "~" : ""}${rounded} token${rounded === 1 ? "" : "s"}`;
+}
+
 function previewQuestion(value = "", limit = 112) {
   const normalized = String(value ?? "").trim().replace(/\s+/g, " ");
   if (normalized.length <= limit) {
@@ -97,17 +119,19 @@ function benchmarkSummaryLine(comparisonPayload = null) {
   const local = comparisonPayload?.local ?? {};
   const llm = comparisonPayload?.llm ?? {};
   const comparison = comparisonPayload?.comparison ?? {};
+  const prompts = comparisonPayload?.prompts ?? {};
+  const promptSavings = Number(prompts.benchmark?.tokenSavings ?? 0);
 
   if (!comparisonPayload) {
     return "";
   }
 
   if (comparison.available) {
-    return `Strandbase ${formatMilliseconds(local.latencyMs)} | LLM ${formatMilliseconds(llm.latencyMs)} | ${comparison.speedup}x faster`;
+    return `Strandbase ${formatMilliseconds(local.latencyMs)} | LLM ${formatMilliseconds(llm.latencyMs)} | ${comparison.speedup}x faster${promptSavings > 0 ? ` | ${promptSavings} est. tokens saved` : ""}`;
   }
 
   if (Number.isFinite(Number(local.latencyMs))) {
-    return `Strandbase ${formatMilliseconds(local.latencyMs)} | LLM ${formatMilliseconds(llm.latencyMs)} | ${llm.error ?? llm.reason ?? "LLM unavailable"}`;
+    return `Strandbase ${formatMilliseconds(local.latencyMs)} | LLM ${formatMilliseconds(llm.latencyMs)} | ${llm.error ?? llm.reason ?? "LLM unavailable"}${promptSavings > 0 ? ` | ${promptSavings} est. tokens saved` : ""}`;
   }
 
   return comparison.summary ?? benchmarkState.message ?? "";
@@ -188,6 +212,219 @@ function previewPayload(construct) {
       trace: previewTrace(construct)
     }
   };
+}
+
+function draftPayload(construct, { source = "heuristic", input = "", mergeMode = "draft" } = {}) {
+  const confidence = source === "openai" ? 0.86 : 0.72;
+  const draft = {
+    ...construct,
+    learnedCount: Number(construct.learnedCount ?? 1)
+  };
+  const mergedIntoExisting = mergeMode === "extend";
+
+  return {
+    source: "builder",
+    question: input,
+    answer: mergedIntoExisting
+      ? (source === "openai"
+        ? `New input was merged into the active construct with OpenAI assist. Review the changes, tighten anything ambiguous, then update it in Strandspace.`
+        : `New input was merged into the active construct locally. Review the changes, tighten anything ambiguous, then update it in Strandspace.`)
+      : (source === "openai"
+        ? `Construct draft built from your input with OpenAI assist. Review the fields, tighten anything ambiguous, then save it to Strandspace.`
+        : `Construct draft built locally from your input. Review the fields, tighten anything ambiguous, then save it to Strandspace.`),
+    construct: draft,
+    recall: {
+      ready: true,
+      readiness: {
+        matchedScore: 1,
+        matchedRatio: 1,
+        margin: 1,
+        confidence
+      },
+      candidates: [
+        {
+          constructLabel: draft.constructLabel,
+          score: 1
+        }
+      ],
+      routing: {
+        mode: "builder_draft",
+        label: mergedIntoExisting
+          ? (source === "openai" ? "OpenAI-assisted construct extension" : "Local construct extension")
+          : (source === "openai" ? "OpenAI-assisted construct draft" : "Local construct draft"),
+        confidence,
+        margin: 1,
+        matchedRatio: 1,
+        apiRecommended: false,
+        reason: mergedIntoExisting
+          ? (source === "openai"
+            ? "The builder merged new notes into the active construct and used the API to refine the update."
+            : "The builder merged new notes into the active construct using local parsing only.")
+          : (source === "openai"
+            ? "The builder converted your notes into a structured construct draft and used the API to refine it."
+            : "The builder converted your notes into a structured construct draft using local parsing only."),
+        nextAction: mergedIntoExisting
+          ? "Review the merged fields, then update the construct when it looks right."
+          : "Review the generated fields, then store the construct when it looks right.",
+        promptDraft: "",
+        missingKeywords: []
+      },
+      trace: previewTrace(draft)
+    }
+  };
+}
+
+function serializeContext(context = {}) {
+  return contextEntries(context)
+    .map(([key, value]) => `${key}: ${value}`)
+    .join("\n");
+}
+
+function serializeSteps(steps = []) {
+  return (Array.isArray(steps) ? steps : [])
+    .map((step) => String(step ?? "").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function applyConstructDraftToLearnForm(construct = {}) {
+  learnSubjectInput.value = construct.subjectLabel ?? "";
+  learnConstructInput.value = construct.constructLabel ?? "";
+  learnTargetInput.value = construct.target ?? "";
+  learnObjectiveInput.value = construct.objective ?? "";
+  learnContextInput.value = serializeContext(construct.context);
+  learnStepsInput.value = serializeSteps(construct.steps);
+  learnNotesInput.value = construct.notes ?? "";
+  learnTagsInput.value = Array.isArray(construct.tags) ? construct.tags.join(", ") : "";
+}
+
+function clearLearnForm({ subjectLabel = "" } = {}) {
+  learnSubjectInput.value = subjectLabel;
+  learnConstructInput.value = "";
+  learnTargetInput.value = "";
+  learnObjectiveInput.value = "";
+  learnContextInput.value = "";
+  learnStepsInput.value = "";
+  learnNotesInput.value = "";
+  learnTagsInput.value = "";
+}
+
+function hasEditorBaseConstruct() {
+  return Boolean(editorState.constructId) && editorState.mode !== "new";
+}
+
+function currentEditorLabel() {
+  return editorState.constructLabel || learnConstructInput.value.trim() || "this construct";
+}
+
+function learnModeText() {
+  if (editorState.mode === "saved") {
+    return `Editing "${currentEditorLabel()}". Save to update this construct in place, or stop editing to create a new one.`;
+  }
+
+  if (editorState.mode === "draft") {
+    return `Working on a draft. Builder input will keep adding to "${currentEditorLabel()}". Save when the construct looks right.`;
+  }
+
+  return "Create a new construct or load one from the library to edit it.";
+}
+
+function builderModeText() {
+  if (editorState.mode === "saved") {
+    return `Add notes here to extend "${currentEditorLabel()}". New details will merge into the loaded construct.`;
+  }
+
+  if (editorState.mode === "draft") {
+    return `Add more notes to keep extending the current draft before you save it.`;
+  }
+
+  return "Paste rough notes and draft a Strandspace construct before saving it.";
+}
+
+function syncEditorUi({ learnMessage = null, builderMessage = null } = {}) {
+  if (learnModeMetaEl) {
+    learnModeMetaEl.textContent = learnMessage ?? learnModeText();
+  }
+
+  if (builderMetaEl) {
+    builderMetaEl.textContent = builderMessage ?? builderModeText();
+  }
+
+  if (learnSubmitButton) {
+    learnSubmitButton.textContent = editorState.mode === "saved" ? "Update construct" : "Store construct";
+  }
+
+  if (learnCancelEditButton) {
+    learnCancelEditButton.hidden = editorState.mode === "new";
+    learnCancelEditButton.textContent = editorState.mode === "saved" ? "Stop editing" : "Clear draft";
+  }
+
+  learnForm?.classList.toggle("is-editing", editorState.mode === "saved");
+  learnForm?.classList.toggle("is-drafting", editorState.mode === "draft");
+}
+
+function setEditorState(mode = "new", construct = {}) {
+  editorState = {
+    mode,
+    constructId: String(construct.id ?? "").trim(),
+    subjectId: String(construct.subjectId ?? "").trim(),
+    constructLabel: String(construct.constructLabel ?? "").trim(),
+    subjectLabel: String(construct.subjectLabel ?? "").trim()
+  };
+  syncEditorUi();
+  renderLibrary();
+}
+
+function clearEditorState({ resetForm = false, subjectLabel = "" } = {}) {
+  editorState = {
+    mode: "new",
+    constructId: "",
+    subjectId: "",
+    constructLabel: "",
+    subjectLabel: ""
+  };
+
+  if (resetForm) {
+    clearLearnForm({
+      subjectLabel: subjectLabel || currentSubjectLabel()
+    });
+  }
+
+  syncEditorUi();
+  renderLibrary();
+}
+
+function buildLearnPayload() {
+  const subjectLabel = learnSubjectInput.value.trim() || currentSubjectLabel();
+  const activeLabel = currentSubjectLabel().toLowerCase();
+  const subjectMatchesActive = subjectLabel.toLowerCase() === activeLabel;
+
+  return {
+    id: hasEditorBaseConstruct() ? (editorState.constructId || undefined) : undefined,
+    subjectId: hasEditorBaseConstruct()
+      ? (editorState.subjectId || (subjectMatchesActive ? (currentSubjectId || undefined) : undefined))
+      : (subjectMatchesActive ? (currentSubjectId || undefined) : undefined),
+    subjectLabel,
+    constructLabel: learnConstructInput.value.trim(),
+    target: learnTargetInput.value.trim(),
+    objective: learnObjectiveInput.value.trim(),
+    context: learnContextInput.value,
+    steps: learnStepsInput.value,
+    notes: learnNotesInput.value.trim(),
+    tags: learnTagsInput.value
+  };
+}
+
+function loadConstructIntoEditor(construct = {}, { mode = "saved", focus = false } = {}) {
+  applyConstructDraftToLearnForm(construct);
+  setEditorState(mode, construct);
+  learnMetaEl.textContent = mode === "saved"
+    ? `Editing "${construct.constructLabel}". Update any field, or add more notes with the builder.`
+    : "Draft loaded into the form. Review it, then save it to Strandspace.";
+
+  if (focus) {
+    learnConstructInput.focus();
+  }
 }
 
 function animateFresh(element) {
@@ -486,11 +723,36 @@ function renderSpeedReport() {
   const local = latestComparison.local ?? {};
   const llm = latestComparison.llm ?? {};
   const comparison = latestComparison.comparison ?? {};
+  const prompts = latestComparison.prompts ?? {};
+  const originalPrompt = prompts.original ?? {};
+  const benchmarkPrompt = prompts.benchmark ?? {};
   const llmReady = Boolean(comparison.available);
+  const llmPromptUsesActualTokens = llm.promptTokenSource === "usage";
+  const promptSavings = Number(benchmarkPrompt.tokenSavings ?? 0);
 
   speedMetaEl.textContent = benchmarkSummaryLine(latestComparison) || comparison.summary || "Benchmark complete.";
   speedReportEl.className = "speed-report";
   speedReportEl.innerHTML = `
+    <div class="speed-prompt-grid">
+      <article class="speed-prompt-card">
+        <p class="assist-kicker">Original prompt</p>
+        <strong class="speed-latency">${escapeHtml(formatTokenCount(originalPrompt.estimatedTokens, { approximate: true }))}</strong>
+        <p>"${escapeHtml(previewQuestion(originalPrompt.question ?? benchmarkQuestion, 140))}"</p>
+        <div class="speed-notes">
+          <span>${escapeHtml(`${Math.round(Number(originalPrompt.wordCount ?? 0))} words`)}</span>
+          <span>${escapeHtml(`${Math.round(Number(originalPrompt.characterCount ?? 0))} chars`)}</span>
+        </div>
+      </article>
+      <article class="speed-prompt-card${benchmarkPrompt.optimized ? " optimized" : " disabled"}">
+        <p class="assist-kicker">Benchmark prompt</p>
+        <strong class="speed-latency">${escapeHtml(formatTokenCount(benchmarkPrompt.estimatedTokens, { approximate: true }))}</strong>
+        <p>"${escapeHtml(previewQuestion(benchmarkPrompt.question ?? benchmarkQuestion, 140))}"</p>
+        <div class="speed-notes">
+          <span>${escapeHtml(benchmarkPrompt.optimized ? "Same construct confirmed locally" : "Original prompt kept")}</span>
+          <span>${escapeHtml(promptSavings > 0 ? `${promptSavings} est. tokens saved` : benchmarkPrompt.selectionReason ?? "No prompt shortening available")}</span>
+        </div>
+      </article>
+    </div>
     <div class="speed-grid">
       <article class="speed-card strandbase">
         <p class="assist-kicker">Local path</p>
@@ -498,6 +760,7 @@ function renderSpeedReport() {
         <strong class="speed-latency">${escapeHtml(formatMilliseconds(local.latencyMs))}</strong>
         <p>${escapeHtml(local.constructLabel ?? "No stable construct matched yet.")}</p>
         <div class="speed-notes">
+          <span>${escapeHtml(formatTokenCount(benchmarkPrompt.estimatedTokens, { approximate: true }))}</span>
           <span>Route ${escapeHtml(local.route ?? "unresolved")}</span>
           <span>Confidence ${escapeHtml(formatPercent(local.confidence ?? 0))}</span>
         </div>
@@ -509,6 +772,10 @@ function renderSpeedReport() {
         <p>${escapeHtml(llm.constructLabel ?? llm.error ?? llm.reason ?? "No LLM result was captured for this run.")}</p>
         <div class="speed-notes">
           <span>${escapeHtml(llm.model ?? "API")}</span>
+          <span>${escapeHtml(formatTokenCount(llm.promptTokens, { approximate: !llmPromptUsesActualTokens }))}${llmPromptUsesActualTokens ? " actual" : " est."}</span>
+          ${Number.isFinite(Number(llm.totalTokens))
+            ? `<span>${escapeHtml(`${formatTokenCount(llm.totalTokens)} total`)}</span>`
+            : ""}
           <span>${escapeHtml(llm.apiAction ?? (llm.enabled ? "assist" : "unavailable"))}</span>
         </div>
       </article>
@@ -516,8 +783,8 @@ function renderSpeedReport() {
     <div class="speed-summary">
       <p>${escapeHtml(comparison.summary ?? "Benchmark complete.")}</p>
       ${comparison.available
-        ? `<p>Delta: ${escapeHtml(formatMilliseconds(comparison.deltaMs))}. Speedup: ${escapeHtml(String(comparison.speedup))}x.</p>`
-        : `<p>Prompt: "${escapeHtml(previewQuestion(benchmarkQuestion))}"</p>`}
+        ? `<p>Delta: ${escapeHtml(formatMilliseconds(comparison.deltaMs))}. Speedup: ${escapeHtml(String(comparison.speedup))}x.${promptSavings > 0 ? ` Compact prompt savings: ${escapeHtml(formatTokenCount(promptSavings, { approximate: true }))}.` : ""}</p>`
+        : `<p>Prompt: "${escapeHtml(previewQuestion(benchmarkPrompt.question ?? benchmarkQuestion))}"</p>`}
     </div>
   `;
 }
@@ -575,10 +842,32 @@ function renderAnswer(payload = null) {
   const steps = Array.isArray(construct.steps) ? construct.steps : [];
   const tags = Array.isArray(construct.tags) ? construct.tags : [];
   const stableScore = Number(readiness.matchedScore ?? 0);
+  const answerKicker = payload.source === "preview"
+    ? "Stored construct preview"
+    : payload.source === "builder"
+      ? "Construct draft"
+      : "Expression field stabilized";
+  const constructIsStored = library.some((item) => item.id === construct.id);
+  const constructLoaded = editorState.constructId === construct.id
+    && ((constructIsStored && editorState.mode === "saved") || (!constructIsStored && editorState.mode === "draft"));
+  const answerActionLabel = constructIsStored ? "Edit construct" : "Load draft into editor";
+  const answerActions = payload.source === "builder" && constructLoaded
+    ? ""
+    : `
+      <div class="answer-actions">
+        <button
+          type="button"
+          class="assist-action-button"
+          data-construct-action="edit"
+          data-construct-id="${escapeHtml(construct.id ?? "")}"
+          ${constructLoaded ? "disabled" : ""}
+        >${escapeHtml(constructLoaded ? "Loaded in editor" : answerActionLabel)}</button>
+      </div>
+    `;
 
   answerPanelEl.className = "answer-surface";
   answerPanelEl.innerHTML = `
-    <p class="answer-kicker">${escapeHtml(payload.source === "preview" ? "Stored construct preview" : "Expression field stabilized")}</p>
+    <p class="answer-kicker">${escapeHtml(answerKicker)}</p>
     <h2>${escapeHtml(construct.constructLabel)}</h2>
     <p class="answer-copy">${escapeHtml(payload.answer ?? "Strandspace emitted a reusable construct.")}</p>
     <div class="answer-strip">
@@ -586,6 +875,7 @@ function renderAnswer(payload = null) {
       <span>${escapeHtml(construct.target || "general target")}</span>
       <span>${escapeHtml(construct.objective || `score ${stableScore.toFixed(1)}`)}</span>
     </div>
+    ${answerActions}
     ${renderRoutingPanel(routing, readiness)}
     ${renderAssistResult()}
     ${context.length
@@ -641,7 +931,10 @@ function renderSubjectPicker() {
   subjectSelect.value = currentSubjectId;
   const active = currentSubject();
   subjectMetaEl.textContent = subjectMetaText();
-  learnSubjectInput.value = active?.subjectLabel ?? learnSubjectInput.value;
+  if (editorState.mode === "new") {
+    learnSubjectInput.value = active?.subjectLabel ?? learnSubjectInput.value;
+  }
+  syncEditorUi();
 }
 
 function renderExamples() {
@@ -673,7 +966,12 @@ function renderLibrary() {
   libraryListEl.className = "library-list";
   libraryListEl.innerHTML = library
     .map((construct, index) => `
-      <button type="button" class="library-item" data-construct-id="${escapeHtml(construct.id)}" style="--delay:${index * 55}ms">
+      <button
+        type="button"
+        class="library-item${editorState.mode === "saved" && editorState.constructId === construct.id ? " is-editing" : ""}"
+        data-construct-id="${escapeHtml(construct.id)}"
+        style="--delay:${index * 55}ms"
+      >
         <strong>${escapeHtml(construct.constructLabel)}</strong>
         <span>${escapeHtml(construct.target || construct.objective || construct.subjectLabel)}</span>
         <small>${escapeHtml(contextSummary(construct.context) || "Open to preview context")}</small>
@@ -761,27 +1059,17 @@ async function handleRecallSubmit(event) {
 async function handleLearnSubmit(event) {
   event.preventDefault();
 
-  const subjectLabel = learnSubjectInput.value.trim() || currentSubjectLabel();
-  const activeLabel = currentSubjectLabel().toLowerCase();
-  const subjectMatchesActive = subjectLabel.toLowerCase() === activeLabel;
-  const payload = {
-    subjectId: subjectMatchesActive ? (currentSubjectId || undefined) : undefined,
-    subjectLabel,
-    constructLabel: learnConstructInput.value.trim(),
-    target: learnTargetInput.value.trim(),
-    objective: learnObjectiveInput.value.trim(),
-    context: learnContextInput.value,
-    steps: learnStepsInput.value,
-    notes: learnNotesInput.value.trim(),
-    tags: learnTagsInput.value
-  };
+  const payload = buildLearnPayload();
+  const isUpdatingSavedConstruct = editorState.mode === "saved";
 
   if (!payload.constructLabel && !payload.target) {
     learnMetaEl.textContent = "Name the construct or at least describe the target.";
     return;
   }
 
-  learnMetaEl.textContent = "Writing construct to Strandspace memory...";
+  learnMetaEl.textContent = isUpdatingSavedConstruct
+    ? "Updating construct in Strandspace memory..."
+    : "Writing construct to Strandspace memory...";
 
   try {
     const response = await postJson("/api/subjectspace/learn", payload);
@@ -789,21 +1077,70 @@ async function handleLearnSubmit(event) {
     const saved = response.construct;
     currentSubjectId = saved.subjectId;
     resetTransientState();
-    learnMetaEl.textContent = `Stored in ${saved.subjectLabel}.`;
     await loadSubjects(saved.subjectId);
     recallQuestionInput.value = buildExampleQuestion(saved);
     renderAnswer(previewPayload(saved));
 
-    learnConstructInput.value = "";
-    learnTargetInput.value = "";
-    learnObjectiveInput.value = "";
-    learnContextInput.value = "";
-    learnStepsInput.value = "";
-    learnNotesInput.value = "";
-    learnTagsInput.value = "";
-    learnSubjectInput.value = saved.subjectLabel;
+    if (isUpdatingSavedConstruct) {
+      loadConstructIntoEditor(saved, { mode: "saved" });
+      learnMetaEl.textContent = `Updated "${saved.constructLabel}" in ${saved.subjectLabel}.`;
+    } else {
+      clearEditorState({
+        resetForm: true,
+        subjectLabel: saved.subjectLabel
+      });
+      learnMetaEl.textContent = `Stored in ${saved.subjectLabel}.`;
+    }
+
+    builderInput.value = "";
   } catch (error) {
     learnMetaEl.textContent = error instanceof Error ? error.message : "Unable to save that construct.";
+  }
+}
+
+async function handleBuilderSubmit(event) {
+  event.preventDefault();
+
+  const input = builderInput.value.trim();
+  if (!input) {
+    builderMetaEl.textContent = "Paste some notes first so the builder has something to shape.";
+    return;
+  }
+
+  builderMetaEl.textContent = "Building a construct draft...";
+
+  try {
+    const baseConstruct = hasEditorBaseConstruct() ? buildLearnPayload() : null;
+    const response = await postJson("/api/subjectspace/build", {
+      subjectId: currentSubjectId,
+      subjectLabel: learnSubjectInput.value.trim() || currentSubjectLabel(),
+      input,
+      baseConstruct
+    });
+    const draft = response.suggestedConstruct ?? {};
+
+    applyConstructDraftToLearnForm(draft);
+    setEditorState(editorState.mode === "saved" ? "saved" : "draft", draft);
+    resetTransientState();
+    learnMetaEl.textContent = response.mergeMode === "extend"
+      ? "Merged the new input into the current construct. Review the changes, then save them."
+      : "Draft loaded into the form. Review it, then save it to Strandspace.";
+    builderMetaEl.textContent = response.source === "openai"
+      ? (response.mergeMode === "extend"
+        ? "OpenAI refined and merged the new details into the active construct."
+        : "OpenAI refined the draft from your input.")
+      : (response.warning
+        ? `Local draft loaded. API refinement was skipped: ${response.warning}`
+        : (response.mergeMode === "extend"
+          ? "Local construct merge loaded from your input."
+          : "Local construct draft loaded from your input."));
+    renderAnswer(draftPayload(draft, {
+      source: response.source ?? "heuristic",
+      input,
+      mergeMode: response.mergeMode ?? "draft"
+    }));
+  } catch (error) {
+    builderMetaEl.textContent = error instanceof Error ? error.message : "Unable to build a construct draft.";
   }
 }
 
@@ -902,7 +1239,15 @@ subjectSelect?.addEventListener("change", async () => {
 });
 
 recallForm?.addEventListener("submit", handleRecallSubmit);
+builderForm?.addEventListener("submit", handleBuilderSubmit);
 learnForm?.addEventListener("submit", handleLearnSubmit);
+learnCancelEditButton?.addEventListener("click", () => {
+  clearEditorState({
+    resetForm: true,
+    subjectLabel: currentSubjectLabel()
+  });
+  learnMetaEl.textContent = "Edit mode cleared. The form is ready for a new construct.";
+});
 
 libraryListEl?.addEventListener("click", (event) => {
   const button = event.target instanceof Element ? event.target.closest("[data-construct-id]") : null;
@@ -938,7 +1283,9 @@ exampleRowEl?.addEventListener("click", (event) => {
 });
 
 answerPanelEl?.addEventListener("click", (event) => {
-  const button = event.target instanceof Element ? event.target.closest("[data-assist-action]") : null;
+  const button = event.target instanceof Element
+    ? event.target.closest("[data-assist-action], [data-construct-action]")
+    : null;
   if (!button) {
     return;
   }
@@ -950,11 +1297,26 @@ answerPanelEl?.addEventListener("click", (event) => {
   if (action === "save") {
     void saveApiAssist();
   }
+
+  const constructAction = button.getAttribute("data-construct-action");
+  if (constructAction === "edit") {
+    const constructId = button.getAttribute("data-construct-id");
+    const previewConstruct = library.find((item) => item.id === constructId) ?? lastPayload?.construct ?? null;
+
+    if (previewConstruct) {
+      loadConstructIntoEditor(previewConstruct, {
+        mode: library.some((item) => item.id === previewConstruct.id) ? "saved" : "draft",
+        focus: true
+      });
+    }
+  }
 });
 
 speedCompareButton?.addEventListener("click", () => {
   void runSpeedCompare();
 });
+
+syncEditorUi();
 
 Promise.all([loadAssistStatus(), loadSubjects()]).catch((error) => {
   subjectMetaEl.textContent = error instanceof Error ? error.message : "Unable to load Strandspace Studio.";
