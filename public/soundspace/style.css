@@ -256,6 +256,36 @@ h3 {
   gap: 16px;
 }
 
+.result-guide {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+  margin-bottom: 18px;
+}
+
+.result-guide-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(18, 107, 115, 0.12);
+  background: rgba(249, 252, 251, 0.84);
+}
+
+.result-guide-card strong {
+  color: var(--accent-deep);
+  font: 700 0.86rem/1.3 var(--font-ui);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.result-guide-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
 .meta {
   color: var(--muted);
   font: 600 0.88rem/1.2 var(--font-ui);
@@ -405,6 +435,7 @@ h3 {
 :root[data-theme="dark"] .ghost-action,
 :root[data-theme="dark"] .workflow-panel,
 :root[data-theme="dark"] .workflow-card,
+:root[data-theme="dark"] .result-guide-card,
 :root[data-theme="dark"] .query-notes div,
 :root[data-theme="dark"] .guide-list,
 :root[data-theme="dark"] .diff-panel,
@@ -424,6 +455,7 @@ h3 {
 
 :root[data-theme="dark"] .query-notes p,
 :root[data-theme="dark"] .workflow-card p,
+:root[data-theme="dark"] .result-guide-card p,
 :root[data-theme="dark"] .guide-list,
 :root[data-theme="dark"] .focused-flow-list p,
 :root[data-theme="dark"] .answer-detail,
@@ -444,6 +476,7 @@ h3 {
 
 :root[data-theme="dark"] .guide-list li,
 :root[data-theme="dark"] .review-list.warning ul,
+:root[data-theme="dark"] .result-guide-card strong,
 :root[data-theme="dark"] .focused-flow-list strong,
 :root[data-theme="dark"] .setup-grid p,
 :root[data-theme="dark"] .answer-badge,
@@ -1040,6 +1073,7 @@ h3 {
   }
 
   .query-notes,
+  .result-guide,
   .memory-grid {
     grid-template-columns: 1fr;
   }

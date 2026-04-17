@@ -364,9 +364,9 @@ function renderReviewPanel(review = null) {
       <div class="review-head">
         <div>
           <span class="detail-label">${escapeHtml(review.sourceLabel ?? "Proposal")}</span>
-          <h3>${escapeHtml(review.title ?? "Review proposal")}</h3>
+          <h3>${escapeHtml(review.canLearn ? "Commit To Construct" : (review.title ?? "Need More Information"))}</h3>
         </div>
-        <span class="meta">${escapeHtml(review.canLearn ? "Ready to add" : "Needs more detail")}</span>
+        <span class="meta">${escapeHtml(review.canLearn ? "Commit to construct" : "Need more information")}</span>
       </div>
       <p class="answer-detail">${escapeHtml(review.nextAction ?? "")}</p>
       ${changeSummary.length ? `
@@ -387,14 +387,14 @@ function renderReviewPanel(review = null) {
       ` : ""}
       ${missingInformation.length ? `
         <div class="review-list warning">
-          <strong>Missing information</strong>
+          <strong>Need more information</strong>
           <ul>
             ${missingInformation.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
           </ul>
         </div>
       ` : ""}
       <div class="review-actions">
-        ${review.canLearn ? `<button type="button" class="primary-action review-action" data-review-action="store">Add To Strandspace</button>` : ""}
+        ${review.canLearn ? `<button type="button" class="primary-action review-action" data-review-action="store">Commit To Construct</button>` : ""}
         <button type="button" class="ghost-action review-action" data-review-action="refine">Refine Question</button>
       </div>
     </section>
@@ -526,7 +526,7 @@ function renderAssistFollowUps(payload = null) {
       ${showSavePrompt ? `
         <p class="answer-detail">${escapeHtml(`Do you want this saved as a reusable ${construct.deviceModel} scene for future searches?`)}</p>
         <div class="review-actions">
-          <button type="button" class="primary-action review-action" data-review-action="store">${escapeHtml(`Save as reusable ${construct.deviceModel} scene`)}</button>
+          <button type="button" class="primary-action review-action" data-review-action="store">${escapeHtml(`Commit ${construct.deviceModel} construct`)}</button>
           <button type="button" class="ghost-action review-action" data-review-action="refine">Refine before saving</button>
         </div>
       ` : ""}

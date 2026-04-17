@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Music Engineer</title>
-    <link rel="stylesheet" href="/soundspace/style.css?v=2026-04-16-05" />
-    <script type="module" src="/soundspace/app.js?v=2026-04-16-05" defer></script>
+    <link rel="stylesheet" href="/soundspace/style.css?v=2026-04-16-06" />
+    <script type="module" src="/soundspace/app.js?v=2026-04-16-06" defer></script>
   </head>
   <body>
     <header class="page-switch">
@@ -117,13 +117,12 @@
         </section>
 
         <aside class="search-guide">
-          <p class="section-tag">Behavior</p>
-          <h2>Focused Return</h2>
+          <p class="section-tag">Search Tips</p>
+          <h2>Ask It The Way You Need It Back</h2>
           <ul class="guide-list">
-            <li>Mic questions can ask for the model before locking in the strand.</li>
-            <li>Instrument queries can land directly on built-in Bose ToneMatch defaults.</li>
-            <li>Preset list queries return the available preset memory instead of one full construct.</li>
-            <li>New LLM proposals stop at review so you can confirm or reject them before they enter Strandspace.</li>
+            <li>Ask for `gain`, `EQ`, `preset`, `monitor`, or `notes` if you only want one part back.</li>
+            <li>Use the exact mixer, mic, speaker, or processor model when you want a precise construct.</li>
+            <li>Whole-rig resets can trigger AI assist, then stop at review before anything gets committed.</li>
           </ul>
         </aside>
       </section>
@@ -133,8 +132,18 @@
           <div class="panel-head">
             <div>
               <p class="section-tag">Result</p>
-              <h2>Only What You Asked For</h2>
+              <h2>Focused Return</h2>
             </div>
+          </div>
+          <div class="result-guide">
+            <article class="result-guide-card">
+              <strong>Need More Information</strong>
+              <p>If Soundspace asks for one more detail, answer that follow-up and run the search again before storing.</p>
+            </article>
+            <article class="result-guide-card">
+              <strong>Commit To Construct</strong>
+              <p>When the review looks right, commit the construct so Strandspace can reuse it on future searches.</p>
+            </article>
           </div>
           <div id="soundspace-answer" class="answer-card empty">
             <p>Ask a question to see a focused result instead of the whole memory construct.</p>
