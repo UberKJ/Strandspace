@@ -1,40 +1,158 @@
-# Strandspace Studio
+# Strandspace
 
-Strandspace Studio is a local-first recall workspace for storing reusable constructs and recalling them from partial cues.
-The current app is focused on two operating modes:
+[![Node 20+](https://img.shields.io/badge/node-20%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![License: not specified](https://img.shields.io/badge/license-not_specified-lightgrey)](#license-status)
+[![Local-first](https://img.shields.io/badge/runtime-local--first-126b73)](#why-strandspace)
 
-- `Subjectspace` for general-purpose knowledge capture and recall
-- `Soundspace` for mixer, venue, and event setup memory
+Strandspace is a local-first recall workspace for reusable knowledge constructs. It ships with two focused modes:
 
-Music engineering is seeded as the first subject, but the root flow is generic. Add a new subject once, teach a construct with context and steps, and Strandspace can recall it later without rebuilding the answer from scratch each time.
+- `Subjectspace` for structured capture and recall across a subject field
+- `Soundspace` for mixer, preset, venue, and event-specific music engineering memory
 
-## What the app does
+The app prefers local recall first, uses OpenAI only when configured, and stays useful with no API key.
 
-- Stores reusable subject constructs with target, objective, context, steps, notes, and tags
-- Recalls the closest construct from partial natural-language prompts
-- Routes borderline recalls toward OpenAI validation or expansion only when local memory is close enough
-- Compares local Strandbase recall speed against the LLM round-trip for the same prompt
-- Keeps a standalone Soundspace surface for live-audio setup recall
+Prominent white paper links:
 
-## Run locally
+- [White paper (PDF)](./strandspace-white-paper.pdf)
+- [White paper summary (Markdown)](./docs/white-paper-summary.md)
+
+## Quick Start
 
 ```bash
 npm install
+cp .env.example .env
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
-The main app is at `/` and the sound workflow is at `/soundspace`.
+- Main construct builder: `/`
+- Studio view: `/studio`
+- Soundspace / Music Engineer: `/soundspace`
 
-## Test
+If you do not set `OPENAI_API_KEY`, the app runs in local-only mode. Recall, library browsing, seed data, and construct editing still work; OpenAI assist and benchmark assist calls are simply disabled.
 
-```bash
-npm test
+## Demo Screens
+
+### Soundspace Query Guidance
+
+![Soundspace query guidance](./docs/assets/soundspace-query-guidance.png)
+
+### Benchmark View
+
+![Strandbase vs LLM benchmark](./docs/assets/benchmark-panel.png)
+
+### Query Composer
+
+![Soundspace query composer](./docs/assets/soundspace-query-composer.png)
+
+## Example Use Cases
+
+### 1. Build a reusable construct from rough notes
+
+Prompt:
+
+```text
+Subject: Music Engineering
+Target: Lead vocal on Yamaha MG10XU
+Objective: clear lead vocal with safe feedback margin
+Context:
+room: small club
+source: wired cardioid vocal mic
+Steps:
+- Trim rumble before boosting presence
+- Keep reverb subtle
 ```
 
-## Notes
+### 2. Recall only the part you need
 
-- Local runtime state is stored in SQLite and is ignored by Git.
-- `OPENAI_API_KEY` enables live assist and benchmark comparisons when available.
-- Legacy local data can still be reused if an older database is present.
+Prompt:
+
+```text
+t8s eq for handheld vocal
+```
+
+### 3. Ask for a missing mic-specific strand
+
+Prompt:
+
+```text
+t8s shure mic setting
+```
+
+### 4. Compare local recall speed with API assist
+
+Prompt:
+
+```text
+What is my festival stage scene recall habit?
+```
+
+## Why Strandspace?
+
+| Strandspace local recall | Typical LLM-only recall |
+| --- | --- |
+| Reuses stored constructs with context, steps, notes, and tags | Rebuilds an answer from scratch every time |
+| Works with no API key | Usually depends on a live model call |
+| Can answer from partial cues and only return the requested section | Often returns a broad answer unless heavily prompted |
+| Lets you extend and store improvements as memory | Improvements are easy to lose between chats |
+| Makes latency visible with compare mode | Latency is usually hidden behind a single response |
+
+Strandspace is especially useful when the answer should become better local memory after each pass instead of becoming another disconnected message.
+
+## Configuration
+
+Create `.env` from `.env.example`:
+
+```env
+# Optional - enables LLM assist and benchmarks
+OPENAI_API_KEY=sk-...
+
+# Optional - custom DB path
+STRANDSPACE_DB_PATH=data/strandspace.sqlite
+```
+
+Notes:
+
+- Default port is `3000`. Set `PORT` to override it.
+- The selected SQLite path is logged at startup.
+- OpenAI enabled/disabled state is logged at startup.
+- `STRANDSPACE_LOG_LEVEL` can be set to `debug`, `info`, `warn`, or `error`.
+- With no key, the UI falls back gracefully to local-only behavior.
+
+## Scripts
+
+```bash
+npm run dev
+npm run start
+npm run test
+npm run clean
+npm run kill
+npm run restart
+```
+
+What they do:
+
+- `clean` removes the local Strandspace SQLite files and common local server logs
+- `kill` stops project-related `node` / `npm` dev processes
+- `restart` stops the current dev process and starts the server again
+
+## Seeded Examples
+
+The bundled examples include:
+
+- music-engineering constructs for gain staging, signal flow, vocal chains, monitor mixes, feedback control, EQ troubleshooting, parallel compression, and scene recall habits
+- venue presets for small club, festival stage, conference room, studio control room, and karaoke bar workflows
+
+Use the `Reset with Examples` button in the UI to restore the demo library.
+
+## Development Notes
+
+- Local runtime state is stored in SQLite and ignored by Git.
+- Legacy local databases can still be migrated into the preferred `strandspace.sqlite` path.
+- Request timeouts and graceful shutdown handling are built in for the server and OpenAI assist layer.
+- The current automated suite lives in `test/run-tests.mjs`.
+
+## License Status
+
+This repository does not currently declare a license file. The README badge is intentionally marked as `not specified` until that changes.

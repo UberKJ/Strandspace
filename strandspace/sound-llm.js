@@ -43,6 +43,15 @@ function inferGoal(parsed) {
 }
 
 function inferSpeakerConfig(parsed) {
+  if (Array.isArray(parsed.deviceMatches) && parsed.deviceMatches.length >= 2) {
+    const models = parsed.deviceMatches.map((entry) => entry.model);
+    if (models.includes("L1 Pro8") && models.includes("ZLX-8P-G2")) {
+      return "two Bose L1 Pro8 mains with two EV ZLX-8P-G2 stage monitors";
+    }
+    if (models.includes("L1 Pro8")) {
+      return "two Bose L1 Pro8 mains";
+    }
+  }
   if (parsed.sourceType === "speaker system") {
     if (/\b(two|pair|stereo)\b/.test(String(parsed.raw ?? "").toLowerCase())) {
       return "two column arrays as front of house";
@@ -194,6 +203,13 @@ function buildSetup({ parsed, goal, baseConstruct = null }) {
   const baseSetup = baseConstruct?.setup ?? {};
   const micProfile = inferMicProfile(parsed);
   const toneMatch = inferToneMatchPreset(parsed);
+  const gearChain = parsed.gearChain ?? null;
+  const systemResetNote = parsed.wantsSystemReset
+    ? "System reset request: cover the signal path from microphone capsules through receivers, dynamics, mixer, mains, and monitors."
+    : null;
+  const detailNote = parsed.wantsDetailedWalkthrough
+    ? "User asked for step-by-step, exact-value starting points, so each section should be explicit enough to follow during a reset."
+    : null;
 
   if (parsed.sourceType === "speaker system") {
     return {
@@ -210,7 +226,10 @@ function buildSetup({ parsed, goal, baseConstruct = null }) {
         parsed.deviceBrand || parsed.deviceModel ? `Built for ${[parsed.deviceBrand, parsed.deviceModel].filter(Boolean).join(" ")}.` : null,
         `Speaker role: ${parsed.sourceType}.`,
         parsed.eventType ? `Context: ${parsed.eventType}.` : null,
-        parsed.venueSize ? `Venue: ${parsed.venueSize}.` : null
+        parsed.venueSize ? `Venue: ${parsed.venueSize}.` : null,
+        gearChain ? `Recognized gear chain: ${gearChain}.` : null,
+        systemResetNote,
+        detailNote
       ].filter(Boolean).join(" ")
     };
   }
@@ -258,7 +277,10 @@ function buildSetup({ parsed, goal, baseConstruct = null }) {
         : null,
       toneMatch?.name ? `Preset: ${[toneMatch.category, toneMatch.name].filter(Boolean).join(" > ")}.` : null,
       parsed.eventType ? `Context: ${parsed.eventType}.` : null,
-      parsed.venueSize ? `Venue: ${parsed.venueSize}.` : null
+      parsed.venueSize ? `Venue: ${parsed.venueSize}.` : null,
+      gearChain ? `Recognized gear chain: ${gearChain}.` : null,
+      systemResetNote,
+      detailNote
     ].filter(Boolean).join(" ")
   };
 }

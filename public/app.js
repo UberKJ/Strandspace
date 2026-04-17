@@ -3,6 +3,7 @@ const subjectMetaEl = document.getElementById("subject-meta");
 const recallForm = document.getElementById("recall-form");
 const recallQuestionInput = document.getElementById("recall-question");
 const recallMetaEl = document.getElementById("recall-meta");
+const suggestedRowEl = document.getElementById("suggested-row");
 const exampleRowEl = document.getElementById("example-row");
 const answerPanelEl = document.getElementById("answer-panel");
 const traceGridEl = document.getElementById("trace-grid");
@@ -12,6 +13,9 @@ const speedReportEl = document.getElementById("speed-report");
 const speedCompareButton = document.getElementById("speed-compare-button");
 const libraryMetaEl = document.getElementById("library-meta");
 const libraryListEl = document.getElementById("library-list");
+const resetExamplesButton = document.getElementById("reset-examples-button");
+const systemStatusBadgeEl = document.getElementById("system-status-badge");
+const themeToggleButton = document.getElementById("theme-toggle");
 const builderForm = document.getElementById("builder-form");
 const builderMetaEl = document.getElementById("builder-meta");
 const builderInput = document.getElementById("builder-input");
@@ -31,6 +35,13 @@ const learnNotesInput = document.getElementById("learn-notes");
 const learnTagsInput = document.getElementById("learn-tags");
 const isBuilderPage = document.body?.classList.contains("builder-page");
 const subjectStorageKey = "strandspace:last-subject-id";
+const themeStorageKey = "strandspace:theme";
+const fallbackSuggestedPrompts = [
+  "How do I set gain staging for a full band before soundcheck?",
+  "Recall my conference room speech coverage preset.",
+  "What is my festival stage scene recall habit?",
+  "How should I troubleshoot a vocal that disappears in the mix?"
+];
 
 let subjects = [];
 let library = [];
@@ -48,6 +59,7 @@ let benchmarkState = {
   phase: "idle",
   message: ""
 };
+let systemHealth = null;
 let editorState = {
   mode: "new",
   constructId: "",
@@ -55,6 +67,9 @@ let editorState = {
   constructLabel: "",
   subjectLabel: ""
 };
+
+const recallSubmitButton = recallForm?.querySelector("button[type=\"submit\"]");
+const builderSubmitButton = builderForm?.querySelector("button[type=\"submit\"]");
 
 function readStoredSubjectId() {
   try {
@@ -75,6 +90,68 @@ function storeSubjectId(subjectId = "") {
   } catch {
     // Ignore localStorage failures.
   }
+}
+
+function readStoredTheme() {
+  try {
+    return String(window.localStorage.getItem(themeStorageKey) ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function applyTheme(theme = "") {
+  const normalized = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = normalized;
+  if (themeToggleButton) {
+    themeToggleButton.textContent = normalized === "dark" ? "Light Mode" : "Dark Mode";
+  }
+
+  try {
+    window.localStorage.setItem(themeStorageKey, normalized);
+  } catch {
+    // Ignore localStorage failures.
+  }
+}
+
+function renderSystemStatusBadge(health = null) {
+  systemHealth = health;
+  if (!systemStatusBadgeEl) {
+    return;
+  }
+
+  if (!health) {
+    systemStatusBadgeEl.className = "status-badge warn";
+    systemStatusBadgeEl.textContent = "Status unavailable";
+    return;
+  }
+
+  if (health.openai?.enabled) {
+    systemStatusBadgeEl.className = "status-badge assist";
+    systemStatusBadgeEl.textContent = `Assist enabled · ${health.openai.model ?? "OpenAI"}`;
+    return;
+  }
+
+  systemStatusBadgeEl.className = "status-badge local";
+  systemStatusBadgeEl.textContent = "Local-only mode";
+}
+
+function toggleTheme() {
+  applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+}
+
+function setButtonBusy(button, isBusy, busyText = "Working...") {
+  if (!button) {
+    return;
+  }
+
+  if (!button.dataset.defaultLabel) {
+    button.dataset.defaultLabel = button.textContent ?? "";
+  }
+
+  button.disabled = Boolean(isBusy);
+  button.classList.toggle("is-busy", Boolean(isBusy));
+  button.textContent = isBusy ? busyText : button.dataset.defaultLabel;
 }
 
 function escapeHtml(value) {
@@ -176,6 +253,14 @@ function benchmarkSummaryLine(comparisonPayload = null) {
   return comparison.summary ?? benchmarkState.message ?? "";
 }
 
+function latencyBarWidth(value, reference) {
+  if (!Number.isFinite(Number(value)) || !Number.isFinite(Number(reference)) || Number(reference) <= 0) {
+    return 8;
+  }
+
+  return Math.max(8, Math.min(100, Math.round((Number(value) / Number(reference)) * 100)));
+}
+
 function subjectMetaText() {
   const active = currentSubject();
   const subjectPart = active
@@ -192,6 +277,24 @@ function buildExampleQuestion(construct) {
   const room = construct.context?.room ?? construct.context?.environment ?? construct.context?.["show type"] ?? "";
   const focus = construct.target || construct.constructLabel;
   return `Recall the ${construct.constructLabel} setup for ${focus}${room ? ` in ${room}` : ""}.`;
+}
+
+function renderSuggestedPrompts() {
+  if (!suggestedRowEl) {
+    return;
+  }
+
+  const prompts = library.length
+    ? library.slice(0, 4).map((construct) => buildExampleQuestion(construct))
+    : fallbackSuggestedPrompts;
+
+  suggestedRowEl.innerHTML = prompts
+    .map((prompt, index) => `
+      <button type="button" class="example-pill subtle-chip" data-suggested-prompt="${escapeHtml(prompt)}" style="--delay:${index * 45}ms">
+        ${escapeHtml(previewQuestion(prompt, 72))}
+      </button>
+    `)
+    .join("");
 }
 
 function previewTrace(construct) {
@@ -551,12 +654,26 @@ async function loadAssistStatus() {
   renderSpeedReport();
 }
 
+async function loadSystemHealth() {
+  try {
+    const payload = await fetchJson("/api/system/health");
+    renderSystemStatusBadge(payload);
+  } catch {
+    renderSystemStatusBadge(null);
+  }
+}
+
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, options);
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(payload.error ?? `Request failed with ${response.status}`);
+    const message = [
+      payload.error ?? `Request failed with ${response.status}`,
+      payload.detail ?? "",
+      payload.code ? `Code: ${payload.code}` : ""
+    ].filter(Boolean).join(" ");
+    throw new Error(message);
   }
 
   return payload;
@@ -570,6 +687,25 @@ function postJson(url, payload = {}) {
     },
     body: JSON.stringify(payload)
   });
+}
+
+async function resetWithExamples() {
+  setButtonBusy(resetExamplesButton, true, "Resetting...");
+
+  try {
+    const payload = await postJson("/api/system/reset-examples", {});
+    resetTransientState();
+    await loadSubjects("");
+    renderIdleState();
+    learnMetaEl.textContent = "Bundled examples restored.";
+    recallMetaEl.textContent = "Example constructs were reloaded.";
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to reset the example constructs.";
+    learnMetaEl.textContent = message;
+    recallMetaEl.textContent = message;
+  } finally {
+    setButtonBusy(resetExamplesButton, false);
+  }
 }
 
 function resetTransientState({ clearAssist = true, clearComparison = true } = {}) {
@@ -779,7 +915,7 @@ function renderSpeedReport() {
     speedReportEl.className = "speed-report loading";
     speedReportEl.innerHTML = `
       <div class="speed-summary">
-        <p>${escapeHtml(benchmarkState.message || "Timing both paths now...")}</p>
+        <p><span class="spinner-inline" aria-hidden="true"></span>${escapeHtml(benchmarkState.message || "Timing both paths now...")}</p>
         <p>Prompt: "${escapeHtml(previewQuestion(benchmarkQuestion))}"</p>
       </div>
     `;
@@ -823,6 +959,7 @@ function renderSpeedReport() {
   const llmReady = Boolean(comparison.available);
   const llmPromptUsesActualTokens = llm.promptTokenSource === "usage";
   const promptSavings = Number(benchmarkPrompt.tokenSavings ?? 0);
+  const maxLatency = Math.max(Number(local.latencyMs ?? 0), Number(llm.latencyMs ?? 0), 1);
 
   speedMetaEl.textContent = benchmarkSummaryLine(latestComparison) || comparison.summary || "Benchmark complete.";
   speedReportEl.className = "speed-report";
@@ -852,6 +989,9 @@ function renderSpeedReport() {
         <p class="assist-kicker">Local path</p>
         <h3>${escapeHtml(local.label ?? "Strandbase recall")}</h3>
         <strong class="speed-latency">${escapeHtml(formatMilliseconds(local.latencyMs))}</strong>
+        <div class="speed-bar" aria-hidden="true">
+          <span class="speed-bar-fill strandbase" style="width:${latencyBarWidth(local.latencyMs, maxLatency)}%"></span>
+        </div>
         <p>${escapeHtml(local.constructLabel ?? "No stable construct matched yet.")}</p>
         <div class="speed-notes">
           <span>${escapeHtml(formatTokenCount(benchmarkPrompt.estimatedTokens, { approximate: true }))}</span>
@@ -863,6 +1003,9 @@ function renderSpeedReport() {
         <p class="assist-kicker">LLM path</p>
         <h3>${escapeHtml(llm.label ?? "LLM assist round-trip")}</h3>
         <strong class="speed-latency">${escapeHtml(formatMilliseconds(llm.latencyMs))}</strong>
+        <div class="speed-bar" aria-hidden="true">
+          <span class="speed-bar-fill llm" style="width:${latencyBarWidth(llm.latencyMs, maxLatency)}%"></span>
+        </div>
         <p>${escapeHtml(llm.constructLabel ?? llm.error ?? llm.reason ?? "No LLM result was captured for this run.")}</p>
         <div class="speed-notes">
           <span>${escapeHtml(llm.model ?? "API")}</span>
@@ -1085,6 +1228,8 @@ function renderSubjectPicker() {
 }
 
 function renderExamples() {
+  renderSuggestedPrompts();
+
   if (!library.length) {
     exampleRowEl.innerHTML = "<p class=\"meta\">No sample prompts yet. Store a construct to generate reusable recall prompts.</p>";
     return;
@@ -1183,6 +1328,7 @@ async function handleRecallSubmit(event) {
   resetTransientState();
   lastQuestion = question;
   recallMetaEl.textContent = "Activating strands...";
+  setButtonBusy(recallSubmitButton, true, "Recalling...");
 
   try {
     const payload = await postJson("/api/subjectspace/answer", {
@@ -1197,7 +1343,7 @@ async function handleRecallSubmit(event) {
       : (routeLabel || "Nothing crossed the stability threshold yet.");
     renderAnswer(payload);
   } catch (error) {
-    recallMetaEl.textContent = "Recall failed.";
+    recallMetaEl.textContent = error instanceof Error ? error.message : "Recall failed.";
     renderAnswer({
       answer: error instanceof Error ? error.message : "Unable to recall that construct.",
       recall: {
@@ -1205,6 +1351,8 @@ async function handleRecallSubmit(event) {
         candidates: []
       }
     });
+  } finally {
+    setButtonBusy(recallSubmitButton, false);
   }
 }
 
@@ -1222,6 +1370,7 @@ async function handleLearnSubmit(event) {
   learnMetaEl.textContent = isUpdatingSavedConstruct
     ? "Updating construct in Strandspace memory..."
     : "Writing construct to Strandspace memory...";
+  setButtonBusy(learnSubmitButton, true, isUpdatingSavedConstruct ? "Updating..." : "Storing...");
 
   try {
     const response = await postJson("/api/subjectspace/learn", payload);
@@ -1248,6 +1397,8 @@ async function handleLearnSubmit(event) {
     builderInput.value = "";
   } catch (error) {
     learnMetaEl.textContent = error instanceof Error ? error.message : "Unable to save that construct.";
+  } finally {
+    setButtonBusy(learnSubmitButton, false);
   }
 }
 
@@ -1261,6 +1412,7 @@ async function handleBuilderSubmit(event) {
   }
 
   builderMetaEl.textContent = "Building a construct draft...";
+  setButtonBusy(builderSubmitButton, true, "Drafting...");
 
   try {
     const baseConstruct = hasEditorBaseConstruct() ? buildLearnPayload() : null;
@@ -1300,6 +1452,8 @@ async function handleBuilderSubmit(event) {
     }));
   } catch (error) {
     builderMetaEl.textContent = error instanceof Error ? error.message : "Unable to build a construct draft.";
+  } finally {
+    setButtonBusy(builderSubmitButton, false);
   }
 }
 
@@ -1366,6 +1520,7 @@ async function runSpeedCompare() {
       ? "Timing Strandbase recall against the LLM assist round-trip..."
       : "Timing local Strandbase recall. API assist is currently unavailable."
   };
+  setButtonBusy(speedCompareButton, true, "Benchmarking...");
   renderSpeedReport();
 
   try {
@@ -1388,6 +1543,7 @@ async function runSpeedCompare() {
     recallMetaEl.textContent = "Benchmark failed.";
   }
 
+  setButtonBusy(speedCompareButton, false);
   renderSpeedReport();
 }
 
@@ -1443,6 +1599,16 @@ exampleRowEl?.addEventListener("click", (event) => {
   renderAnswer(previewPayload(construct));
 });
 
+suggestedRowEl?.addEventListener("click", (event) => {
+  const button = event.target instanceof Element ? event.target.closest("[data-suggested-prompt]") : null;
+  if (!button) {
+    return;
+  }
+
+  recallQuestionInput.value = button.getAttribute("data-suggested-prompt") ?? "";
+  recallQuestionInput.focus();
+});
+
 answerPanelEl?.addEventListener("click", (event) => {
   const button = event.target instanceof Element
     ? event.target.closest("[data-assist-action], [data-construct-action]")
@@ -1484,8 +1650,16 @@ speedCompareButton?.addEventListener("click", () => {
   void runSpeedCompare();
 });
 
+resetExamplesButton?.addEventListener("click", () => {
+  void resetWithExamples();
+});
+
+themeToggleButton?.addEventListener("click", toggleTheme);
+
+applyTheme(readStoredTheme() || "light");
 syncEditorUi();
 renderBuilderChecks();
+renderSuggestedPrompts();
 
 Promise.all([loadAssistStatus(), loadSubjects()]).catch((error) => {
   subjectMetaEl.textContent = error instanceof Error ? error.message : "Unable to load Strandspace Studio.";
@@ -1498,3 +1672,4 @@ Promise.all([loadAssistStatus(), loadSubjects()]).catch((error) => {
     }
   });
 });
+void loadSystemHealth();

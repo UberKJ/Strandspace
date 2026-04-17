@@ -84,8 +84,189 @@ const mimeTypes = {
   ".webp": "image/webp"
 };
 
+const DEFAULT_API_TIMEOUT_MS = 15000;
+const EXTENDED_API_TIMEOUT_MS = 22000;
+const SHUTDOWN_GRACE_MS = 10000;
+const LOG_LEVELS = {
+  debug: 10,
+  info: 20,
+  warn: 30,
+  error: 40
+};
+const API_TIMEOUTS_MS = new Map([
+  ["/api/subjectspace/build", EXTENDED_API_TIMEOUT_MS],
+  ["/api/subjectspace/assist", EXTENDED_API_TIMEOUT_MS],
+  ["/api/subjectspace/compare", EXTENDED_API_TIMEOUT_MS],
+  ["/api/subjectspace/answer", DEFAULT_API_TIMEOUT_MS],
+  ["/api/subjectspace/recall", DEFAULT_API_TIMEOUT_MS],
+  ["/api/soundspace/answer", EXTENDED_API_TIMEOUT_MS],
+  ["/api/soundspace/recall", DEFAULT_API_TIMEOUT_MS],
+  ["/api/soundspace", DEFAULT_API_TIMEOUT_MS]
+]);
+
 let database = null;
 let databasePath = "";
+let shutdownRegistered = false;
+let shutdownInProgress = false;
+const appStartedAt = Date.now();
+const configuredLogLevel = String(process.env.STRANDSPACE_LOG_LEVEL ?? process.env.LOG_LEVEL ?? "info").trim().toLowerCase();
+const activeLogLevel = Object.hasOwn(LOG_LEVELS, configuredLogLevel) ? configuredLogLevel : "info";
+
+function shouldLog(level = "info") {
+  const normalizedLevel = String(level ?? "info").trim().toLowerCase();
+  return (LOG_LEVELS[normalizedLevel] ?? LOG_LEVELS.info) >= LOG_LEVELS[activeLogLevel];
+}
+
+function logEvent(level = "info", message = "", details = null) {
+  if (!shouldLog(level)) {
+    return;
+  }
+
+  const normalizedLevel = String(level ?? "info").trim().toUpperCase() || "INFO";
+  const timestamp = new Date().toISOString();
+  const logger = normalizedLevel === "WARN" || normalizedLevel === "ERROR" ? console.error : console.log;
+
+  if (details && typeof details === "object" && Object.keys(details).length) {
+    logger(`[${timestamp}] [${normalizedLevel}] ${message}`, details);
+    return;
+  }
+
+  logger(`[${timestamp}] [${normalizedLevel}] ${message}`);
+}
+
+function getApiRouteTimeoutMs(pathname = "") {
+  return API_TIMEOUTS_MS.get(String(pathname ?? "").trim()) ?? DEFAULT_API_TIMEOUT_MS;
+}
+
+function buildApiTimeoutPayload(pathname = "", timeoutMs = DEFAULT_API_TIMEOUT_MS) {
+  return {
+    ok: false,
+    code: "REQUEST_TIMEOUT",
+    error: `The request to ${pathname || "this route"} timed out after ${timeoutMs}ms.`,
+    route: pathname,
+    timeoutMs
+  };
+}
+
+function buildApiErrorPayload(error, fallback = "Internal server error") {
+  const statusCode = Number(error?.statusCode ?? error?.status ?? 500) || 500;
+  const payload = error?.payload && typeof error.payload === "object"
+    ? {
+      ok: false,
+      ...error.payload
+    }
+    : {
+      ok: false,
+      code: String(error?.code ?? (statusCode >= 500 ? "INTERNAL_ERROR" : "REQUEST_FAILED")),
+      error: error instanceof Error ? error.message : String(error ?? fallback)
+    };
+
+  return {
+    statusCode,
+    payload
+  };
+}
+
+function buildSystemHealthPayload() {
+  const assistStatus = getOpenAiAssistStatus();
+  return {
+    ok: true,
+    mode: assistStatus.enabled ? "assist-enabled" : "local-only",
+    uptimeMs: Date.now() - appStartedAt,
+    logLevel: activeLogLevel,
+    database: {
+      connected: Boolean(database),
+      path: databasePath
+    },
+    openai: {
+      enabled: Boolean(assistStatus.enabled),
+      model: assistStatus.model ?? "",
+      timeoutMs: assistStatus.timeoutMs ?? null,
+      reason: assistStatus.reason ?? ""
+    }
+  };
+}
+
+function selectSoundspaceBaseConstruct(recall = {}) {
+  if (recall?.combined?.matches?.length) {
+    const primaryCombined = recall.combined.matches.find((match) => String(match.deviceType ?? "").includes("mixer"))
+      ?? recall.combined.matches[0];
+
+    if (primaryCombined) {
+      return listSoundConstructs(openMemoryDatabase()).find((construct) => construct.id === primaryCombined.id)
+        ?? recall.matched
+        ?? primaryCombined;
+    }
+  }
+
+  return recall?.matched ?? null;
+}
+
+function beginApiRequest(req, res, pathname = "") {
+  const started = performance.now();
+  const timeoutMs = getApiRouteTimeoutMs(pathname);
+  let finished = false;
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    if (finished || res.writableEnded) {
+      return;
+    }
+
+    timedOut = true;
+    sendJson(res, 504, buildApiTimeoutPayload(pathname, timeoutMs));
+    logEvent("warn", "API route timed out", {
+      route: pathname,
+      timeoutMs
+    });
+  }, timeoutMs);
+
+  timer.unref?.();
+
+  req.on("aborted", () => {
+    if (!finished) {
+      logEvent("warn", "API request aborted by client", {
+        route: pathname
+      });
+    }
+  });
+
+  function complete() {
+    finished = true;
+    clearTimeout(timer);
+  }
+
+  return {
+    pathname,
+    timeoutMs,
+    get timedOut() {
+      return timedOut;
+    },
+    get elapsedMs() {
+      return toLatencyMs(performance.now() - started);
+    },
+    complete
+  };
+}
+
+async function runTimed(label, task, meta = {}) {
+  const started = performance.now();
+  try {
+    const result = await task();
+    logEvent("info", `${label} completed`, {
+      ...meta,
+      latencyMs: toLatencyMs(performance.now() - started)
+    });
+    return result;
+  } catch (error) {
+    logEvent("warn", `${label} failed`, {
+      ...meta,
+      latencyMs: toLatencyMs(performance.now() - started),
+      error: error instanceof Error ? error.message : String(error)
+    });
+    throw error;
+  }
+}
+
 
 export function sanitizeLegacyProvenance(provenance = null) {
   if (!provenance || typeof provenance !== "object" || Array.isArray(provenance)) {
@@ -287,6 +468,10 @@ export function migrateLegacyDatabase(sourcePath, targetPath = preferredDatabase
 }
 
 function sendJson(res, statusCode, payload) {
+  if (!res || res.writableEnded) {
+    return;
+  }
+
   res.writeHead(statusCode, {
     "Cache-Control": "no-store",
     "Content-Type": "application/json; charset=utf-8"
@@ -295,6 +480,10 @@ function sendJson(res, statusCode, payload) {
 }
 
 function sendText(res, statusCode, text) {
+  if (!res || res.writableEnded) {
+    return;
+  }
+
   res.writeHead(statusCode, {
     "Cache-Control": "no-store",
     "Content-Type": "text/plain; charset=utf-8"
@@ -378,6 +567,15 @@ function buildPromptMetrics(question = "") {
     wordCount: normalized ? normalized.split(/\s+/).length : 0,
     estimatedTokens: estimateTextTokens(normalized)
   };
+}
+
+function previewQuestionForLogs(question = "", limit = 96) {
+  const normalized = normalizePromptText(question);
+  if (normalized.length <= limit) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, Math.max(limit - 3, 1))}...`;
 }
 
 function humanizeDocName(value = "") {
@@ -970,6 +1168,56 @@ function openMemoryDatabase() {
   return database;
 }
 
+export function closeMemoryDatabase() {
+  if (!database) {
+    return false;
+  }
+
+  try {
+    database.close();
+    logEvent("info", "SQLite database connection closed", {
+      databasePath
+    });
+  } catch (error) {
+    logEvent("warn", "SQLite database close reported an error", {
+      databasePath,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  } finally {
+    database = null;
+  }
+
+  return true;
+}
+
+export function resetExampleData(targetDb = openMemoryDatabase()) {
+  ensureSubjectspaceTables(targetDb);
+  ensureSoundspaceTables(targetDb);
+
+  targetDb.exec("BEGIN");
+  try {
+    targetDb.exec("DELETE FROM sound_constructs;");
+    targetDb.exec("DELETE FROM subject_constructs;");
+    targetDb.exec("COMMIT");
+  } catch (error) {
+    try {
+      targetDb.exec("ROLLBACK");
+    } catch {
+      // Best effort rollback.
+    }
+    throw error;
+  }
+
+  const soundCount = Number(seedSoundspace(targetDb) ?? 0);
+  const subjectCount = Number(seedSubjectspace(targetDb) ?? 0);
+  syncSoundConstructsToSubjectspace(targetDb);
+
+  return {
+    soundCount: Number(targetDb.prepare("SELECT COUNT(*) as count FROM sound_constructs").get().count ?? soundCount),
+    subjectCount: Number(targetDb.prepare("SELECT COUNT(*) as count FROM subject_constructs").get().count ?? subjectCount)
+  };
+}
+
 async function readStaticFile(urlPath, rootDir = publicDir) {
   const filePath = resolveStaticFilePath(rootDir, urlPath);
   return readFile(filePath);
@@ -1193,7 +1441,9 @@ function pickDefaultSubjectId(subjects = []) {
 async function handleApi(req, res) {
   const url = new URL(req.url, "http://localhost");
   const db = openMemoryDatabase();
+  const requestState = beginApiRequest(req, res, url.pathname);
 
+  try {
   if (url.pathname === "/api/subjectspace/subjects") {
     if (req.method !== "GET") {
       res.writeHead(405, { Allow: "GET" });
@@ -1209,6 +1459,35 @@ async function handleApi(req, res) {
       defaultSubjectId,
       subjects
     });
+    return;
+  }
+
+  if (url.pathname === "/api/system/reset-examples") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    const counts = resetExampleData(db);
+    logEvent("info", "Example data reset", counts);
+    sendJson(res, 200, {
+      ok: true,
+      message: "Strandspace was reset with the bundled example constructs.",
+      ...counts,
+      subjects: listSubjectSpaces(db)
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/system/health") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    sendJson(res, 200, buildSystemHealthPayload());
     return;
   }
 
@@ -1306,12 +1585,16 @@ async function handleApi(req, res) {
 
     if (payload.preferApi !== false && config.enabled) {
       try {
-        const assistResult = await generateOpenAiSubjectConstructBuilder({
+        const assistResult = await runTimed("Subjectspace builder assist", () => generateOpenAiSubjectConstructBuilder({
           input,
           subjectId: heuristicConstruct.subjectId,
           subjectLabel: heuristicConstruct.subjectLabel,
           seedDraft: heuristicConstruct,
           references: checkedReferences
+        }), {
+          route: url.pathname,
+          subjectId: heuristicConstruct.subjectId,
+          input: previewQuestionForLogs(input)
         });
         const apiConstruct = buildSuggestedConstructFromAssist({
           subjectId: heuristicConstruct.subjectId,
@@ -1332,7 +1615,7 @@ async function handleApi(req, res) {
         assist = assistResult.assist;
         responseId = assistResult.responseId;
       } catch (error) {
-        warning = error instanceof Error ? error.message : String(error);
+        warning = buildApiErrorPayload(error, "OpenAI builder assist failed.").payload.error;
       }
     }
 
@@ -1362,9 +1645,17 @@ async function handleApi(req, res) {
     }
 
     const { question, subjectId } = readSubjectspaceParams(url);
-    const recall = recallSubjectSpace(db, {
+    const recallRun = measureSync(() => recallSubjectSpace(db, {
       question,
       subjectId
+    }));
+    const recall = recallRun.result;
+    logEvent("info", "Subjectspace recall completed", {
+      route: url.pathname,
+      latencyMs: recallRun.latencyMs,
+      question: previewQuestionForLogs(question),
+      ready: recall.ready,
+      subjectId: recall.matched?.subjectId ?? subjectId ?? ""
     });
 
     sendJson(res, 200, buildSubjectspaceAnswerPayload(recall, { question, subjectId }));
@@ -1447,25 +1738,32 @@ async function handleApi(req, res) {
     }
 
     const subjects = listSubjectSpaces(db);
-    const recall = recallSubjectSpace(db, {
+    const recallRun = measureSync(() => recallSubjectSpace(db, {
       question,
       subjectId
-    });
+    }));
+    const recall = recallRun.result;
     const subjectLabel = resolveSubjectspaceLabel(db, subjectId, recall, subjects);
 
     let assistResult;
     try {
-      assistResult = await generateOpenAiSubjectAssist({
+      assistResult = await runTimed("Subjectspace assist", () => generateOpenAiSubjectAssist({
         question,
         subjectId,
         subjectLabel,
         recall
+      }), {
+        route: url.pathname,
+        question: previewQuestionForLogs(question),
+        subjectId: subjectId || recall.matched?.subjectId || ""
       });
     } catch (error) {
-      sendJson(res, 502, {
-        error: error instanceof Error ? error.message : String(error),
+      const normalizedError = buildApiErrorPayload(error, "Unable to complete OpenAI assist.");
+      sendJson(res, normalizedError.statusCode, {
+        ...normalizedError.payload,
         config,
-        recall
+        recall,
+        recallLatencyMs: recallRun.latencyMs
       });
       return;
     }
@@ -1491,6 +1789,7 @@ async function handleApi(req, res) {
         model: assistResult.model ?? config.model
       },
       recall,
+      recallLatencyMs: recallRun.latencyMs,
       assist: assistResult.assist,
       suggestedConstruct: hydrateConstructForClient(suggestedConstruct),
       savedConstruct: hydrateConstructForClient(savedConstruct),
@@ -1561,11 +1860,15 @@ async function handleApi(req, res) {
     if (config.enabled) {
       const started = performance.now();
       try {
-        const assistResult = await generateOpenAiSubjectAssist({
+        const assistResult = await runTimed("Subjectspace compare assist", () => generateOpenAiSubjectAssist({
           question: benchmarkQuestion,
           subjectId,
           subjectLabel,
           recall
+        }), {
+          route: url.pathname,
+          question: previewQuestionForLogs(benchmarkQuestion),
+          subjectId: subjectId || recall.matched?.subjectId || ""
         });
         const usage = normalizeUsageMetrics(assistResult.usage);
 
@@ -1588,6 +1891,15 @@ async function handleApi(req, res) {
         };
       }
     }
+
+    logEvent("info", "Subjectspace compare completed", {
+      route: url.pathname,
+      localLatencyMs: local.latencyMs,
+      llmLatencyMs: llm.latencyMs,
+      question: previewQuestionForLogs(question),
+      subjectId: recall.matched?.subjectId ?? subjectId ?? "",
+      localReady: recall.ready
+    });
 
     sendJson(res, 200, {
       ok: true,
@@ -1633,9 +1945,17 @@ async function handleApi(req, res) {
       return;
     }
 
-    const recall = recallSubjectSpace(db, {
+    const recallRun = measureSync(() => recallSubjectSpace(db, {
       question,
       subjectId
+    }));
+    const recall = recallRun.result;
+    logEvent("info", "Subjectspace answer completed", {
+      route: url.pathname,
+      latencyMs: recallRun.latencyMs,
+      question: previewQuestionForLogs(question),
+      ready: recall.ready,
+      subjectId: recall.matched?.subjectId ?? subjectId ?? ""
     });
 
     sendJson(res, 200, buildSubjectspaceAnswerPayload(recall, { question, subjectId }));
@@ -1650,8 +1970,16 @@ async function handleApi(req, res) {
     }
 
     const question = String(url.searchParams.get("q") ?? "").trim();
-    const recall = recallSoundspace(db, question);
+    const recallRun = measureSync(() => recallSoundspace(db, question));
+    const recall = recallRun.result;
     const musicEngineering = buildMusicEngineeringContext(db, question, recall);
+    logEvent("info", "Soundspace recall completed", {
+      route: url.pathname,
+      latencyMs: recallRun.latencyMs,
+      question: previewQuestionForLogs(question),
+      ready: recall.ready,
+      deviceModel: recall.matched?.deviceModel ?? ""
+    });
 
     sendJson(res, 200, {
       ok: true,
@@ -1734,13 +2062,22 @@ async function handleApi(req, res) {
     }
     const reviewBeforeStore = payload.reviewBeforeStore === true;
 
-    const recalled = recallSoundspace(db, question);
+    const recallRun = measureSync(() => recallSoundspace(db, question));
+    const recalled = recallRun.result;
+    const preferAssistForQuery = Boolean(recalled.readiness?.prefersAssist && payload.preferApi !== false);
     const shouldUseStoredConstruct = !payload.forceGenerate
       && recalled.ready
       && recalled.matched
+      && !preferAssistForQuery
       && ["use_strandspace", "use_strandspace_combined"].includes(recalled.recommendation);
 
     if (shouldUseStoredConstruct) {
+      logEvent("info", "Soundspace answer returned stored construct", {
+        route: url.pathname,
+        latencyMs: recallRun.latencyMs,
+        question: previewQuestionForLogs(question),
+        deviceModel: recalled.matched?.deviceModel ?? ""
+      });
       sendJson(res, 200, {
         ...soundConstructAnswerPayload("strandspace", question, recalled.matched, recalled),
         ...buildMusicEngineeringContext(db, question, recalled)
@@ -1753,9 +2090,22 @@ async function handleApi(req, res) {
       generated = buildSoundConstructFromQuestion(question, {
         provider: payload.provider ?? "heuristic-llm",
         model: payload.model ?? "soundspace-template-v1",
-        baseConstruct: recalled.ready ? recalled.matched : null
+        baseConstruct: recalled.ready ? selectSoundspaceBaseConstruct(recalled) : null
       });
     } catch (error) {
+      if (recalled.searchGuidance || recalled.answer) {
+        sendJson(res, 200, {
+          ok: true,
+          source: "search-guidance",
+          question,
+          answer: recalled.answer ?? (error instanceof Error ? error.message : String(error)),
+          construct: recalled.matched ?? null,
+          recall: recalled,
+          ...buildMusicEngineeringContext(db, question, recalled)
+        });
+        return;
+      }
+
       sendJson(res, 422, {
         error: error instanceof Error ? error.message : String(error),
         recall: recalled
@@ -1767,10 +2117,14 @@ async function handleApi(req, res) {
     const config = getOpenAiAssistStatus();
     if (payload.preferApi !== false && config.enabled) {
       try {
-        const assisted = await generateOpenAiSoundConstructBuilder({
+        const assisted = await runTimed("Soundspace assist", () => generateOpenAiSoundConstructBuilder({
           question,
           recall: recalled,
           seedConstruct: generated
+        }), {
+          route: url.pathname,
+          question: previewQuestionForLogs(question),
+          deviceModel: generated.deviceModel ?? recalled.matched?.deviceModel ?? ""
         });
 
         generated = {
@@ -1824,7 +2178,16 @@ async function handleApi(req, res) {
     }
 
     const persisted = persistSoundConstruct(db, generated);
-    const refreshed = recallSoundspace(db, question);
+    const refreshedRun = measureSync(() => recallSoundspace(db, question));
+    const refreshed = refreshedRun.result;
+    logEvent("info", "Soundspace answer completed", {
+      route: url.pathname,
+      recallLatencyMs: recallRun.latencyMs,
+      refreshedLatencyMs: refreshedRun.latencyMs,
+      question: previewQuestionForLogs(question),
+      source,
+      deviceModel: persisted.soundConstruct?.deviceModel ?? ""
+    });
     sendJson(res, 200, {
       ...soundConstructAnswerPayload(source, question, persisted.soundConstruct, refreshed),
       linkedSubjectConstruct: hydrateConstructForClient(persisted.linkedSubjectConstruct),
@@ -1834,14 +2197,70 @@ async function handleApi(req, res) {
   }
 
   sendText(res, 404, "Not found");
+  } finally {
+    requestState.complete();
+  }
+}
+
+function registerGracefulShutdown(server) {
+  if (shutdownRegistered) {
+    return;
+  }
+
+  shutdownRegistered = true;
+
+  async function handleShutdown(signal = "SIGTERM") {
+    if (shutdownInProgress) {
+      return;
+    }
+
+    shutdownInProgress = true;
+    logEvent("info", "Shutdown signal received", {
+      signal
+    });
+
+    const forceExitTimer = setTimeout(() => {
+      logEvent("warn", "Forced shutdown after grace period elapsed", {
+        signal,
+        graceMs: SHUTDOWN_GRACE_MS
+      });
+      closeMemoryDatabase();
+      process.exit(1);
+    }, SHUTDOWN_GRACE_MS);
+    forceExitTimer.unref?.();
+
+    server.close(() => {
+      clearTimeout(forceExitTimer);
+      closeMemoryDatabase();
+      logEvent("info", "HTTP server closed cleanly", {
+        signal
+      });
+      process.exit(0);
+    });
+  }
+
+  process.on("SIGINT", () => {
+    void handleShutdown("SIGINT");
+  });
+  process.on("SIGTERM", () => {
+    void handleShutdown("SIGTERM");
+  });
 }
 
 export async function createApp() {
   await resolveDatabasePath();
   openMemoryDatabase();
-  console.log(`Using Strandspace database at ${databasePath}`);
+  const assistStatus = getOpenAiAssistStatus();
+  logEvent("info", "Database path selected", {
+    databasePath
+  });
+  logEvent(assistStatus.enabled ? "info" : "warn", assistStatus.enabled ? "OpenAI assist enabled" : "OpenAI assist disabled", {
+    model: assistStatus.model,
+    timeoutMs: assistStatus.timeoutMs,
+    reason: assistStatus.reason
+  });
 
-  return http.createServer(async (req, res) => {
+  const server = http.createServer(async (req, res) => {
     try {
       if (!req.url) {
         sendText(res, 400, "Missing request URL");
@@ -1866,19 +2285,42 @@ export async function createApp() {
       });
       res.end("Method not allowed");
     } catch (error) {
+      const isApiRequest = Boolean(req.url && new URL(req.url, "http://localhost").pathname.startsWith("/api/"));
+      const { statusCode, payload } = buildApiErrorPayload(error, "Internal server error");
+      logEvent("warn", "Unhandled request error", {
+        route: req.url ?? "",
+        error: error instanceof Error ? error.message : String(error)
+      });
+
+      if (isApiRequest) {
+        sendJson(res, statusCode, payload);
+        return;
+      }
+
       sendJson(res, 500, {
+        ok: false,
         error: "Internal server error",
         detail: error instanceof Error ? error.message : String(error)
       });
     }
   });
+
+  server.requestTimeout = EXTENDED_API_TIMEOUT_MS + 3000;
+  server.headersTimeout = EXTENDED_API_TIMEOUT_MS + 5000;
+  server.keepAliveTimeout = 5000;
+
+  return server;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.PORT ?? 3000);
   const server = await createApp();
+  registerGracefulShutdown(server);
 
   server.listen(port, () => {
-    console.log(`Strandspace Studio running at http://localhost:${port}`);
+    logEvent("info", "Strandspace Studio running", {
+      port,
+      url: `http://localhost:${port}`
+    });
   });
 }

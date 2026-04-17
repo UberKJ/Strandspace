@@ -28,6 +28,257 @@
   },
   {
     "subjectLabel": "Music Engineering",
+    "constructLabel": "Parallel compression drum bus",
+    "target": "Drum bus in a hybrid live-record setup",
+    "objective": "add density without flattening transients",
+    "context": {
+      "workflow": "parallel drum bus",
+      "source": "close mics plus overheads",
+      "monitoring": "studio control room",
+      "priority": "preserve transient punch"
+    },
+    "steps": [
+      "Keep the dry drum bus as the reference and build the compressed return underneath it.",
+      "Use a faster attack only if cymbals or snare crack are jumping too far forward.",
+      "Push the compressed return until the kit feels denser, then pull it back before the groove loses lift.",
+      "High-pass unnecessary low-end from the parallel path so kick weight stays intentional.",
+      "Check the blend in mono to make sure the excitement survives without smearing the image."
+    ],
+    "notes": "Parallel compression should feel like the kit got more confident, not smaller.",
+    "tags": [
+      "parallel compression",
+      "drum bus",
+      "transients",
+      "studio"
+    ]
+  },
+  {
+    "subjectLabel": "Music Engineering",
+    "constructLabel": "Vocal chain basics for new sessions",
+    "target": "General vocal chain starting point",
+    "objective": "shape a modern vocal path without over-processing",
+    "context": {
+      "workflow": "tracking to rough mix",
+      "source": "single lead vocal",
+      "environment": "project studio"
+    },
+    "steps": [
+      "Clean up the raw take before reaching for tone, especially breaths, clicks, or obvious plosives.",
+      "Use subtractive EQ before compression so the compressor is not reacting to rumble or mud.",
+      "Set the first compressor for control and the second only if the vocal still jumps out unevenly.",
+      "Add saturation or color after stability is under control, not as a fix for balance problems.",
+      "Leave delay and reverb sends low until the lyric and center image already feel solid."
+    ],
+    "notes": "A good vocal chain solves level and tone in stages instead of stacking dramatic moves too early.",
+    "tags": [
+      "vocal chain",
+      "compression",
+      "eq",
+      "mix prep"
+    ]
+  },
+  {
+    "subjectLabel": "Music Engineering",
+    "constructLabel": "Live sound signal flow check",
+    "target": "Full-band signal path before doors",
+    "objective": "verify routing before troubleshooting tone",
+    "context": {
+      "environment": "festival stage",
+      "scope": "input to speakers",
+      "priority": "catch routing faults early"
+    },
+    "steps": [
+      "Confirm source power, cabling, and input assignment before touching gain or EQ.",
+      "Check that every channel reaches the main bus and any required monitor sends.",
+      "Verify outboard, matrix, or speaker processing paths in the same order every show.",
+      "Use solo or metering to prove where signal stops instead of guessing from silence.",
+      "Finish with a talkback or playback pass through the full path so the whole system is proven."
+    ],
+    "notes": "Signal flow discipline saves more shows than clever EQ ever will.",
+    "tags": [
+      "signal flow",
+      "festival stage",
+      "routing",
+      "troubleshooting"
+    ]
+  },
+  {
+    "subjectLabel": "Music Engineering",
+    "constructLabel": "Gain staging before EQ moves",
+    "target": "Input gain decisions across a live mix",
+    "objective": "protect headroom and keep the mix responsive",
+    "context": {
+      "environment": "small club",
+      "priority": "stable headroom",
+      "workflow": "soundcheck"
+    },
+    "steps": [
+      "Set input gain from the loudest expected performance level, not the quiet rehearsal version.",
+      "Leave room for excited moments before adding compressor makeup or fader gain.",
+      "Avoid solving audibility with preamp gain when the issue is really routing or monitor balance.",
+      "Keep outputs and speakers in a healthy operating range before forcing the inputs hotter.",
+      "Recheck gain after major tone or preset changes because those moves can shift perceived level."
+    ],
+    "notes": "Gain staging is the first reliability move because every later decision depends on it.",
+    "tags": [
+      "gain staging",
+      "headroom",
+      "soundcheck",
+      "live mix"
+    ]
+  },
+  {
+    "subjectLabel": "Music Engineering",
+    "constructLabel": "Feedback control ring-out habit",
+    "target": "Ring-out for vocal mics and wedges",
+    "objective": "increase usable level without wrecking tone",
+    "context": {
+      "environment": "karaoke bar",
+      "sources": "handheld vocal mics",
+      "monitoring": "wedge monitors"
+    },
+    "steps": [
+      "Start with speaker placement and mic direction before you cut anything.",
+      "Bring the system up gradually and catch the first repeatable ring, not random room splash.",
+      "Use the narrowest cut that solves the problem and stop before the vocal gets hollow.",
+      "Re-test after each cut because feedback points move once the system changes.",
+      "Save the ring-out only after performers are on stage and monitor positions are final."
+    ],
+    "notes": "Feedback control is a sequence problem more than an EQ problem.",
+    "tags": [
+      "feedback control",
+      "ring out",
+      "karaoke",
+      "monitors"
+    ]
+  },
+  {
+    "subjectLabel": "Music Engineering",
+    "constructLabel": "Monitor mix priorities for bands",
+    "target": "Basic monitor send strategy for a 4-piece band",
+    "objective": "give each player only what supports performance",
+    "context": {
+      "environment": "small club stage",
+      "ensemble": "vocals, guitar, bass, drums",
+      "monitoring": "two wedges"
+    },
+    "steps": [
+      "Build the lead vocal first because it usually anchors timing and pitch for the room.",
+      "Add the player's own instrument only until they stop fighting for it.",
+      "Keep low-end sources conservative in wedges unless someone truly cannot perform without them.",
+      "Use short language during line check so performers answer with useful yes or no feedback.",
+      "Revisit monitor balance after the first loud song because stage volume usually changes once the room fills."
+    ],
+    "notes": "A helpful monitor mix feels uncluttered and specific, not impressive on paper.",
+    "tags": [
+      "monitor mixes",
+      "band",
+      "wedges",
+      "line check"
+    ]
+  },
+  {
+    "subjectLabel": "Music Engineering",
+    "constructLabel": "EQ troubleshooting when vocals disappear",
+    "target": "Lead vocal lost in a dense band mix",
+    "objective": "restore intelligibility without making the vocal harsh",
+    "context": {
+      "environment": "medium room",
+      "source": "lead vocal in a band mix",
+      "priority": "intelligibility"
+    },
+    "steps": [
+      "Check arrangement masking first, especially guitars, keys, or cymbal wash occupying the same range.",
+      "Cut competing low mids in supporting channels before boosting the vocal again.",
+      "Add presence in small moves and stop as soon as consonants become clear.",
+      "Re-check effects because too much verb or delay can hide the vocal more than EQ can fix it.",
+      "Listen from the audience area if possible because vocal balance often lies differently than it does at the console."
+    ],
+    "notes": "The cleanest vocal fix is often subtractive work somewhere else in the mix.",
+    "tags": [
+      "eq troubleshooting",
+      "vocal clarity",
+      "masking",
+      "mix rescue"
+    ]
+  },
+  {
+    "subjectLabel": "Music Engineering",
+    "constructLabel": "Festival stage scene recall habits",
+    "target": "Scene recall on a busy multi-band day",
+    "objective": "load fast without bringing back unsafe assumptions",
+    "context": {
+      "environment": "festival stage",
+      "priority": "fast turnover",
+      "risk": "old patching or gain assumptions"
+    },
+    "steps": [
+      "Treat scenes as a starting snapshot, not as proof that the current patch or gain is correct.",
+      "Confirm phantom, gain, and output routing every changeover before trusting the loaded scene.",
+      "Name scenes with band and context so the wrong recall stands out immediately.",
+      "Keep a minimal fallback scene for emergencies when a band file behaves unpredictably.",
+      "After the show, fold the useful improvements back into the master templates instead of letting drift accumulate."
+    ],
+    "notes": "Scene recall is fastest when it supports your checklist instead of replacing it.",
+    "tags": [
+      "scene recall",
+      "festival",
+      "turnover",
+      "templates"
+    ]
+  },
+  {
+    "subjectLabel": "Music Engineering",
+    "constructLabel": "Conference room speech coverage preset",
+    "target": "Speech system for a conference room panel",
+    "objective": "keep voices even and intelligible across the room",
+    "context": {
+      "environment": "conference room",
+      "sources": "panel mics and playback laptop",
+      "priority": "speech clarity"
+    },
+    "steps": [
+      "Set mics for clear speech first and keep playback below the moderator by default.",
+      "Trim low-end buildup that comes from table mics or room boundaries before adding presence.",
+      "Keep effects effectively dry because clarity is more valuable than polish in this room.",
+      "Walk the room and listen for coverage gaps instead of trusting only the console position.",
+      "Save a version with known-good speech routing so the room can come back quickly next time."
+    ],
+    "notes": "Conference work is won by consistency, coverage, and low-stress operation.",
+    "tags": [
+      "conference room",
+      "speech",
+      "coverage",
+      "playback"
+    ]
+  },
+  {
+    "subjectLabel": "Music Engineering",
+    "constructLabel": "Studio control room listening reset",
+    "target": "Reference check after long mix sessions",
+    "objective": "regain perspective before making bigger decisions",
+    "context": {
+      "environment": "studio control room",
+      "workflow": "end-of-day mix review",
+      "priority": "perspective reset"
+    },
+    "steps": [
+      "Drop monitoring level and listen through the song top to bottom without touching anything first.",
+      "Switch to one familiar reference track to recalibrate tonal balance and vocal level expectations.",
+      "Note only the three most obvious issues before reopening the session for fixes.",
+      "Check mono or a single small speaker briefly so center balance problems reveal themselves.",
+      "Leave detailed automation or surgery for the next pass once your ears are reset."
+    ],
+    "notes": "Perspective resets prevent tired ears from turning a good mix into a complicated one.",
+    "tags": [
+      "studio control room",
+      "references",
+      "mix review",
+      "perspective"
+    ]
+  },
+  {
+    "subjectLabel": "Music Engineering",
     "constructLabel": "Karaoke singer rotation preset",
     "target": "Solo singer on Bose T8S",
     "objective": "support inconsistent singers without losing intelligibility",
@@ -51,60 +302,6 @@
       "portable mixer",
       "vocal support",
       "headroom"
-    ]
-  },
-  {
-    "subjectLabel": "Music Engineering",
-    "constructLabel": "Host-forward music bingo scene",
-    "target": "Host microphone with music playback",
-    "objective": "keep clue calls and transitions intelligible over backing tracks",
-    "context": {
-      "console": "Yamaha MG10XU",
-      "source": "host vocal mic and playback laptop",
-      "room": "medium brewery room",
-      "show type": "music bingo",
-      "monitor": "host wedge low and forward"
-    },
-    "steps": [
-      "Set speech gain for strong announcements with clean peaks and enough space for excited moments.",
-      "Cut mud first and add only enough presence to keep clue calls crisp over the track.",
-      "Keep host effects nearly dry so every instruction stays easy to parse.",
-      "Ride the playback level under the host instead of asking the mic channel to overpower the room.",
-      "Use speaker placement and conservative monitor level to stay ahead of feedback."
-    ],
-    "notes": "A host-driven event wins on diction, pacing, and transitions more than sonic size.",
-    "tags": [
-      "host mic",
-      "speech clarity",
-      "music bingo",
-      "playback balance"
-    ]
-  },
-  {
-    "subjectLabel": "Music Engineering",
-    "constructLabel": "Acoustic duo room-friendly start",
-    "target": "Vocal and acoustic guitar duo",
-    "objective": "balanced intimacy with low stage volume",
-    "context": {
-      "console": "Allen & Heath CQ-18T",
-      "sources": "lead vocal and DI acoustic guitar",
-      "room": "coffeehouse",
-      "ensemble": "acoustic duo",
-      "pa": "quiet mains with no sub"
-    },
-    "steps": [
-      "Build the vocal first, then add guitar until it supports the lyric instead of competing with it.",
-      "High-pass both channels enough to clear rumble while keeping warmth in the guitar body.",
-      "Use gentle ambience only; the room should still feel close and conversational.",
-      "Keep stage volume low so the front-of-house mix stays stable from song to song.",
-      "Listen for harsh pick attack or nasal vocal mids before boosting any sparkle."
-    ],
-    "notes": "Useful when intimacy and lyric focus matter more than impact.",
-    "tags": [
-      "acoustic duo",
-      "coffeehouse",
-      "vocal first",
-      "low stage volume"
     ]
   }
 ]

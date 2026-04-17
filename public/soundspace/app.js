@@ -6,10 +6,17 @@ const answerEl = document.getElementById("soundspace-answer");
 const libraryMetaEl = document.getElementById("soundspace-library-meta");
 const librarySearchInput = document.getElementById("soundspace-library-search");
 const libraryEl = document.getElementById("soundspace-library");
+const statusBadgeEl = document.getElementById("soundspace-status-badge");
+const statusLineEl = document.getElementById("soundspace-status-line");
+const themeToggleButton = document.getElementById("theme-toggle");
+const resetExamplesButton = document.getElementById("soundspace-reset-examples");
+const submitButton = form?.querySelector("button[type=\"submit\"]");
 const quickQueryButtons = Array.from(document.querySelectorAll("[data-query]"));
+const themeStorageKey = "strandspace:theme";
 
 let soundspaceLibrary = [];
 let latestProposal = null;
+let systemHealth = null;
 
 function escapeHtml(value) {
   return String(value)
@@ -18,6 +25,46 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function readStoredTheme() {
+  try {
+    return String(window.localStorage.getItem(themeStorageKey) ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function applyTheme(theme = "") {
+  const normalized = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = normalized;
+  if (themeToggleButton) {
+    themeToggleButton.textContent = normalized === "dark" ? "Light Mode" : "Dark Mode";
+  }
+
+  try {
+    window.localStorage.setItem(themeStorageKey, normalized);
+  } catch {
+    // Ignore localStorage failures.
+  }
+}
+
+function toggleTheme() {
+  applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+}
+
+function setButtonBusy(button, isBusy, busyText = "Working...") {
+  if (!button) {
+    return;
+  }
+
+  if (!button.dataset.defaultLabel) {
+    button.dataset.defaultLabel = button.textContent ?? "";
+  }
+
+  button.disabled = Boolean(isBusy);
+  button.classList.toggle("is-busy", Boolean(isBusy));
+  button.textContent = isBusy ? busyText : button.dataset.defaultLabel;
 }
 
 function titleCase(value = "") {
@@ -39,6 +86,62 @@ function focusLabel(key = "") {
   };
 
   return labels[key] ?? titleCase(key);
+}
+
+function escapeAttribute(value = "") {
+  return escapeHtml(value).replaceAll("`", "&#96;");
+}
+
+function statusBadgeMarkup(health = null) {
+  if (!health) {
+    return {
+      label: "Status unavailable",
+      className: "status-badge warn"
+    };
+  }
+
+  return health.openai?.enabled
+    ? {
+      label: `Assist enabled · ${health.openai.model ?? "OpenAI"}`,
+      className: "status-badge assist"
+    }
+    : {
+      label: "Local-only mode",
+      className: "status-badge local"
+    };
+}
+
+function renderSystemHealth(health = null) {
+  systemHealth = health;
+  const badge = statusBadgeMarkup(health);
+
+  if (statusBadgeEl) {
+    statusBadgeEl.className = badge.className;
+    statusBadgeEl.textContent = badge.label;
+  }
+
+  if (statusLineEl) {
+    statusLineEl.textContent = health
+      ? (health.openai?.enabled
+          ? `Assist is available on ${health.openai.model}. Timeout ${health.openai.timeoutMs}ms.`
+          : "OpenAI assist is off, so Soundspace is running in local-only mode.")
+      : "Unable to load system status.";
+  }
+}
+
+async function loadSystemHealth() {
+  try {
+    const response = await fetch("/api/system/health");
+    if (!response.ok) {
+      throw new Error(`Health check failed with ${response.status}`);
+    }
+    renderSystemHealth(await response.json());
+  } catch (error) {
+    renderSystemHealth(null);
+    if (statusLineEl) {
+      statusLineEl.textContent = error instanceof Error ? error.message : "Unable to load system status.";
+    }
+  }
 }
 
 function buildAskedForTags(recall = {}) {
@@ -228,6 +331,65 @@ function renderReviewPanel(review = null) {
   `;
 }
 
+function renderSearchGuidance(guidance = null) {
+  if (!guidance) {
+    return "";
+  }
+
+  const followUpQuestions = Array.isArray(guidance.followUpQuestions) ? guidance.followUpQuestions : [];
+  const editSuggestions = Array.isArray(guidance.editSuggestions) ? guidance.editSuggestions : [];
+  const suggestionQueries = Array.isArray(guidance.suggestionQueries) ? guidance.suggestionQueries : [];
+  const nearbyCandidates = Array.isArray(guidance.nearbyCandidates) ? guidance.nearbyCandidates : [];
+
+  return `
+    <section class="review-panel needs-detail">
+      <div class="review-head">
+        <div>
+          <span class="detail-label">Search guidance</span>
+          <h3>${escapeHtml(guidance.title ?? "Refine the search")}</h3>
+        </div>
+        <span class="meta">Need one more detail</span>
+      </div>
+      <p class="answer-detail">${escapeHtml(guidance.prompt ?? "")}</p>
+      ${followUpQuestions.length ? `
+        <div class="review-list warning">
+          <strong>Questions to answer</strong>
+          <ul>
+            ${followUpQuestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+          </ul>
+        </div>
+      ` : ""}
+      ${editSuggestions.length ? `
+        <div class="review-list">
+          <strong>Ways to edit the search</strong>
+          <ul>
+            ${editSuggestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+          </ul>
+        </div>
+      ` : ""}
+      ${suggestionQueries.length ? `
+        <div class="focus-panel">
+          <div class="focus-head">
+            <strong>Suggested searches</strong>
+            <span class="focus-subtitle">Click one to rewrite the search</span>
+          </div>
+          <div class="chip-row">
+            ${suggestionQueries.map((query) => `<button type="button" class="ghost-action search-suggestion" data-suggested-query="${escapeAttribute(query)}">${escapeHtml(query)}</button>`).join("")}
+          </div>
+        </div>
+      ` : ""}
+      ${nearbyCandidates.length ? `
+        <div class="review-list">
+          <strong>Nearby stored memory</strong>
+          <ul>
+            ${nearbyCandidates.map((candidate) => `<li><strong>${escapeHtml(candidate.name ?? candidate.label ?? "Stored construct")}</strong>${candidate.reason ? ` - ${escapeHtml(candidate.reason)}` : ""}</li>`).join("")}
+          </ul>
+        </div>
+      ` : ""}
+    </section>
+  `;
+}
+
 function renderAnswer(payload = null) {
   if (!payload) {
     latestProposal = null;
@@ -241,6 +403,7 @@ function renderAnswer(payload = null) {
   const recall = payload.recall ?? {};
   const review = payload.review ?? null;
   const clarification = recall.clarification ?? null;
+  const searchGuidance = recall.searchGuidance ?? null;
   const focusedSetup = recall.focusedSetup && Object.keys(recall.focusedSetup).length
     ? recall.focusedSetup
     : {};
@@ -248,6 +411,8 @@ function renderAnswer(payload = null) {
   const askedForTags = buildAskedForTags(recall);
   const sourceLabel = payload.source === "strandspace"
     ? "Recalled from Strandspace"
+    : payload.source === "search-guidance"
+      ? "Search needs one more detail"
     : payload.source === "openai-generated-and-stored"
       ? "Generated, refined, and stored"
       : payload.source === "openai-proposal"
@@ -270,6 +435,7 @@ function renderAnswer(payload = null) {
     ` : ""}
     ${clarification?.prompt ? `<p class="answer-callout"><strong>Need detail:</strong> ${escapeHtml(clarification.prompt)}</p>` : ""}
     ${focusedParagraph ? `<p class="answer-detail"><strong>Asked return:</strong> ${escapeHtml(focusedParagraph)}</p>` : ""}
+    ${renderSearchGuidance(searchGuidance)}
     ${renderReviewPanel(review)}
     <dl class="answer-meta">
       <div><dt>Device</dt><dd>${escapeHtml([construct?.deviceBrand, construct?.deviceModel].filter(Boolean).join(" ") || "n/a")}</dd></div>
@@ -364,10 +530,43 @@ async function fetchAnswer(question, { reviewBeforeStore = true } = {}) {
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.error ?? `Soundspace request failed with ${response.status}`);
+    throw new Error(
+      [payload.error ?? `Soundspace request failed with ${response.status}`, payload.detail ?? "", payload.code ? `Code: ${payload.code}` : ""]
+        .filter(Boolean)
+        .join(" ")
+    );
   }
 
   return response.json();
+}
+
+async function resetWithExamples() {
+  setButtonBusy(resetExamplesButton, true, "Resetting...");
+
+  try {
+    const response = await fetch("/api/system/reset-examples", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({})
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Unable to reset the example constructs.");
+    }
+
+    latestProposal = null;
+    metaEl.textContent = "Examples restored";
+    questionInput.value = "";
+    renderAnswer(null);
+    await loadLibrary();
+  } catch (error) {
+    metaEl.textContent = error instanceof Error ? error.message : "Unable to reset the example constructs.";
+  } finally {
+    setButtonBusy(resetExamplesButton, false);
+  }
 }
 
 async function askQuestion(event) {
@@ -381,9 +580,12 @@ async function askQuestion(event) {
   }
 
   metaEl.textContent = "Searching...";
+  setButtonBusy(submitButton, true, "Searching...");
   try {
     const payload = await fetchAnswer(question, { reviewBeforeStore: true });
-    metaEl.textContent = payload.needsReview
+    metaEl.textContent = payload.source === "search-guidance"
+      ? "Need one more detail"
+      : payload.needsReview
       ? `${payload.review?.canLearn ? "Proposal ready" : "Need detail"} | ${payload.construct?.deviceModel ?? "Soundspace"}`
       : `${payload.source === "strandspace" ? "Recall hit" : "Learned result"} | ${payload.construct?.deviceModel ?? "Soundspace"}`;
     try {
@@ -407,9 +609,11 @@ async function askQuestion(event) {
       console.error("Soundspace library refresh failed after a successful answer:", libraryError);
     }
   } catch (error) {
-    metaEl.textContent = "Error";
+    metaEl.textContent = error instanceof Error ? error.message : "Error";
     answerEl.className = "answer-card empty";
     answerEl.innerHTML = `<p>${escapeHtml(error instanceof Error ? error.message : "Unable to answer that sound question.")}</p>`;
+  } finally {
+    setButtonBusy(submitButton, false);
   }
 }
 
@@ -457,6 +661,14 @@ librarySearchInput?.addEventListener("input", () => {
 });
 
 answerEl?.addEventListener("click", async (event) => {
+  const suggestionTarget = event.target instanceof Element ? event.target.closest("[data-suggested-query]") : null;
+  if (suggestionTarget) {
+    questionInput.value = suggestionTarget.getAttribute("data-suggested-query") ?? "";
+    metaEl.textContent = "Search updated with a suggested refinement";
+    questionInput.focus();
+    return;
+  }
+
   const actionTarget = event.target instanceof Element ? event.target.closest("[data-review-action]") : null;
   if (!actionTarget) {
     return;
@@ -511,4 +723,12 @@ answerEl?.addEventListener("click", async (event) => {
   }
 });
 
+resetExamplesButton?.addEventListener("click", () => {
+  void resetWithExamples();
+});
+
+themeToggleButton?.addEventListener("click", toggleTheme);
+
+applyTheme(readStoredTheme() || "light");
+void loadSystemHealth();
 void loadLibrary();

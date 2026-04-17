@@ -18,16 +18,19 @@ await mkdir(tempDir, { recursive: true });
 process.env.STRANDSPACE_DB_PATH = tempDatabasePath;
 
 const { createApp, migrateLegacyDatabase, sanitizeLegacyProvenance } = await import("../server.mjs");
-const { __setOpenAiAssistMock } = await import("../strandspace/openai-assist.js");
+const { __resetOpenAiAssistState, __setOpenAiAssistMock } = await import("../strandspace/openai-assist.js");
 const {
   ensureSubjectspaceTables,
   getSubjectConstruct,
   listSubjectConstructs,
+  recallSubjectSpace,
   upsertSubjectConstruct
 } = await import("../strandspace/subjectspace.js");
 const {
   ensureSoundspaceTables,
   listSoundConstructs,
+  parseSoundQuestion,
+  recallSoundspace,
   upsertSoundConstruct
 } = await import("../strandspace/soundspace.js");
 
@@ -142,6 +145,31 @@ await check("GET /api/subjectspace/subjects exposes music engineering seeds", as
     assert.ok(Array.isArray(payload.subjects));
     assert.ok(payload.subjects.some((subject) => subject.subjectId === "music-engineering"));
     assert.ok(payload.defaultSubjectId);
+  });
+});
+
+await check("POST /api/system/reset-examples restores the bundled demo constructs", async () => {
+  await withServer(async (address) => {
+    const response = await postJson(`http://127.0.0.1:${address.port}/api/system/reset-examples`, {});
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.ok(Number(payload.subjectCount) >= 10);
+    assert.ok(Number(payload.soundCount) >= 10);
+    assert.ok(Array.isArray(payload.subjects));
+    assert.ok(payload.subjects.some((subject) => subject.subjectId === "music-engineering"));
+  });
+});
+
+await check("GET /api/system/health reports the active mode and DB connection", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/system/health`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.ok(["assist-enabled", "local-only"].includes(payload.mode));
+    assert.equal(payload.database.connected, true);
+    assert.match(String(payload.database.path), /strandspace/i);
   });
 });
 
@@ -320,6 +348,26 @@ await check("ensureSoundspaceTables upgrades older soundspace tables before crea
   }
 });
 
+await check("empty subjectspace recall returns a clear teach-first message", async () => {
+  const emptyDbPath = await registerTempDatabasePath(join(tempDir, `subjectspace-empty-${Date.now()}.sqlite`));
+  const emptyDb = new DatabaseSync(emptyDbPath);
+
+  try {
+    ensureSubjectspaceTables(emptyDb);
+    const recall = recallSubjectSpace(emptyDb, {
+      subjectId: "music-engineering",
+      question: "How do I set gain staging for a vocal?"
+    });
+
+    assert.equal(recall.ready, false);
+    assert.equal(recall.readiness.libraryCount, 0);
+    assert.equal(recall.routing?.mode, "teach_local");
+    assert.match(String(recall.answer), /Teach a construct|still empty/i);
+  } finally {
+    emptyDb.close();
+  }
+});
+
 await check("POST /api/subjectspace/learn stores and recalls a custom construct", async () => {
   await withServer(async (address) => {
     const construct = await createSubjectConstruct(address.port, {
@@ -365,7 +413,7 @@ await check("subjectspace routes narrow-but-ambiguous recall toward API validati
 });
 
 await check("GET /api/subjectspace/assist/status reports disabled without an API key", async () => {
-  __setOpenAiAssistMock(null);
+  __resetOpenAiAssistState();
   const originalApiKey = process.env.OPENAI_API_KEY;
   const originalDisableLookup = process.env.SUBJECTSPACE_DISABLE_USER_ENV_LOOKUP;
   delete process.env.OPENAI_API_KEY;
@@ -389,6 +437,7 @@ await check("GET /api/subjectspace/assist/status reports disabled without an API
   } else {
     process.env.SUBJECTSPACE_DISABLE_USER_ENV_LOOKUP = originalDisableLookup;
   }
+  __resetOpenAiAssistState();
 });
 
 await check("POST /api/subjectspace/build drafts a construct from freeform input and the draft can be saved", async () => {
@@ -741,7 +790,7 @@ await check("POST /api/subjectspace/assist times out instead of hanging when Ope
         question: "What is my gallery interview tungsten setup?"
       });
 
-      assert.equal(response.status, 502);
+      assert.equal(response.status, 504);
       const payload = await response.json();
       assert.match(String(payload.error), /timed out/i);
       assert.ok(Date.now() - started < 1000);
@@ -825,7 +874,7 @@ await check("POST /api/soundspace/answer generates and stores a missing construc
 
     assert.equal(response.status, 200);
     const payload = await response.json();
-    assert.equal(payload.source, "generated-and-stored");
+    assert.match(String(payload.source), /generated-and-stored$/);
     assert.equal(payload.construct.deviceModel, "MG10XU");
     assert.equal(payload.construct.eventType, "karaoke");
     assert.equal(payload.construct.venueSize, "large");
@@ -947,6 +996,95 @@ await check("soundspace asks for Shure mic model and returns focused mic setting
   });
 });
 
+await check("soundspace returns search guidance for a vague generic venue preset microphone query", async () => {
+  await withServer(async (address) => {
+    const response = await postJson(`http://127.0.0.1:${address.port}/api/soundspace/answer`, {
+      question: "What is the setup for Generic Venue Preset microphone?",
+      reviewBeforeStore: true
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.source, "search-guidance");
+    assert.equal(payload.recall.ready, false);
+    assert.equal(payload.recall.recommendation, "clarify_search");
+    assert.ok(payload.recall.searchGuidance);
+    assert.match(String(payload.answer), /venue memory|generic venue preset|stored venue presets/i);
+    assert.ok(Array.isArray(payload.recall.searchGuidance.followUpQuestions));
+    assert.ok(payload.recall.searchGuidance.followUpQuestions.length >= 1);
+    assert.ok(Array.isArray(payload.recall.searchGuidance.suggestionQueries));
+    assert.ok(payload.recall.searchGuidance.suggestionQueries.some((item) => /venue preset/i.test(String(item))));
+  });
+});
+
+await check("soundspace parses a full karaoke reset query as a multi-device assist-worthy request", async () => {
+  const parsed = parseSoundQuestion(
+    "I want to do a complete karaoke gain-staging reset from the mic capsules to the speakers. My gear includes 2 Innopaw WM333 receivers, 2 Behringer Composer Pro-XL MDX-2600's, Bose T8S mixer, 2 Bose L1 Pro 8's, and 2 EV ZLX-8P-G2's monitors."
+  );
+
+  assert.equal(parsed.deviceModel, "T8S");
+  assert.equal(parsed.deviceType, "mixer");
+  assert.equal(parsed.eventType, "karaoke");
+  assert.equal(parsed.prefersAssist, true);
+  assert.ok(Array.isArray(parsed.deviceMatches));
+  assert.ok(parsed.deviceMatches.some((item) => item.model === "WM333"));
+  assert.ok(parsed.deviceMatches.some((item) => item.model === "Composer Pro-XL MDX-2600"));
+  assert.ok(parsed.deviceMatches.some((item) => item.model === "L1 Pro8"));
+  assert.ok(parsed.deviceMatches.some((item) => item.model === "ZLX-8P-G2"));
+});
+
+await check("soundspace uses OpenAI assist for a whole-rig karaoke reset query instead of short-circuiting to local recall", async () => {
+  __setOpenAiAssistMock(async ({ mode, question, seedConstruct }) => {
+    if (mode !== "sound-builder") {
+      throw new Error(`Unexpected mode: ${mode}`);
+    }
+
+    assert.match(String(question), /karaoke gain-staging reset/i);
+    assert.equal(seedConstruct.deviceModel, "T8S");
+
+    return {
+      responseId: "resp_mock_karaoke_reset",
+      model: "gpt-5.4-mini",
+      usage: {
+        input_tokens: 40,
+        output_tokens: 120,
+        total_tokens: 160
+      },
+      construct: {
+        ...seedConstruct,
+        setup: {
+          ...seedConstruct.setup,
+          gain: "Set each wireless receiver output at noon, start the T8S trim at 10 o'clock, and raise until loud karaoke peaks land cleanly with headroom.",
+          monitor: "Start the EV ZLX-8P-G2 monitor send low, then bring it up only until singers hear themselves without edge-of-feedback tension.",
+          notes: "Full karaoke reset proposal covering receivers, compressors, mixer, mains, and monitors with explicit starting positions."
+        },
+        tags: [...(seedConstruct.tags ?? []), "karaoke-reset"],
+        shouldLearn: true
+      }
+    };
+  });
+
+  try {
+    await withServer(async (address) => {
+      const response = await postJson(`http://127.0.0.1:${address.port}/api/soundspace/answer`, {
+        question: "I want to do a complete karaoke gain-staging reset from the mic capsules to the speakers. I want every setting covered step-by-step with exact clock positions or values. My gear includes 2 Innopaw WM333 receivers and 4 wireless mics, 2 Behringer Composer Pro-XL MDX-2600's, Bose T8S mixer, 2 Bose L1 Pro 8's, and 2 EV ZLX-8P-G2's monitors. Goal: maximum gain before feedback with clean vocals, no edge-of-feedback feeling.",
+        reviewBeforeStore: true
+      });
+
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.needsReview, true);
+      assert.equal(payload.source, "openai-proposal");
+      assert.equal(payload.construct?.deviceModel, "T8S");
+      assert.match(String(payload.construct?.setup?.gain), /noon|10 o'clock/i);
+      assert.match(String(payload.construct?.setup?.notes), /receivers|compressors|monitors/i);
+      assert.equal(payload.recall?.readiness?.requiresReview, true);
+    });
+  } finally {
+    __setOpenAiAssistMock(null);
+  }
+});
+
 await check("POST /api/soundspace/answer can refine a construct through the mocked OpenAI builder", async () => {
   __setOpenAiAssistMock(async ({ mode, seedConstruct }) => {
     if (mode !== "sound-builder") {
@@ -1048,7 +1186,7 @@ await check("POST /api/soundspace/answer learns a model-specific construct from 
 
     assert.equal(response.status, 200);
     const payload = await response.json();
-    assert.equal(payload.source, "generated-and-stored");
+    assert.match(String(payload.source), /generated-and-stored$/);
     assert.equal(payload.construct?.deviceModel, "T8S");
     assert.equal(payload.construct?.sourceBrand, "Shure");
     assert.equal(payload.construct?.sourceModel, "SM58");

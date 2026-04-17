@@ -271,8 +271,23 @@ export function upsertSoundConstruct(db, payload = {}) {
 const DEVICE_PATTERNS = [
   { brand: "Yamaha", model: "MG10XU", type: "mixer", terms: ["yamaha mg10xu", "mg10xu", "yamaha mixer"] },
   { brand: "Bose", model: "T8S", type: "mixer", terms: ["bose t8s", "t8s"] },
-  { brand: "Bose", model: "L1 Pro8", type: "speaker_system", terms: ["bose l1 pro8", "l1 pro8", "pro8 column array", "pro 8 column array", "bose pro 8 column array"] }
+  { brand: "Bose", model: "L1 Pro8", type: "speaker_system", terms: ["bose l1 pro8", "bose l1 pro 8", "l1 pro8", "l1 pro 8", "pro8 column array", "pro 8 column array", "bose pro 8 column array"] },
+  { brand: "Innopaw", model: "WM333", type: "wireless_receiver", terms: ["innopaw wm333", "wm333", "innopaw receiver", "innopaw receivers"] },
+  { brand: "Behringer", model: "Composer Pro-XL MDX-2600", type: "dynamics_processor", terms: ["behringer composer pro xl mdx 2600", "composer pro xl", "composer pro-xl", "mdx-2600", "mdx 2600"] },
+  { brand: "EV", model: "ZLX-8P-G2", type: "monitor_speaker", terms: ["ev zlx-8p-g2", "zlx-8p-g2", "zlx 8p g2", "ev zlx 8p g2"] }
 ];
+
+const DEVICE_TYPE_PRIORITY = {
+  mixer: 0,
+  "digital mixer": 0,
+  digital_mixer: 0,
+  dynamics_processor: 1,
+  processor: 1,
+  wireless_receiver: 2,
+  speaker_system: 3,
+  monitor_speaker: 4,
+  venue_preset: 5
+};
 
 const SOURCE_PATTERNS = [
   { type: "microphone", terms: ["microphone", "mic", "vocal", "voice"] },
@@ -342,11 +357,45 @@ const VENUE_PATTERNS = [
   { size: "large", terms: ["large room", "large venue", "outdoor", "festival"] }
 ];
 
+function titleCase(value = "") {
+  return String(value)
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase())
+    .trim();
+}
+
+function devicePriority(entry = {}) {
+  return DEVICE_TYPE_PRIORITY[String(entry.type ?? "").trim()] ?? 99;
+}
+
+function summarizeRecognizedGear(deviceMatches = []) {
+  return deviceMatches.map((entry) => ({
+    brand: entry.brand,
+    model: entry.model,
+    type: entry.type,
+    label: [entry.brand, entry.model].filter(Boolean).join(" ")
+  }));
+}
+
+function buildGearChainLabel(deviceMatches = []) {
+  const labels = summarizeRecognizedGear(deviceMatches)
+    .map((entry) => entry.label)
+    .filter(Boolean);
+
+  return labels.length ? labels.join(", ") : null;
+}
+
 export function parseSoundQuestion(question = "") {
   const normalized = normalizeText(question);
   const deviceMatches = DEVICE_PATTERNS.filter((entry) => entry.terms.some((term) => normalized.includes(term)))
     .filter((entry, index, all) => all.findIndex((candidate) => candidate.model === entry.model) === index);
-  const device = deviceMatches[0] ?? null;
+  const primaryDevice = [...deviceMatches].sort((left, right) => {
+    const priorityDelta = devicePriority(left) - devicePriority(right);
+    if (priorityDelta !== 0) {
+      return priorityDelta;
+    }
+    return left.model.localeCompare(right.model);
+  })[0] ?? null;
   const source = SOURCE_PATTERNS.find((entry) => entry.terms.some((term) => normalized.includes(term))) ?? null;
   const sourceBrand = SOURCE_BRAND_PATTERNS.find((entry) => entry.terms.some((term) => normalized.includes(term))) ?? null;
   const sourceModel = SOURCE_MODEL_PATTERNS.find((entry) => entry.terms.some((term) => normalized.includes(term))) ?? null;
@@ -356,6 +405,16 @@ export function parseSoundQuestion(question = "") {
   const venue = VENUE_PATTERNS.find((entry) => entry.terms.some((term) => normalized.includes(term))) ?? null;
   const mentionsPreset = /\b(tone ?match|preset|presets|dsp)\b/.test(normalized);
   const wantsPresetList = /\b(list|show|what|which|available)\b/.test(normalized) && mentionsPreset;
+  const wantsDetailedWalkthrough = /\b(step by step|step-by-step|every setting|exact (clock|value|values|position|positions)|clock positions?|maximum gain before feedback|no edge(?:-of)?-feedback)\b/.test(normalized);
+  const wantsSystemReset = /\breset\b/.test(normalized)
+    || /\bfrom the .*capsules?.* speakers\b/.test(normalized)
+    || /\bfrom .* to the speakers\b/.test(normalized)
+    || /\bwhole rig\b/.test(normalized)
+    || /\bcomplete karaoke gain staging reset\b/.test(normalized);
+  const prefersAssist = wantsDetailedWalkthrough
+    || (wantsSystemReset && deviceMatches.length >= 2)
+    || deviceMatches.length >= 3
+    || /\bmy gear includes\b/.test(normalized);
 
   return {
     raw: question,
@@ -364,9 +423,11 @@ export function parseSoundQuestion(question = "") {
       ? "list_presets"
       : (/\bcompare\b|\bvs\b|\bversus\b/.test(normalized) ? "compare" : "recommend_setup"),
     deviceMatches,
-    deviceBrand: device?.brand ?? null,
-    deviceModel: device?.model ?? null,
-    deviceType: device?.type ?? null,
+    recognizedGear: summarizeRecognizedGear(deviceMatches),
+    primaryDeviceModel: primaryDevice?.model ?? null,
+    deviceBrand: primaryDevice?.brand ?? null,
+    deviceModel: primaryDevice?.model ?? null,
+    deviceType: primaryDevice?.type ?? null,
     sourceType: source?.type ?? null,
     sourceBrand: sourceModel?.brand ?? sourceBrand?.brand ?? null,
     sourceModel: sourceModel?.model ?? null,
@@ -374,7 +435,87 @@ export function parseSoundQuestion(question = "") {
     presetCategory: presetName?.category ?? presetCategory?.category ?? null,
     presetName: presetName?.name ?? null,
     eventType: event?.type ?? null,
-    venueSize: venue?.size ?? null
+    venueSize: venue?.size ?? null,
+    wantsDetailedWalkthrough,
+    wantsSystemReset,
+    prefersAssist,
+    gearChain: buildGearChainLabel(deviceMatches)
+  };
+}
+
+function buildCandidateHint(record = {}) {
+  return {
+    id: record.id,
+    name: record.name,
+    label: [record.deviceBrand, record.deviceModel].filter(Boolean).join(" ") || record.name || "Stored construct",
+    reason: [
+      record.eventType ? titleCase(record.eventType) : "",
+      record.venueSize ? `${titleCase(record.venueSize)} room` : "",
+      record.sourceType ? titleCase(record.sourceType) : ""
+    ].filter(Boolean).join(" | ") || "Nearby stored construct"
+  };
+}
+
+function buildSearchGuidance(parsed, ranked = []) {
+  const topCandidates = ranked.slice(0, 4);
+  const venuePresetCandidates = ranked
+    .filter((record) => normalizeText(record.deviceModel) === "venue preset" || (record.tags ?? []).some((tag) => normalizeText(tag) === "venue preset"))
+    .slice(0, 4);
+  const nearby = (venuePresetCandidates.length ? venuePresetCandidates : topCandidates).map(buildCandidateHint);
+  const queryMentionsVenuePreset = /\bvenue preset\b|\bgeneric venue preset\b/.test(parsed.normalized)
+    || venuePresetCandidates.length > 0;
+  const followUpQuestions = [];
+  const editSuggestions = [];
+  const suggestionQueries = [];
+
+  if (!parsed.deviceModel) {
+    followUpQuestions.push(queryMentionsVenuePreset
+      ? "Is this for a specific mixer, or did you mean one of the stored venue presets?"
+      : "Which mixer or speaker system is this for?");
+    editSuggestions.push("Add the mixer or speaker system model.");
+  }
+
+  if (queryMentionsVenuePreset && !parsed.eventType) {
+    followUpQuestions.push("Which venue preset did you mean: small club, conference room speech, karaoke bar, festival stage, or studio control room?");
+    editSuggestions.push("Name the venue preset or use case instead of saying only generic venue preset.");
+  }
+
+  if (parsed.sourceType === "microphone" && !parsed.sourceBrand && !parsed.sourceModel) {
+    followUpQuestions.push("Is this for a handheld vocal mic, a headworn mic, or a host microphone path?");
+    editSuggestions.push("Add the microphone type or model if you know it.");
+  }
+
+  editSuggestions.push("Ask for one section like gain, EQ, monitor, placement, or notes if you only need part of the answer.");
+
+  for (const candidate of venuePresetCandidates.length ? venuePresetCandidates : topCandidates) {
+    const base = candidate.name ?? "";
+    if (!base) {
+      continue;
+    }
+    suggestionQueries.push(`What is the setup for ${base}?`);
+    suggestionQueries.push(`What is the gain setting for ${base}?`);
+  }
+
+  if (!suggestionQueries.length && parsed.sourceType === "microphone") {
+    suggestionQueries.push("t8s handheld mic setting");
+    suggestionQueries.push("conference room speech venue preset microphone");
+    suggestionQueries.push("karaoke bar rotation venue preset microphone");
+  }
+
+  const uniqueQueries = Array.from(new Set(suggestionQueries.filter(Boolean))).slice(0, 6);
+  const nearbyNames = nearby.slice(0, 3).map((candidate) => candidate.name);
+  const nearbyList = nearbyNames.length ? nearbyNames.join("; ") : "one of the stored constructs";
+  const prompt = queryMentionsVenuePreset
+    ? `I found nearby venue memory, but “Generic Venue Preset” is still too broad to lock onto one stored construct. Try naming the preset or adding the mixer or speaker system. Nearby matches: ${nearbyList}.`
+    : `I found nearby stored memory, but this search still needs one more detail before Strandspace can lock onto the right construct. Add the device model or a more specific source clue.`;
+
+  return {
+    title: queryMentionsVenuePreset ? "Refine The Venue Search" : "Refine The Search",
+    prompt: String(prompt).replaceAll("â€œ", "\"").replaceAll("â€", "\""),
+    followUpQuestions,
+    editSuggestions,
+    suggestionQueries: uniqueQueries,
+    nearbyCandidates: nearby
   };
 }
 
@@ -638,6 +779,18 @@ function needsSpecificConstruct(record, parsed) {
   return normalizeText(record.sourceModel) !== normalizeText(parsed.sourceModel);
 }
 
+function shouldPreferAssistOverDirectRecall(parsed = {}, combined = null) {
+  if (parsed.intent === "list_presets") {
+    return false;
+  }
+
+  return Boolean(
+    parsed.prefersAssist
+    || (parsed.wantsDetailedWalkthrough && combined?.ready)
+    || (parsed.wantsSystemReset && (combined?.matches?.length ?? 0) >= 2)
+  );
+}
+
 export function recallSoundspace(db, question = "") {
   const parsed = parseSoundQuestion(question);
   const constructs = listSoundConstructs(db);
@@ -660,6 +813,7 @@ export function recallSoundspace(db, question = "") {
     ? Boolean((presetMatches.length || ranked.length) && parsed.deviceModel)
     : Boolean(winner && winner.score >= 55);
   const clarification = ready && winner ? buildClarification(winner, parsed) : null;
+  const searchGuidance = !ready ? buildSearchGuidance(parsed, ranked) : null;
   const focusedSetup = combined?.matches?.length
     ? Object.fromEntries(combined.matches.map((match) => [match.deviceModel, match.focusedSetup]))
     : (ready && winner ? buildFocusedSetup(winner.setup ?? {}, parsed) : {});
@@ -667,7 +821,7 @@ export function recallSoundspace(db, question = "") {
     ? "use_strandspace_combined"
     : ready
     ? (needsSpecificConstruct(winner, parsed) ? "use_strandspace_as_base_and_store_specific" : "use_strandspace")
-    : "fallback_to_llm_and_store";
+    : (searchGuidance ? "clarify_search" : "fallback_to_llm_and_store");
 
   return {
     question,
@@ -685,6 +839,7 @@ export function recallSoundspace(db, question = "") {
       venueSize: item.venueSize
     })),
     clarification,
+    searchGuidance,
     focusedSetup,
     focusKeys: combined?.focusKeys ?? Object.keys(focusedSetup),
     answer: combined?.answer
@@ -693,14 +848,15 @@ export function recallSoundspace(db, question = "") {
       ? (parsed.intent === "list_presets"
           ? buildPresetCatalogAnswer(presetMatches.length ? presetMatches : ranked, parsed)
           : buildRecallAnswer(winner, parsed, clarification))
-      : null,
+      : (searchGuidance?.prompt ?? null),
     recommendation,
     readiness: {
       hasDevice: Boolean(parsed.deviceModel),
       hasSource: Boolean(parsed.sourceType),
       hasContext: Boolean(parsed.eventType || parsed.venueSize),
       matchedScore: Number(winner?.score ?? 0),
-      threshold: 55
+      threshold: 55,
+      prefersAssist: shouldPreferAssistOverDirectRecall(parsed, combined)
     }
   };
 }

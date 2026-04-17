@@ -8,7 +8,7 @@ const DEFAULT_MODEL = process.env.SUBJECTSPACE_OPENAI_MODEL || process.env.OPENA
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const projectRoot = join(__dirname, "..");
-const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 15000;
+const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 20000;
 
 let client = null;
 let mockAssistRunner = null;
@@ -30,7 +30,27 @@ function getOpenAiRequestTimeoutMs() {
 function buildOpenAiTimeoutError(timeoutMs) {
   const error = new Error(`OpenAI request timed out after ${timeoutMs}ms.`);
   error.code = "OPENAI_REQUEST_TIMEOUT";
+  error.statusCode = 504;
+  error.payload = {
+    ok: false,
+    code: "OPENAI_REQUEST_TIMEOUT",
+    error: `OpenAI request timed out after ${timeoutMs}ms.`,
+    timeoutMs
+  };
   return error;
+}
+
+function buildOpenAiRequestError(error, fallbackMessage = "OpenAI request failed.") {
+  const message = String(error?.message ?? fallbackMessage).trim() || fallbackMessage;
+  const normalized = new Error(message);
+  normalized.code = String(error?.code ?? "OPENAI_REQUEST_FAILED");
+  normalized.statusCode = Number(error?.statusCode ?? error?.status ?? 502) || 502;
+  normalized.payload = {
+    ok: false,
+    code: normalized.code,
+    error: message
+  };
+  return normalized;
 }
 
 async function runOpenAiRequest(executor) {
@@ -57,7 +77,7 @@ async function runOpenAiRequest(executor) {
     if (controller.signal.aborted) {
       throw buildOpenAiTimeoutError(timeoutMs);
     }
-    throw error;
+    throw buildOpenAiRequestError(error);
   } finally {
     if (timeoutId) {
       clearTimeout(timeoutId);
@@ -423,6 +443,38 @@ function soundSetupObject(setup = {}) {
 }
 
 function soundConstructSchema() {
+  const soundConstructKeys = [
+    "name",
+    "deviceBrand",
+    "deviceModel",
+    "deviceType",
+    "sourceType",
+    "sourceBrand",
+    "sourceModel",
+    "presetSystem",
+    "presetCategory",
+    "presetName",
+    "goal",
+    "venueSize",
+    "eventType",
+    "speakerConfig",
+    "setup",
+    "tags",
+    "strands",
+    "llmSummary",
+    "shouldLearn"
+  ];
+  const soundSetupKeys = [
+    "toneMatch",
+    "system",
+    "gain",
+    "eq",
+    "fx",
+    "monitor",
+    "placement",
+    "notes"
+  ];
+
   return {
     type: "object",
     properties: {
@@ -452,6 +504,7 @@ function soundConstructSchema() {
           placement: { type: "string" },
           notes: { type: "string" }
         },
+        required: soundSetupKeys,
         additionalProperties: false
       },
       tags: {
@@ -467,20 +520,7 @@ function soundConstructSchema() {
       llmSummary: { type: "string" },
       shouldLearn: { type: "boolean" }
     },
-    required: [
-      "name",
-      "deviceModel",
-      "sourceType",
-      "goal",
-      "venueSize",
-      "eventType",
-      "speakerConfig",
-      "setup",
-      "tags",
-      "strands",
-      "llmSummary",
-      "shouldLearn"
-    ],
+    required: soundConstructKeys,
     additionalProperties: false
   };
 }
@@ -491,7 +531,10 @@ function buildSoundBuilderInstructions() {
     "Return only JSON that matches the provided schema.",
     "Preserve accurate mixer, source, and preset details from the seed construct unless the question clearly improves them.",
     "When the question is about Bose T4S/T8S, keep Bose ToneMatch preset names explicit and stable.",
-    "Keep setup guidance concise, practical, and easy to learn back into local memory."
+    "If the user asks for a full-system reset, step-by-step workflow, exact clock positions, or exact values, make the setup fields explicit and operational rather than generic.",
+    "If multiple devices are named, anchor the construct on the primary control device but use system, monitor, placement, and notes to describe the full signal chain and downstream gear.",
+    "Use approximate clock positions or numeric starting values when the user explicitly asks for exact settings, but do not present unsupported values as manufacturer-certified specs.",
+    "Keep setup guidance practical and easy to learn back into local memory."
   ].join(" ");
 }
 
@@ -513,7 +556,17 @@ function buildSoundBuilderInput({ question = "", recall = {}, seedConstruct = {}
           presetName: recall.matched.presetName,
           setup: soundSetupObject(recall.matched.setup)
         }
-        : null
+        : null,
+      combined: Array.isArray(recall?.combined?.matches)
+        ? recall.combined.matches.map((match) => ({
+          id: match.id,
+          name: match.name,
+          deviceBrand: match.deviceBrand,
+          deviceModel: match.deviceModel,
+          sourceType: match.sourceType,
+          focusedSetup: soundSetupObject(match.focusedSetup)
+        }))
+        : []
     }, null, 2)}`,
     `Seed construct: ${JSON.stringify({
       ...seedConstruct,
@@ -521,7 +574,8 @@ function buildSoundBuilderInput({ question = "", recall = {}, seedConstruct = {}
       tags: normalizeArray(seedConstruct.tags, 16),
       strands: normalizeArray(seedConstruct.strands, 20)
     }, null, 2)}`,
-    "Improve the seed construct only where the question adds useful new detail."
+    "Improve the seed construct only where the question adds useful new detail.",
+    "If the user named multiple devices, preserve the primary device in the construct fields and describe the wider rig in setup.system, setup.monitor, setup.placement, and setup.notes."
   ].join("\n\n");
 }
 
@@ -588,14 +642,16 @@ function normalizeUsagePayload(usage = null) {
 
 export function getOpenAiAssistStatus() {
   const enabled = Boolean(mockAssistRunner || resolveOpenAiApiKey());
+  const timeoutMs = getOpenAiRequestTimeoutMs();
 
   return {
     provider: "openai",
     enabled,
     model: DEFAULT_MODEL,
+    timeoutMs,
     reason: enabled
-      ? `OpenAI assist is ready on ${DEFAULT_MODEL}.`
-      : "Set OPENAI_API_KEY to enable live API validation, expansion, and construct drafting."
+      ? `OpenAI assist is ready on ${DEFAULT_MODEL} with a ${timeoutMs}ms request timeout.`
+      : "OpenAI assist is disabled, so Strandspace will stay in local-only mode unless OPENAI_API_KEY is configured."
   };
 }
 
@@ -795,4 +851,11 @@ export function buildSuggestedConstructFromAssist({
 
 export function __setOpenAiAssistMock(mock) {
   mockAssistRunner = typeof mock === "function" ? mock : null;
+}
+
+export function __resetOpenAiAssistState() {
+  client = null;
+  mockAssistRunner = null;
+  resolvedApiKey = null;
+  resolvedApiKeyLoaded = false;
 }

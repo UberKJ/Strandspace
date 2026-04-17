@@ -8,6 +8,18 @@
     <script type="module" src="/soundspace/app.js?v=2026-04-16-04" defer></script>
   </head>
   <body>
+    <header class="page-switch">
+      <a class="brand-mark" href="/">Strandspace</a>
+      <div class="page-switch-controls">
+        <nav class="page-nav" aria-label="Workspace switcher">
+          <a class="switch-link" href="/">Construct Builder</a>
+          <a class="switch-link" href="/studio">Studio</a>
+          <a class="switch-link is-active" href="/soundspace" aria-current="page">Soundspace</a>
+        </nav>
+        <span id="soundspace-status-badge" class="status-badge">Loading status...</span>
+        <button id="theme-toggle" type="button" class="ghost-action theme-toggle">Dark Mode</button>
+      </div>
+    </header>
     <main class="app-shell">
       <section class="masthead">
         <div>
@@ -29,6 +41,7 @@
             </div>
             <span id="soundspace-meta" class="meta">Ready</span>
           </div>
+          <p id="soundspace-status-line" class="meta status-line">Checking local memory mode...</p>
 
           <div class="intent-row" aria-label="Suggested searches">
             <button type="button" class="intent-chip" data-query="t8s shure mic setting">Mic Setting</button>
@@ -95,7 +108,10 @@
               <p class="section-tag">Memory</p>
               <h2>Stored Constructs</h2>
             </div>
-            <span id="soundspace-library-meta" class="meta">Loading Music Engineering constructs...</span>
+            <div class="section-actions">
+              <span id="soundspace-library-meta" class="meta">Loading Music Engineering constructs...</span>
+              <button type="button" id="soundspace-reset-examples" class="ghost-action">Reset with Examples</button>
+            </div>
           </div>
           <label class="library-search">
             <span class="sr-only">Search stored Music Engineering constructs</span>

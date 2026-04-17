@@ -372,5 +372,143 @@
       "goal:clean_playback_support"
     ],
     "llmSummary": "Playback starting construct for the Bose T8S using the DJ/Playback preset."
+  },
+  {
+    "id": "venue-small-club-vocal-band",
+    "name": "Small club vocal band venue preset",
+    "deviceBrand": "Generic",
+    "deviceModel": "Venue Preset",
+    "deviceType": "venue_preset",
+    "sourceType": "microphone",
+    "goal": "small club reliability",
+    "venueSize": "small",
+    "eventType": "band",
+    "speakerConfig": "two mains on stands with conservative wedges",
+    "tags": ["venue preset", "small club", "band", "feedback control"],
+    "setup": {
+      "system": "Keep mains just ahead of the vocal mics, keep subs controlled, and favor even coverage over loudness.",
+      "gain": "Set gains for the loudest song in soundcheck and leave margin for the room getting louder once it fills.",
+      "eq": "Trim low-mid buildup quickly because small club rooms stack mud before they feel exciting.",
+      "monitor": "Keep wedges simple and vocal-forward so stage level does not outrun the room.",
+      "placement": "Use speaker placement to solve feedback first because room reflections arrive fast in compact bars.",
+      "notes": "Venue preset for compact bar rooms where spill, reflections, and vocal clarity decide the night."
+    },
+    "strands": [
+      "venue:small",
+      "event:band",
+      "preset:small-club",
+      "setup:feedback_control",
+      "system:front_of_house"
+    ],
+    "llmSummary": "Small club venue preset centered on fast vocal intelligibility and restrained stage volume."
+  },
+  {
+    "id": "venue-festival-stage-turnover",
+    "name": "Festival stage turnover venue preset",
+    "deviceBrand": "Generic",
+    "deviceModel": "Venue Preset",
+    "deviceType": "venue_preset",
+    "sourceType": "speaker system",
+    "goal": "festival turnover stability",
+    "venueSize": "large",
+    "eventType": "band",
+    "speakerConfig": "festival mains with distributed monitors",
+    "tags": ["venue preset", "festival", "turnover", "scene recall"],
+    "setup": {
+      "system": "Verify stage patch, matrices, and speaker processing before trusting any recalled scene.",
+      "gain": "Treat festival gains as living values because guest engineers and line checks change the real level picture all day.",
+      "monitor": "Keep monitor sends labeled and minimal so changeovers stay readable under pressure.",
+      "placement": "Confirm walkways, fills, and side coverage before doors because big stages hide blind spots.",
+      "notes": "Venue preset for fast changeovers where routing certainty matters more than fine tone moves during the first minute."
+    },
+    "strands": [
+      "venue:large",
+      "event:band",
+      "preset:festival-stage",
+      "system:front_of_house",
+      "setup:signal_flow"
+    ],
+    "llmSummary": "Festival stage venue preset built for repeatable routing, safe recall habits, and quick verification."
+  },
+  {
+    "id": "venue-conference-room-speech",
+    "name": "Conference room speech venue preset",
+    "deviceBrand": "Generic",
+    "deviceModel": "Venue Preset",
+    "deviceType": "venue_preset",
+    "sourceType": "microphone",
+    "goal": "conference speech clarity",
+    "venueSize": "medium",
+    "eventType": "speech",
+    "speakerConfig": "distributed speech coverage",
+    "tags": ["venue preset", "conference room", "speech", "coverage"],
+    "setup": {
+      "system": "Favor even speech coverage and low-stress routing over dramatic volume or effects.",
+      "gain": "Set panel and host gains for comfortable speech peaks, not applause or laptop playback spikes.",
+      "eq": "Trim low-end boundary buildup and keep presence moves modest so the room does not turn brittle.",
+      "fx": "Keep effects dry because clarity is the product here.",
+      "notes": "Venue preset for panels, meetings, and spoken-word events where intelligibility outranks spectacle."
+    },
+    "strands": [
+      "venue:medium",
+      "event:speech",
+      "preset:conference-room",
+      "goal:conference-speech-clarity"
+    ],
+    "llmSummary": "Conference room venue preset tuned for even coverage, dry speech, and predictable operation."
+  },
+  {
+    "id": "venue-studio-control-room-reference",
+    "name": "Studio control room reference preset",
+    "deviceBrand": "Generic",
+    "deviceModel": "Venue Preset",
+    "deviceType": "venue_preset",
+    "sourceType": "playback",
+    "goal": "reference listening reset",
+    "venueSize": "small",
+    "eventType": "general",
+    "speakerConfig": "nearfield monitors with mono check",
+    "tags": ["venue preset", "studio control room", "references", "playback"],
+    "setup": {
+      "system": "Keep monitoring at a repeatable reference level and confirm mono or single-speaker checks are easy to access.",
+      "eq": "Do not chase room compensation during a tired session; use references before making broad tone calls.",
+      "placement": "Preserve a stable listening triangle and avoid shifting the desk setup between sessions if possible.",
+      "notes": "Venue preset for regaining perspective in a control room before making heavier mix decisions."
+    },
+    "strands": [
+      "venue:small",
+      "preset:studio-control-room",
+      "goal:reference-listening-reset",
+      "source:playback"
+    ],
+    "llmSummary": "Studio control room venue preset focused on stable listening level, references, and perspective resets."
+  },
+  {
+    "id": "venue-karaoke-bar-rotation",
+    "name": "Karaoke bar rotation venue preset",
+    "deviceBrand": "Generic",
+    "deviceModel": "Venue Preset",
+    "deviceType": "venue_preset",
+    "sourceType": "microphone",
+    "goal": "karaoke rotation consistency",
+    "venueSize": "small",
+    "eventType": "karaoke",
+    "speakerConfig": "portable mains with host monitor",
+    "tags": ["venue preset", "karaoke bar", "rotation", "host support"],
+    "setup": {
+      "system": "Keep playback and host routing simple because the room changes singers faster than it changes hardware.",
+      "gain": "Leave generous headroom for singers who suddenly get louder or hold the mic too close.",
+      "eq": "Use broad survivability moves, not custom vocal shaping for one singer.",
+      "monitor": "Keep any host monitor low and stable so the room stays easy to manage when mics move unpredictably.",
+      "notes": "Venue preset for karaoke nights where consistency, speed, and feedback survival beat perfection."
+    },
+    "strands": [
+      "venue:small",
+      "event:karaoke",
+      "preset:karaoke-bar",
+      "setup:headroom",
+      "setup:feedback_control"
+    ],
+    "llmSummary": "Karaoke bar venue preset built around fast singer changes, safe headroom, and stable playback balance."
   }
 ]

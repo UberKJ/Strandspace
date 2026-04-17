@@ -10,11 +10,15 @@
   <body class="builder-page">
     <header class="page-switch">
       <a class="brand-mark" href="/">Strandspace</a>
-      <nav class="page-nav" aria-label="Workspace switcher">
-        <a class="switch-link is-active" href="/" aria-current="page">Construct Builder</a>
-        <a class="switch-link" href="/studio">Studio</a>
-        <a class="switch-link" href="/soundspace">Soundspace</a>
-      </nav>
+      <div class="page-switch-controls">
+        <nav class="page-nav" aria-label="Workspace switcher">
+          <a class="switch-link is-active" href="/" aria-current="page">Construct Builder</a>
+          <a class="switch-link" href="/studio">Studio</a>
+          <a class="switch-link" href="/soundspace">Soundspace</a>
+        </nav>
+        <span id="system-status-badge" class="status-badge">Loading status...</span>
+        <button id="theme-toggle" type="button" class="secondary-button theme-toggle">Dark Mode</button>
+      </div>
     </header>
 
     <main class="studio-shell builder-shell">
@@ -150,7 +154,10 @@
               <p class="eyebrow small">Library</p>
               <h2>Stored constructs</h2>
             </div>
-            <p id="library-meta" class="meta">Loading constructs...</p>
+            <div class="section-actions">
+              <p id="library-meta" class="meta">Loading constructs...</p>
+              <button id="reset-examples-button" type="button" class="secondary-button subtle-button">Reset with Examples</button>
+            </div>
           </div>
 
           <div id="library-list" class="library-list empty">
@@ -196,6 +203,7 @@
           </div>
         </form>
 
+        <div id="suggested-row" class="example-row" aria-label="Suggested recall prompts"></div>
         <div id="example-row" class="example-row" aria-label="Example recall prompts"></div>
       </section>
 
