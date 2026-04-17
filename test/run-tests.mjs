@@ -22,8 +22,11 @@ const { __resetOpenAiAssistState, __setOpenAiAssistMock } = await import("../str
 const {
   ensureSubjectspaceTables,
   getSubjectConstruct,
+  ingestConversationToConstructs,
+  listConstructLinks,
   listSubjectConstructs,
   recallSubjectSpace,
+  upsertStrandBinder,
   upsertSubjectConstruct
 } = await import("../strandspace/subjectspace.js");
 const {
@@ -218,14 +221,16 @@ await check("GET /studio aliases to the backend workspace", async () => {
   });
 });
 
-await check("GET /soundspace serves the standalone Soundspace app", async () => {
+await check("GET /soundspace redirects to the unified music-engineering topic view", async () => {
   await withServer(async (address) => {
     const response = await fetch(`http://127.0.0.1:${address.port}/soundspace`);
     assert.equal(response.status, 200);
+    assert.equal(response.redirected, true);
+    assert.match(response.url, /\/subject\?subjectId=music-engineering$/);
     const html = await response.text();
-    assert.match(html, /Strandspace Music Engineer/);
-    assert.match(html, /Search the mixer memory like a working engineer, not a note dump/i);
-    assert.match(html, /Search Memory/);
+    assert.match(html, /Strandspace Topic View/);
+    assert.match(html, /Ask The Stored Topic/i);
+    assert.match(html, /Stored Constructs/i);
   });
 });
 
@@ -630,6 +635,175 @@ await check("weighted subjectspace recall penalizes excluded cues and preserves 
   } finally {
     db.close();
   }
+});
+
+await check("strand binders reinforce plausible pairings and expose binder trace details", async () => {
+  const db = new DatabaseSync(":memory:");
+  ensureSubjectspaceTables(db);
+
+  try {
+    upsertSubjectConstruct(db, {
+      subjectId: "care-guides",
+      subjectLabel: "Care Guides",
+      constructLabel: "Baby bottle milk warming recall",
+      target: "Warm a baby bottle with milk safely",
+      objective: "feeding prep without hotspots",
+      context: {
+        routine: "baby bottle",
+        liquid: "milk"
+      },
+      steps: [
+        "Check the bottle temperature before feeding.",
+        "Swirl the milk instead of shaking hard."
+      ],
+      tags: ["baby bottle", "milk", "feeding"]
+    });
+    upsertSubjectConstruct(db, {
+      subjectId: "care-guides",
+      subjectLabel: "Care Guides",
+      constructLabel: "Whiskey bottle shelf recall",
+      target: "Store a whiskey bottle for display",
+      objective: "bar shelf organization",
+      context: {
+        routine: "glass bottle",
+        liquid: "whiskey"
+      },
+      steps: [
+        "Keep the bottle upright.",
+        "Avoid direct sun on the label."
+      ],
+      tags: ["bottle", "whiskey", "bar"]
+    });
+    upsertStrandBinder(db, {
+      subjectId: "care-guides",
+      leftTerm: "baby bottle",
+      rightTerm: "milk",
+      weight: 4.5,
+      reason: "feeding pair"
+    });
+    upsertStrandBinder(db, {
+      subjectId: "care-guides",
+      leftTerm: "bottle",
+      rightTerm: "whiskey",
+      weight: -3.2,
+      reason: "suppress bar-shelf overlap for feeding questions"
+    });
+
+    const recall = recallSubjectSpace(db, {
+      subjectId: "care-guides",
+      question: "what is the baby bottle milk setup"
+    });
+
+    assert.equal(recall.ready, true);
+    assert.equal(recall.matched?.constructLabel, "Baby bottle milk warming recall");
+    assert.ok(Array.isArray(recall.matched?.binderHits));
+    assert.ok(recall.matched.binderHits.some((hit) => hit.leftTerm === "baby bottle" && hit.rightTerm === "milk"));
+    assert.ok(Array.isArray(recall.trace?.binderStrands));
+    assert.ok(recall.trace.binderStrands.some((entry) => /baby bottle \+ milk/i.test(entry.name)));
+  } finally {
+    db.close();
+  }
+});
+
+await check("subject construct saves create related construct links and similar drafts merge instead of duplicating", async () => {
+  const db = new DatabaseSync(":memory:");
+  ensureSubjectspaceTables(db);
+
+  try {
+    const base = upsertSubjectConstruct(db, {
+      subjectId: "portrait-lighting",
+      subjectLabel: "Portrait Lighting",
+      constructLabel: "Gallery interview key light recall",
+      target: "Key light for a seated interview",
+      objective: "soft face lighting with gentle background separation",
+      context: {
+        room: "small gallery",
+        camera: "medium close-up"
+      },
+      steps: [
+        "Raise the key until the cheek has shape.",
+        "Keep the background under the face."
+      ],
+      tags: ["lighting", "interview", "softbox"]
+    });
+    const linked = upsertSubjectConstruct(db, {
+      subjectId: "portrait-lighting",
+      subjectLabel: "Portrait Lighting",
+      constructLabel: "Gallery interview hair light recall",
+      target: "Hair light for a seated interview",
+      objective: "separate a dark jacket from the background",
+      context: {
+        room: "small gallery",
+        camera: "medium close-up"
+      },
+      steps: [
+        "Feather the edge light behind the shoulder.",
+        "Keep the edge subtler than the key."
+      ],
+      tags: ["lighting", "interview", "separation"]
+    });
+    const links = listConstructLinks(db, base.id);
+    assert.ok(links.some((entry) => entry.relatedConstructId === linked.id));
+
+    const merged = upsertSubjectConstruct(db, {
+      subjectLabel: "Portrait Lighting",
+      constructLabel: "Gallery interview soft key memory",
+      target: "Key light for a seated interview",
+      objective: "soft face lighting with gentle background separation",
+      context: {
+        room: "small gallery",
+        background: "charcoal roll"
+      },
+      steps: [
+        "Raise the key until the cheek has shape.",
+        "Add a shoulder edge only if the jacket disappears."
+      ],
+      notes: "Add this when the jacket gets lost in the backdrop.",
+      tags: ["lighting", "interview", "separation"]
+    });
+
+    assert.equal(merged.id, base.id);
+    assert.equal(listSubjectConstructs(db, "portrait-lighting").length, 2);
+    assert.match(String(merged.notes), /jacket gets lost/i);
+    assert.equal(merged.context.background, "charcoal roll");
+  } finally {
+    db.close();
+  }
+});
+
+await check("conversation ingestion distills chat into one or more constructs without storing raw chat", async () => {
+  const drafts = ingestConversationToConstructs({
+    subjectLabel: "Music Engineering",
+    messages: [
+      {
+        role: "user",
+        content: "I need a karaoke vocal reset for a Bose T8S."
+      },
+      {
+        role: "assistant",
+        content: [
+          "Subject: Music Engineering",
+          "Construct Label: Karaoke vocal reset recall",
+          "Target: Bose T8S karaoke vocal chain",
+          "Objective: clean gain before feedback",
+          "Context:",
+          "mixer: Bose T8S",
+          "room: karaoke bar",
+          "Steps:",
+          "- Set receiver output before mixer trim",
+          "- Ring out the monitors before adding reverb",
+          "Notes: Reusable karaoke reset starting point.",
+          "Tags: karaoke, vocal, gain staging"
+        ].join("\n")
+      }
+    ]
+  });
+
+  assert.equal(drafts.length, 1);
+  assert.equal(drafts[0].subjectId, "music-engineering");
+  assert.equal(drafts[0].constructLabel, "Karaoke vocal reset recall");
+  assert.equal(drafts[0].context.mixer, "Bose T8S");
+  assert.match(String(drafts[0].provenance?.source), /conversation-ingest/);
 });
 
 await check("POST /api/subjectspace/learn stores and recalls a custom construct", async () => {
@@ -1066,6 +1240,143 @@ await check("POST /api/subjectspace/assist times out instead of hanging when Ope
     } else {
       process.env.SUBJECTSPACE_OPENAI_TIMEOUT_MS = originalTimeout;
     }
+  }
+});
+
+await check("GET /api/stats reports database counts, size, and new local graph tables", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/stats`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.ok(Number(payload.database?.sizeBytes ?? 0) >= 0);
+    assert.ok(Number(payload.counts?.subjectCount ?? 0) >= 1);
+    assert.ok(Number(payload.counts?.binderCount ?? 0) >= 0);
+    assert.ok(Array.isArray(payload.tables));
+    assert.ok(payload.tables.some((table) => table.name === "strand_binders"));
+    assert.ok(payload.tables.some((table) => table.name === "construct_links"));
+  });
+});
+
+await check("POST /api/subjectspace/ingest-conversation stores distilled constructs instead of raw transcript blobs", async () => {
+  await withServer(async (address) => {
+    const response = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/ingest-conversation`, {
+      subjectLabel: "Music Engineering",
+      messages: [
+        {
+          role: "user",
+          content: "Build me a karaoke reset."
+        },
+        {
+          role: "assistant",
+          content: [
+            "Subject: Music Engineering",
+            "Construct Label: Karaoke reset recall",
+            "Target: Bose T8S karaoke reset",
+            "Objective: clean gain before feedback",
+            "Context:",
+            "mixer: Bose T8S",
+            "venue: karaoke bar",
+            "Steps:",
+            "- Set receiver output before mixer trim",
+            "- Ring out the monitors first",
+            "Notes: Reusable reset for karaoke.",
+            "Tags: karaoke, gain staging"
+          ].join("\n")
+        }
+      ]
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.source, "conversation-ingest");
+    assert.equal(payload.count, 1);
+    assert.equal(payload.constructs[0].constructLabel, "Karaoke reset recall");
+
+    const libraryResponse = await fetch(`http://127.0.0.1:${address.port}/api/backend/db/table?table=chat_messages&limit=5`);
+    assert.equal(libraryResponse.status, 200);
+    const libraryPayload = await libraryResponse.json();
+    assert.equal(libraryPayload.table.name, "chat_messages");
+    assert.equal(Array.isArray(libraryPayload.rows), true);
+    assert.equal(libraryPayload.rows.length, 0);
+  });
+});
+
+await check("POST /api/chat returns a local-first answer and persists the conversation when recall is sufficient", async () => {
+  await withServer(async (address) => {
+    const construct = await createSubjectConstruct(address.port, {
+      subjectLabel: `Chat Local Subject ${Date.now()}`
+    });
+
+    const response = await postJson(`http://127.0.0.1:${address.port}/api/chat`, {
+      subjectId: construct.subjectId,
+      message: "What is my gallery interview key light setup with the softbox at 45 degrees?"
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.source, "local");
+    assert.ok(payload.conversationId);
+    assert.equal(payload.construct.id, construct.id);
+
+    const messagesResponse = await fetch(`http://127.0.0.1:${address.port}/api/backend/db/table?table=chat_messages&limit=10`);
+    assert.equal(messagesResponse.status, 200);
+    const messagesPayload = await messagesResponse.json();
+    assert.ok(messagesPayload.rows.some((row) => row.conversationId === payload.conversationId && row.role === "user"));
+    assert.ok(messagesPayload.rows.some((row) => row.conversationId === payload.conversationId && row.role === "assistant"));
+  });
+});
+
+await check("POST /api/chat falls back to AI, saves a chatbot-derived construct, and returns the saved memory", async () => {
+  __setOpenAiAssistMock(async ({ question, subjectLabel }) => ({
+    responseId: "resp_mock_chat_subjectspace",
+    model: "gpt-5.4-mini",
+    assist: {
+      apiAction: "expand",
+      constructLabel: "Gallery interview tungsten recall",
+      target: "Key light for a seated interview under tungsten practicals",
+      objective: "keep skin natural while the room stays warm",
+      contextEntries: [
+        { key: "room", value: "small gallery" },
+        { key: "key light", value: "softbox with warmer balance" }
+      ],
+      steps: [
+        "Set the key for natural skin first.",
+        "Let the room stay warm without drifting orange.",
+        "Add negative fill only if the jawline flattens."
+      ],
+      notes: `AI expanded ${subjectLabel} for: ${question}`,
+      tags: ["lighting", "interview", "tungsten"],
+      validationFocus: ["skin tone"],
+      rationale: "Mocked chat fallback.",
+      shouldLearn: true
+    }
+  }));
+
+  try {
+    await withServer(async (address) => {
+      const construct = await createSubjectConstruct(address.port, {
+        subjectLabel: `Chat Assist Subject ${Date.now()}`
+      });
+
+      const response = await postJson(`http://127.0.0.1:${address.port}/api/chat`, {
+        subjectId: construct.subjectId,
+        message: "What is my gallery interview tungsten setup?"
+      });
+
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.source, "chatbot-derived");
+      assert.equal(payload.savedConstruct.provenance.source, "chatbot-derived");
+      assert.ok(payload.savedConstruct.relatedConstructs.length >= 0);
+
+      const libraryResponse = await fetch(`http://127.0.0.1:${address.port}/api/subjectspace/library?subjectId=${encodeURIComponent(construct.subjectId)}`);
+      assert.equal(libraryResponse.status, 200);
+      const libraryPayload = await libraryResponse.json();
+      assert.ok(libraryPayload.constructs.some((entry) => entry.provenance?.source === "chatbot-derived"));
+    });
+  } finally {
+    __setOpenAiAssistMock(null);
   }
 });
 

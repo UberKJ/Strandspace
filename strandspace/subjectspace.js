@@ -9,6 +9,10 @@ const __dirname = dirname(__filename);
 export const defaultSubjectSeedsPath = join(__dirname, "..", "data", "subject-seeds.json");
 const READY_THRESHOLD = 34;
 const PARTIAL_READY_MULTIPLIER = 0.55;
+const LINK_SIMILARITY_THRESHOLD = 0.2;
+const MERGE_SIMILARITY_THRESHOLD = 0.68;
+const MAX_BINDER_BONUS = 10;
+const MAX_LINK_REINFORCEMENT = 8;
 
 const QUERY_STOPWORDS = new Set([
   "a",
@@ -631,6 +635,49 @@ export function mergeSubjectConstruct(basePayload = {}, patchPayload = {}, optio
   });
 }
 
+export function ingestConversationToConstructs(input = {}, options = {}) {
+  const messages = buildConversationMessages(input?.messages ?? input?.transcript ?? input);
+  const subjectLabelOption = String(input?.subjectLabel ?? options.subjectLabel ?? "").trim();
+  const subjectIdOption = String(input?.subjectId ?? options.subjectId ?? "").trim();
+  if (!messages.length) {
+    return [];
+  }
+
+  const transcript = messages
+    .map((entry) => `${entry.role}: ${entry.content}`)
+    .join("\n");
+  const drafts = [];
+  const assistantDraftBlocks = messages
+    .filter((entry) => entry.role === "assistant")
+    .map((entry) => entry.content)
+    .filter((content) => /subject\s*:|target\s*:|objective\s*:|steps\s*:|context\s*:/i.test(content));
+
+  const blocks = assistantDraftBlocks.length ? assistantDraftBlocks : [transcript];
+  for (const block of blocks) {
+    const draft = buildSubjectConstructDraftFromInput(block, {
+      subjectLabel: subjectLabelOption || "Conversation Memory",
+      subjectId: subjectIdOption || undefined
+    });
+    drafts.push(mergeSubjectConstruct(draft, {
+      provenance: {
+        source: "conversation-ingest",
+        learnedFromQuestion: transcript
+      }
+    }, {
+      preserveId: false,
+      provenance: {
+        ...(draft.provenance ?? {}),
+        source: "conversation-ingest",
+        learnedFromQuestion: transcript
+      }
+    }));
+  }
+
+  return drafts.filter((draft, index, all) => (
+    all.findIndex((candidate) => candidate.subjectId === draft.subjectId && candidate.constructLabel === draft.constructLabel) === index
+  ));
+}
+
 function fromRow(row) {
   if (!row) {
     return null;
@@ -650,6 +697,39 @@ function fromRow(row) {
     strands: safeJsonParse(row.strandsJson, []),
     provenance: safeJsonParse(row.provenanceJson, null),
     learnedCount: Number(row.learnedCount ?? 1),
+    updatedAt: row.updatedAt
+  };
+}
+
+function binderFromRow(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    subjectId: row.subjectId || "",
+    leftTerm: row.leftTerm,
+    rightTerm: row.rightTerm,
+    weight: Number(row.weight ?? 0),
+    reason: row.reason || "",
+    source: row.source || "manual",
+    updatedAt: row.updatedAt
+  };
+}
+
+function linkFromRow(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    sourceConstructId: row.sourceConstructId,
+    relatedConstructId: row.relatedConstructId,
+    score: Number(row.score ?? 0),
+    reason: row.reason || "",
+    detail: safeJsonParse(row.detailJson, {}),
     updatedAt: row.updatedAt
   };
 }
@@ -798,6 +878,270 @@ function extractNegativeCues(normalized = "", subjectId = "") {
   }
 
   return cues;
+}
+
+function normalizeBinderTerm(value = "") {
+  const normalized = normalizeText(String(value ?? "").replace(/[:_]/g, " "));
+  const tokens = normalized
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((token) => token.length > 1 && !QUERY_STOPWORDS.has(token) && !NEGATIVE_CUE_TOKENS.has(token));
+
+  return tokens.slice(0, 4).join(" ").trim();
+}
+
+function normalizeBinderPair(leftTerm = "", rightTerm = "") {
+  const normalizedLeft = normalizeBinderTerm(leftTerm);
+  const normalizedRight = normalizeBinderTerm(rightTerm);
+
+  if (!normalizedLeft || !normalizedRight || normalizedLeft === normalizedRight) {
+    return null;
+  }
+
+  return [normalizedLeft, normalizedRight].sort((left, right) => left.localeCompare(right));
+}
+
+function buildStrandBinderId(subjectId = "", leftTerm = "", rightTerm = "") {
+  const subjectKey = String(subjectId ?? "").trim() || "global";
+  return `binder:${subjectKey}:${leftTerm}=>${rightTerm}`;
+}
+
+function buildConstructLinkId(sourceConstructId = "", relatedConstructId = "") {
+  return `link:${String(sourceConstructId ?? "").trim()}=>${String(relatedConstructId ?? "").trim()}`;
+}
+
+function pushUniqueTerm(list, seen, term, limit = 24) {
+  const normalized = normalizeBinderTerm(term);
+  if (!normalized || seen.has(normalized) || list.length >= limit) {
+    return;
+  }
+
+  seen.add(normalized);
+  list.push(normalized);
+}
+
+function extractConceptTermsFromText(value = "", options = {}) {
+  const limit = Number(options.limit ?? 8) || 8;
+  const terms = [];
+  const seen = new Set();
+  const normalized = normalizeBinderTerm(value);
+
+  if (normalized) {
+    pushUniqueTerm(terms, seen, normalized, limit);
+  }
+
+  const tokens = tokenize(value)
+    .filter((token) => token.length > 2)
+    .slice(0, limit);
+  for (const token of tokens) {
+    pushUniqueTerm(terms, seen, token, limit);
+  }
+
+  const phrases = buildPhrases(tokens, 2).slice(0, limit);
+  for (const phrase of phrases) {
+    pushUniqueTerm(terms, seen, phrase, limit);
+  }
+
+  return terms;
+}
+
+function extractConstructConcepts(record = {}, options = {}) {
+  const limit = Number(options.limit ?? 20) || 20;
+  const terms = [];
+  const seen = new Set();
+  const sources = [
+    record.constructLabel,
+    record.target,
+    record.objective,
+    ...(record.tags ?? []),
+    ...(record.steps ?? []).slice(0, 4),
+    ...Object.values(record.context ?? {}),
+    ...(record.strands ?? []).map((strand) => String(strand ?? "").replace(/[:_]/g, " "))
+  ];
+
+  for (const source of sources) {
+    for (const term of extractConceptTermsFromText(source, {
+      limit: 6
+    })) {
+      pushUniqueTerm(terms, seen, term, limit);
+    }
+  }
+
+  return terms;
+}
+
+function extractParsedConcepts(parsed = {}, options = {}) {
+  const limit = Number(options.limit ?? 20) || 20;
+  const terms = [];
+  const seen = new Set();
+  const sources = [
+    ...(parsed.keywords ?? []),
+    ...(parsed.phrases ?? []),
+    ...((parsed.aliasTerms ?? []).flatMap((alias) => [alias.source, alias.term, alias.canonical])),
+    ...((parsed.exclusions ?? []).flatMap((entry) => [entry.cue, ...(entry.tokens ?? []), ...((entry.aliasTerms ?? []).map((alias) => alias.term))]))
+  ];
+
+  for (const source of sources) {
+    pushUniqueTerm(terms, seen, source, limit);
+  }
+
+  return terms;
+}
+
+function intersectionRatio(leftValues = [], rightValues = []) {
+  const left = new Set(uniqueValues(leftValues).map((value) => normalizeBinderTerm(value)).filter(Boolean));
+  const right = new Set(uniqueValues(rightValues).map((value) => normalizeBinderTerm(value)).filter(Boolean));
+
+  if (!left.size || !right.size) {
+    return 0;
+  }
+
+  let matches = 0;
+  for (const value of left) {
+    if (right.has(value)) {
+      matches += 1;
+    }
+  }
+
+  return Number((matches / Math.max(left.size, right.size)).toFixed(2));
+}
+
+function scoreBinderBridge(leftTerms = [], rightTerms = [], binders = []) {
+  const left = new Set(leftTerms.map((term) => normalizeBinderTerm(term)).filter(Boolean));
+  const right = new Set(rightTerms.map((term) => normalizeBinderTerm(term)).filter(Boolean));
+  const hits = [];
+  let score = 0;
+
+  if (!left.size || !right.size || !binders.length) {
+    return {
+      score: 0,
+      hits
+    };
+  }
+
+  for (const binder of binders) {
+    const leftHit = left.has(binder.leftTerm) && right.has(binder.rightTerm);
+    const rightHit = left.has(binder.rightTerm) && right.has(binder.leftTerm);
+    if (!leftHit && !rightHit) {
+      continue;
+    }
+
+    const weight = Number(binder.weight ?? 0);
+    if (!weight) {
+      continue;
+    }
+
+    score += weight;
+    hits.push({
+      leftTerm: binder.leftTerm,
+      rightTerm: binder.rightTerm,
+      weight,
+      source: binder.source,
+      reason: binder.reason
+    });
+  }
+
+  return {
+    score: Number(score.toFixed(2)),
+    hits: hits.slice(0, 6)
+  };
+}
+
+function computeConstructSimilarity(candidate = {}, existing = {}, binders = []) {
+  const candidateTags = normalizeArray(candidate.tags);
+  const existingTags = normalizeArray(existing.tags);
+  const candidateStrands = normalizeArray(candidate.strands);
+  const existingStrands = normalizeArray(existing.strands);
+  const candidateContext = Object.entries(candidate.context ?? {}).map(([key, value]) => `${key}: ${value}`);
+  const existingContext = Object.entries(existing.context ?? {}).map(([key, value]) => `${key}: ${value}`);
+  const candidateTerms = extractConstructConcepts(candidate, { limit: 24 });
+  const existingTerms = extractConstructConcepts(existing, { limit: 24 });
+  const lexical = intersectionRatio(candidateTerms, existingTerms);
+  const tagOverlap = intersectionRatio(candidateTags, existingTags);
+  const strandOverlap = intersectionRatio(candidateStrands, existingStrands);
+  const contextOverlap = intersectionRatio(candidateContext, existingContext);
+  const targetOverlap = intersectionRatio([candidate.target, candidate.constructLabel], [existing.target, existing.constructLabel]);
+  const binderBridge = scoreBinderBridge(candidateTerms, existingTerms, binders);
+  const binderBonus = Math.min(Math.max(binderBridge.score, -4), 6) / 12;
+  const score = clamp(
+    (lexical * 0.36)
+    + (tagOverlap * 0.2)
+    + (strandOverlap * 0.18)
+    + (contextOverlap * 0.12)
+    + (targetOverlap * 0.22)
+    + (binderBonus * 0.12),
+    0,
+    1
+  );
+  const reasons = [];
+
+  if (targetOverlap >= 0.6) {
+    reasons.push("shared target or construct anchor");
+  }
+  if (tagOverlap >= 0.34) {
+    reasons.push("shared tags");
+  }
+  if (strandOverlap >= 0.3) {
+    reasons.push("shared strands");
+  }
+  if (contextOverlap >= 0.25) {
+    reasons.push("shared context");
+  }
+  if (binderBridge.hits.some((hit) => Number(hit.weight ?? 0) > 0)) {
+    reasons.push("positive binder reinforcement");
+  }
+  if (binderBridge.hits.some((hit) => Number(hit.weight ?? 0) < 0)) {
+    reasons.push("negative binder suppression");
+  }
+
+  return {
+    score: Number(score.toFixed(2)),
+    reason: reasons[0] ?? "lexical overlap",
+    detail: {
+      lexical,
+      tagOverlap,
+      strandOverlap,
+      contextOverlap,
+      targetOverlap,
+      binderScore: Number(binderBridge.score ?? 0),
+      binderHits: binderBridge.hits
+    }
+  };
+}
+
+function buildConversationMessages(input = null) {
+  if (Array.isArray(input)) {
+    return input
+      .map((entry, index) => ({
+        role: String(entry?.role ?? (index % 2 === 0 ? "user" : "assistant")).trim().toLowerCase() || "user",
+        content: String(entry?.content ?? entry?.message ?? "").trim()
+      }))
+      .filter((entry) => entry.content);
+  }
+
+  const transcript = String(input ?? "").trim();
+  if (!transcript) {
+    return [];
+  }
+
+  return transcript
+    .split(/\r?\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const match = line.match(/^(user|assistant|system)\s*:\s*(.+)$/i);
+      if (match) {
+        return {
+          role: String(match[1] ?? "user").trim().toLowerCase(),
+          content: String(match[2] ?? "").trim()
+        };
+      }
+
+      return {
+        role: "user",
+        content: line
+      };
+    });
 }
 
 function buildNeedles(record) {
@@ -1019,7 +1363,78 @@ function findStrongestExclusionMatch(entries = [], exclusionCue = "", term = "")
   return strongest;
 }
 
-function scoreConstruct(record, parsed) {
+function scoreBinderAlignment(record, parsed, binders = []) {
+  const queryTerms = extractParsedConcepts(parsed, { limit: 20 });
+  const recordTerms = extractConstructConcepts(record, { limit: 24 });
+  const querySet = new Set(queryTerms);
+  const recordSet = new Set(recordTerms);
+  const hits = [];
+  let bonus = 0;
+
+  if (!querySet.size || !recordSet.size || !binders.length) {
+    return {
+      score: 0,
+      hits
+    };
+  }
+
+  for (const binder of binders) {
+    const queryHasLeft = querySet.has(binder.leftTerm);
+    const queryHasRight = querySet.has(binder.rightTerm);
+    const recordHasLeft = recordSet.has(binder.leftTerm);
+    const recordHasRight = recordSet.has(binder.rightTerm);
+
+    if (!queryHasLeft && !queryHasRight) {
+      continue;
+    }
+
+    if (!recordHasLeft && !recordHasRight) {
+      continue;
+    }
+
+    let contribution = 0;
+    let mode = "bridge";
+    const weight = Number(binder.weight ?? 0);
+    if (!weight) {
+      continue;
+    }
+
+    if (queryHasLeft && queryHasRight && recordHasLeft && recordHasRight) {
+      contribution = weight * 1.15;
+      mode = "full-pair";
+    } else if ((queryHasLeft && recordHasRight) || (queryHasRight && recordHasLeft)) {
+      contribution = weight * 0.82;
+      mode = "cross-pair";
+    } else if ((queryHasLeft || queryHasRight) && recordHasLeft && recordHasRight) {
+      contribution = weight * 0.68;
+      mode = "construct-pair";
+    }
+
+    if (!contribution) {
+      continue;
+    }
+
+    bonus += contribution;
+    hits.push({
+      leftTerm: binder.leftTerm,
+      rightTerm: binder.rightTerm,
+      weight: Number(weight.toFixed(2)),
+      contribution: Number(contribution.toFixed(2)),
+      mode,
+      source: binder.source,
+      reason: binder.reason
+    });
+  }
+
+  return {
+    score: Number(clamp(bonus, -MAX_BINDER_BONUS, MAX_BINDER_BONUS).toFixed(2)),
+    hits: hits
+      .sort((left, right) => Math.abs(Number(right.contribution ?? 0)) - Math.abs(Number(left.contribution ?? 0)))
+      .slice(0, 6)
+  };
+}
+
+function scoreConstruct(record, parsed, options = {}) {
   const needles = buildNeedles(record);
   const entries = buildFieldEntries(record, needles);
   let score = 0;
@@ -1029,6 +1444,7 @@ function scoreConstruct(record, parsed) {
   const aliasHits = [];
   const phraseHits = [];
   const excludedHits = [];
+  const binderHits = [];
   const supportMap = new Map();
 
   function recordPositiveMatch(match, payload = {}) {
@@ -1185,6 +1601,28 @@ function scoreConstruct(record, parsed) {
     });
   }
 
+  const binderAlignment = scoreBinderAlignment(record, parsed, options.binders ?? []);
+  if (binderAlignment.score) {
+    score += binderAlignment.score;
+  }
+  for (const hit of binderAlignment.hits) {
+    binderHits.push(hit);
+    upsertSupportHit(supportMap, {
+      key: `binder:${hit.leftTerm}:${hit.rightTerm}`,
+      label: "binder",
+      summary: `${hit.leftTerm} <-> ${hit.rightTerm}`,
+      haystacks: [],
+      weights: {}
+    }, {
+      weight: hit.contribution,
+      phraseHits: [{
+        phrase: `${hit.leftTerm} + ${hit.rightTerm}`,
+        via: hit.mode,
+        source: hit.source
+      }]
+    });
+  }
+
   const matchedKeywordCount = parsed.keywords.filter((token) => matchedSources.has(token)).length;
   const matchedPhraseCount = (parsed.phrases ?? []).filter((phrase) => matchedSources.has(phrase)).length;
   const cueWeightTotal = (parsed.keywords.length || 0) + ((parsed.phrases?.length ?? 0) * 1.35);
@@ -1209,7 +1647,8 @@ function scoreConstruct(record, parsed) {
     matchedRatio: Number((cueWeightTotal > 0 ? cueWeightMatched / cueWeightTotal : 0).toFixed(2)),
     aliasHits,
     phraseHits,
-    excludedHits
+    excludedHits,
+    binderHits
   };
 }
 
@@ -1217,6 +1656,8 @@ function buildTrace(record, parsed, candidates = []) {
   const contextEntries = Object.entries(record?.context ?? {});
   const aliasPreview = (record?.aliasHits ?? []).slice(0, 4);
   const phrasePreview = (record?.phraseHits ?? []).slice(0, 4);
+  const binderPreview = (record?.binderHits ?? []).slice(0, 4);
+  const linkPreview = (record?.linkHits ?? []).slice(0, 4);
   const exclusionPreview = [
     ...((parsed.exclusions ?? []).map((entry) => ({
       cue: entry.cue,
@@ -1254,6 +1695,11 @@ function buildTrace(record, parsed, candidates = []) {
       kind: "alias",
       name: entry.source,
       value: `matched via ${entry.term}`
+    })),
+    binderStrands: binderPreview.map((entry) => ({
+      kind: "binder",
+      name: `${entry.leftTerm} + ${entry.rightTerm}`,
+      value: `${entry.contribution > 0 ? "reinforced" : "suppressed"} by ${entry.contribution.toFixed(2)}`
     })),
     phraseStrands: phrasePreview.map((entry) => ({
       kind: "phrase",
@@ -1307,6 +1753,11 @@ function buildTrace(record, parsed, candidates = []) {
       name: candidate.constructLabel,
       score: candidate.score,
       role: index === 0 ? "winner" : "contender"
+    })),
+    linkedStrands: linkPreview.map((entry) => ({
+      kind: "link",
+      name: entry.constructLabel,
+      value: `reinforced by ${entry.reinforcement.toFixed(2)} from a ${entry.reason || "related"} construct`
     })),
     expressionField: record
       ? `Triggers from the question docked into ${record.constructLabel}, using ${record.subjectLabel} anchors to emit a reusable answer construct.`
@@ -1624,6 +2075,49 @@ export function ensureSubjectspaceTables(db) {
     CREATE INDEX IF NOT EXISTS idx_subject_constructs_subject ON subject_constructs(subjectId, updatedAt DESC);
     CREATE INDEX IF NOT EXISTS idx_subject_constructs_label ON subject_constructs(constructLabel);
     CREATE INDEX IF NOT EXISTS idx_subject_constructs_updated ON subject_constructs(updatedAt DESC);
+    CREATE TABLE IF NOT EXISTS strand_binders (
+      id TEXT PRIMARY KEY,
+      subjectId TEXT NOT NULL DEFAULT '',
+      leftTerm TEXT NOT NULL,
+      rightTerm TEXT NOT NULL,
+      weight REAL NOT NULL DEFAULT 0,
+      reason TEXT,
+      source TEXT NOT NULL DEFAULT 'manual',
+      updatedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_strand_binders_pair ON strand_binders(subjectId, leftTerm, rightTerm);
+    CREATE INDEX IF NOT EXISTS idx_strand_binders_subject ON strand_binders(subjectId, updatedAt DESC);
+    CREATE TABLE IF NOT EXISTS construct_links (
+      id TEXT PRIMARY KEY,
+      sourceConstructId TEXT NOT NULL,
+      relatedConstructId TEXT NOT NULL,
+      score REAL NOT NULL DEFAULT 0,
+      reason TEXT,
+      detailJson TEXT,
+      updatedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_construct_links_pair ON construct_links(sourceConstructId, relatedConstructId);
+    CREATE INDEX IF NOT EXISTS idx_construct_links_source ON construct_links(sourceConstructId, score DESC);
+    CREATE TABLE IF NOT EXISTS chat_conversations (
+      id TEXT PRIMARY KEY,
+      subjectId TEXT,
+      title TEXT,
+      metadataJson TEXT,
+      createdAt TEXT NOT NULL,
+      lastMessageAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_conversations_updated ON chat_conversations(lastMessageAt DESC);
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id TEXT PRIMARY KEY,
+      conversationId TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      subjectId TEXT,
+      constructId TEXT,
+      metadataJson TEXT,
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON chat_messages(conversationId, createdAt ASC);
   `);
 }
 
@@ -1684,9 +2178,257 @@ export function getSubjectConstruct(db, id) {
   return fromRow(db.prepare("SELECT * FROM subject_constructs WHERE id = ?").get(String(id)));
 }
 
+export function listStrandBinders(db, subjectId = "", options = {}) {
+  ensureSubjectspaceTables(db);
+  const normalizedSubjectId = String(subjectId ?? "").trim();
+  const includeGlobal = options.includeGlobal !== false;
+
+  let rows = [];
+  if (normalizedSubjectId && includeGlobal) {
+    rows = db.prepare(`
+      SELECT * FROM strand_binders
+      WHERE subjectId = ? OR subjectId = ''
+      ORDER BY subjectId DESC, ABS(weight) DESC, updatedAt DESC
+    `).all(normalizedSubjectId);
+  } else if (normalizedSubjectId) {
+    rows = db.prepare(`
+      SELECT * FROM strand_binders
+      WHERE subjectId = ?
+      ORDER BY ABS(weight) DESC, updatedAt DESC
+    `).all(normalizedSubjectId);
+  } else {
+    rows = db.prepare(`
+      SELECT * FROM strand_binders
+      ORDER BY subjectId ASC, ABS(weight) DESC, updatedAt DESC
+    `).all();
+  }
+
+  return rows.map(binderFromRow);
+}
+
+export function upsertStrandBinder(db, payload = {}) {
+  ensureSubjectspaceTables(db);
+  const pair = normalizeBinderPair(payload.leftTerm, payload.rightTerm);
+  if (!pair) {
+    return null;
+  }
+
+  const subjectId = String(payload.subjectId ?? "").trim();
+  const source = String(payload.source ?? "manual").trim() || "manual";
+  const updatedAt = new Date().toISOString();
+  const id = String(payload.id ?? buildStrandBinderId(subjectId, pair[0], pair[1])).trim();
+  const weight = Number(clamp(Number(payload.weight ?? 0), -12, 12).toFixed(2));
+  const existing = db.prepare(`
+    SELECT * FROM strand_binders
+    WHERE subjectId = ? AND leftTerm = ? AND rightTerm = ?
+  `).get(subjectId, pair[0], pair[1]);
+
+  const nextWeight = existing && String(existing.source ?? "") === "derived" && source === "derived"
+    ? Math.max(Number(existing.weight ?? 0), weight)
+    : weight;
+  const nextReason = String(payload.reason ?? existing?.reason ?? "").trim();
+
+  db.prepare(`
+    INSERT INTO strand_binders (id, subjectId, leftTerm, rightTerm, weight, reason, source, updatedAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      subjectId = excluded.subjectId,
+      leftTerm = excluded.leftTerm,
+      rightTerm = excluded.rightTerm,
+      weight = excluded.weight,
+      reason = excluded.reason,
+      source = excluded.source,
+      updatedAt = excluded.updatedAt
+  `).run(
+    id,
+    subjectId,
+    pair[0],
+    pair[1],
+    nextWeight,
+    nextReason || null,
+    source,
+    updatedAt
+  );
+
+  return binderFromRow(db.prepare("SELECT * FROM strand_binders WHERE id = ?").get(id));
+}
+
+export function listConstructLinks(db, constructId = "") {
+  ensureSubjectspaceTables(db);
+  const normalizedConstructId = String(constructId ?? "").trim();
+  const rows = normalizedConstructId
+    ? db.prepare(`
+      SELECT * FROM construct_links
+      WHERE sourceConstructId = ?
+      ORDER BY score DESC, updatedAt DESC
+    `).all(normalizedConstructId)
+    : db.prepare(`
+      SELECT * FROM construct_links
+      ORDER BY updatedAt DESC, score DESC
+    `).all();
+
+  return rows.map(linkFromRow);
+}
+
+function saveConstructLink(db, payload = {}) {
+  ensureSubjectspaceTables(db);
+  const sourceConstructId = String(payload.sourceConstructId ?? "").trim();
+  const relatedConstructId = String(payload.relatedConstructId ?? "").trim();
+  if (!sourceConstructId || !relatedConstructId || sourceConstructId === relatedConstructId) {
+    return null;
+  }
+
+  const id = buildConstructLinkId(sourceConstructId, relatedConstructId);
+  const updatedAt = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO construct_links (id, sourceConstructId, relatedConstructId, score, reason, detailJson, updatedAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      sourceConstructId = excluded.sourceConstructId,
+      relatedConstructId = excluded.relatedConstructId,
+      score = excluded.score,
+      reason = excluded.reason,
+      detailJson = excluded.detailJson,
+      updatedAt = excluded.updatedAt
+  `).run(
+    id,
+    sourceConstructId,
+    relatedConstructId,
+    Number(payload.score ?? 0),
+    String(payload.reason ?? "").trim() || null,
+    JSON.stringify(payload.detail ?? {}),
+    updatedAt
+  );
+
+  return linkFromRow(db.prepare("SELECT * FROM construct_links WHERE id = ?").get(id));
+}
+
+function syncDerivedBindersForConstruct(db, record = {}) {
+  const terms = extractConstructConcepts(record, { limit: 8 });
+  for (let index = 0; index < terms.length; index += 1) {
+    for (let pointer = index + 1; pointer < terms.length; pointer += 1) {
+      const pair = normalizeBinderPair(terms[index], terms[pointer]);
+      if (!pair) {
+        continue;
+      }
+
+      const existing = db.prepare(`
+        SELECT * FROM strand_binders
+        WHERE subjectId = ? AND leftTerm = ? AND rightTerm = ?
+      `).get(record.subjectId, pair[0], pair[1]);
+      if (existing && String(existing.source ?? "").trim() !== "derived") {
+        continue;
+      }
+
+      const weight = pair[0].includes(" ") || pair[1].includes(" ") ? 1.7 : 1.1;
+      upsertStrandBinder(db, {
+        subjectId: record.subjectId,
+        leftTerm: pair[0],
+        rightTerm: pair[1],
+        weight,
+        reason: `derived:${record.constructLabel}`,
+        source: "derived"
+      });
+    }
+  }
+}
+
+function syncConstructLinksForRecord(db, record = {}) {
+  if (!record?.id || !record?.subjectId) {
+    return [];
+  }
+
+  const relatedConstructs = listSubjectConstructs(db, record.subjectId).filter((candidate) => candidate.id !== record.id);
+  const binders = listStrandBinders(db, record.subjectId);
+  db.prepare("DELETE FROM construct_links WHERE sourceConstructId = ? OR relatedConstructId = ?").run(record.id, record.id);
+
+  const savedLinks = [];
+  for (const candidate of relatedConstructs) {
+    const similarity = computeConstructSimilarity(record, candidate, binders);
+    if (similarity.score < LINK_SIMILARITY_THRESHOLD) {
+      continue;
+    }
+
+    savedLinks.push(saveConstructLink(db, {
+      sourceConstructId: record.id,
+      relatedConstructId: candidate.id,
+      score: similarity.score,
+      reason: similarity.reason,
+      detail: similarity.detail
+    }));
+    savedLinks.push(saveConstructLink(db, {
+      sourceConstructId: candidate.id,
+      relatedConstructId: record.id,
+      score: similarity.score,
+      reason: similarity.reason,
+      detail: similarity.detail
+    }));
+  }
+
+  return savedLinks.filter(Boolean);
+}
+
+export function refreshSubjectConstructRelations(db, constructOrId = null) {
+  ensureSubjectspaceTables(db);
+  const record = typeof constructOrId === "string"
+    ? getSubjectConstruct(db, constructOrId)
+    : normalizeConstruct(constructOrId ?? {});
+
+  if (!record?.id) {
+    return null;
+  }
+
+  syncDerivedBindersForConstruct(db, record);
+  syncConstructLinksForRecord(db, record);
+  return getSubjectConstruct(db, record.id);
+}
+
+function selectMergeCandidate(db, record = {}, options = {}) {
+  if (!record?.subjectId) {
+    return null;
+  }
+
+  const candidates = listSubjectConstructs(db, record.subjectId).filter((candidate) => candidate.id !== record.id);
+  if (!candidates.length) {
+    return null;
+  }
+
+  const binders = listStrandBinders(db, record.subjectId);
+  let strongest = null;
+  for (const candidate of candidates) {
+    const similarity = computeConstructSimilarity(record, candidate, binders);
+    if (similarity.score < Number(options.threshold ?? MERGE_SIMILARITY_THRESHOLD)) {
+      continue;
+    }
+
+    if (!strongest || similarity.score > strongest.similarity.score) {
+      strongest = {
+        construct: candidate,
+        similarity
+      };
+    }
+  }
+
+  return strongest;
+}
+
 export function upsertSubjectConstruct(db, payload = {}) {
   ensureSubjectspaceTables(db);
-  const record = normalizeConstruct(payload);
+  const explicitId = Boolean(String(payload.id ?? "").trim());
+  const normalized = normalizeConstruct(payload);
+  const mergeCandidate = explicitId ? null : selectMergeCandidate(db, normalized);
+  const record = mergeCandidate
+    ? mergeSubjectConstruct(mergeCandidate.construct, normalized, {
+      preserveId: true,
+      provenance: {
+        ...(mergeCandidate.construct.provenance ?? {}),
+        ...(normalized.provenance ?? {}),
+        mergedIntoConstructId: mergeCandidate.construct.id,
+        mergeReason: mergeCandidate.similarity.reason,
+        mergeScore: mergeCandidate.similarity.score
+      }
+    })
+    : normalized;
   const existing = getSubjectConstruct(db, record.id);
   const updatedAt = new Date().toISOString();
 
@@ -1727,7 +2469,8 @@ export function upsertSubjectConstruct(db, payload = {}) {
     updatedAt
   );
 
-  return getSubjectConstruct(db, record.id);
+  const saved = getSubjectConstruct(db, record.id);
+  return refreshSubjectConstructRelations(db, saved);
 }
 
 export function parseSubjectQuestion(question = "", subjectId = "") {
@@ -1753,12 +2496,53 @@ export function parseSubjectQuestion(question = "", subjectId = "") {
   };
 }
 
+function scoreLinkedReinforcement(record, lexicalScores = [], links = []) {
+  const lexicalById = new Map(lexicalScores.map((entry) => [entry.id, entry]));
+  const recordLinks = links.filter((entry) => entry.sourceConstructId === record.id);
+  const hits = [];
+  let score = 0;
+
+  for (const link of recordLinks) {
+    const related = lexicalById.get(link.relatedConstructId);
+    if (!related || Number(related.score ?? 0) <= 0) {
+      continue;
+    }
+
+    const reinforcement = Math.min(
+      Number(link.score ?? 0) * Math.min(Number(related.score ?? 0) / READY_THRESHOLD, 1.2) * 0.35,
+      MAX_LINK_REINFORCEMENT
+    );
+    if (!reinforcement) {
+      continue;
+    }
+
+    score += reinforcement;
+    hits.push({
+      constructId: related.id,
+      constructLabel: related.constructLabel,
+      linkScore: Number(link.score ?? 0),
+      reinforcement: Number(reinforcement.toFixed(2)),
+      reason: link.reason
+    });
+  }
+
+  return {
+    score: Number(clamp(score, 0, MAX_LINK_REINFORCEMENT).toFixed(2)),
+    hits: hits
+      .sort((left, right) => Number(right.reinforcement ?? 0) - Number(left.reinforcement ?? 0))
+      .slice(0, 4)
+  };
+}
+
 export function recallSubjectSpace(db, { question = "", subjectId = "" } = {}) {
   const parsed = parseSubjectQuestion(question, subjectId);
   const constructs = listSubjectConstructs(db, subjectId);
-  const ranked = constructs
+  const binders = listStrandBinders(db, parsed.subjectId || subjectId);
+  const lexical = constructs
     .map((record) => {
-      const analysis = scoreConstruct(record, parsed);
+      const analysis = scoreConstruct(record, parsed, {
+        binders
+      });
       return {
         ...record,
         score: analysis.score,
@@ -1768,10 +2552,21 @@ export function recallSubjectSpace(db, { question = "", subjectId = "" } = {}) {
         matchedRatio: analysis.matchedRatio,
         aliasHits: analysis.aliasHits,
         phraseHits: analysis.phraseHits,
-        excludedHits: analysis.excludedHits
+        excludedHits: analysis.excludedHits,
+        binderHits: analysis.binderHits
       };
     })
-    .filter((record) => record.score > 0)
+    .filter((record) => record.score > 0);
+  const links = lexical.length ? listConstructLinks(db).filter((entry) => lexical.some((candidate) => candidate.id === entry.sourceConstructId)) : [];
+  const ranked = lexical
+    .map((record) => {
+      const linked = scoreLinkedReinforcement(record, lexical, links);
+      return {
+        ...record,
+        score: Number((Number(record.score ?? 0) + Number(linked.score ?? 0)).toFixed(2)),
+        linkHits: linked.hits
+      };
+    })
     .sort((left, right) => right.score - left.score || left.constructLabel.localeCompare(right.constructLabel));
 
   const matched = ranked[0] ?? null;
@@ -1790,7 +2585,9 @@ export function recallSubjectSpace(db, { question = "", subjectId = "" } = {}) {
     matchedTokens: item.matchedTokens ?? [],
     aliasHits: item.aliasHits ?? [],
     phraseHits: item.phraseHits ?? [],
-    excludedHits: item.excludedHits ?? []
+    excludedHits: item.excludedHits ?? [],
+    binderHits: item.binderHits ?? [],
+    linkHits: item.linkHits ?? []
   }));
 
   return {

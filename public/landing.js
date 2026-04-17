@@ -227,9 +227,7 @@ function renderTopicGrid() {
       </p>
       <div class="landing-topic-actions">
         <a class="secondary-button landing-link-button" href="${subjectPageUrl(subject.subjectId)}">Open topic page</a>
-        ${subject.subjectId === "music-engineering"
-          ? '<a class="secondary-button landing-link-button" href="/soundspace">Open Soundspace</a>'
-          : '<a class="secondary-button landing-link-button" href="/backend">Open backend</a>'}
+        <a class="secondary-button landing-link-button" href="/backend">Open backend</a>
       </div>
     </article>
   `).join("");

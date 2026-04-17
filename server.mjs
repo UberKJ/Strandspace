@@ -20,10 +20,14 @@ import {
   estimateTextTokens,
   ensureSubjectspaceTables,
   getSubjectConstruct,
+  ingestConversationToConstructs,
+  listConstructLinks,
   mergeSubjectConstruct,
+  listStrandBinders,
   listSubjectConstructs,
   listSubjectSpaces,
   recallSubjectSpace,
+  refreshSubjectConstructRelations,
   seedSubjectspace,
   upsertSubjectConstruct
 } from "./strandspace/subjectspace.js";
@@ -99,8 +103,11 @@ const API_TIMEOUTS_MS = new Map([
   ["/api/backend/db/tables", DEFAULT_API_TIMEOUT_MS],
   ["/api/backend/db/table", DEFAULT_API_TIMEOUT_MS],
   ["/api/backend/db/row", DEFAULT_API_TIMEOUT_MS],
+  ["/api/chat", EXTENDED_API_TIMEOUT_MS],
+  ["/api/stats", DEFAULT_API_TIMEOUT_MS],
   ["/api/subjectspace/subject-ideas", EXTENDED_API_TIMEOUT_MS],
   ["/api/subjectspace/build", EXTENDED_API_TIMEOUT_MS],
+  ["/api/subjectspace/ingest-conversation", EXTENDED_API_TIMEOUT_MS],
   ["/api/subjectspace/assist", EXTENDED_API_TIMEOUT_MS],
   ["/api/subjectspace/compare", EXTENDED_API_TIMEOUT_MS],
   ["/api/subjectspace/answer", DEFAULT_API_TIMEOUT_MS],
@@ -188,6 +195,68 @@ const BACKEND_TABLES = {
       "strandsJson"
     ],
     orderBy: "updatedAt DESC, name ASC"
+  },
+  strand_binders: {
+    label: "Strand Binders",
+    primaryKey: "id",
+    editableColumns: [
+      "subjectId",
+      "leftTerm",
+      "rightTerm",
+      "weight",
+      "reason",
+      "source"
+    ],
+    searchColumns: [
+      "subjectId",
+      "leftTerm",
+      "rightTerm",
+      "reason",
+      "source"
+    ],
+    orderBy: "updatedAt DESC, ABS(weight) DESC"
+  },
+  construct_links: {
+    label: "Construct Links",
+    primaryKey: "id",
+    editableColumns: [],
+    searchColumns: [
+      "sourceConstructId",
+      "relatedConstructId",
+      "reason",
+      "detailJson"
+    ],
+    orderBy: "updatedAt DESC, score DESC"
+  },
+  chat_conversations: {
+    label: "Chat Conversations",
+    primaryKey: "id",
+    editableColumns: [
+      "subjectId",
+      "title",
+      "metadataJson"
+    ],
+    searchColumns: [
+      "id",
+      "subjectId",
+      "title",
+      "metadataJson"
+    ],
+    orderBy: "lastMessageAt DESC"
+  },
+  chat_messages: {
+    label: "Chat Messages",
+    primaryKey: "id",
+    editableColumns: [],
+    searchColumns: [
+      "conversationId",
+      "role",
+      "content",
+      "subjectId",
+      "constructId",
+      "metadataJson"
+    ],
+    orderBy: "createdAt DESC"
   }
 };
 
@@ -468,10 +537,18 @@ function countConstructs(db) {
 
   const subjectCount = Number(db.prepare("SELECT COUNT(*) as count FROM subject_constructs").get().count ?? 0);
   const soundCount = Number(db.prepare("SELECT COUNT(*) as count FROM sound_constructs").get().count ?? 0);
+  const binderCount = Number(db.prepare("SELECT COUNT(*) as count FROM strand_binders").get().count ?? 0);
+  const constructLinkCount = Number(db.prepare("SELECT COUNT(*) as count FROM construct_links").get().count ?? 0);
+  const conversationCount = Number(db.prepare("SELECT COUNT(*) as count FROM chat_conversations").get().count ?? 0);
+  const chatMessageCount = Number(db.prepare("SELECT COUNT(*) as count FROM chat_messages").get().count ?? 0);
 
   return {
     subjectCount,
-    soundCount
+    soundCount,
+    binderCount,
+    constructLinkCount,
+    conversationCount,
+    chatMessageCount
   };
 }
 
@@ -732,6 +809,10 @@ function updateBackendTableRow(db, tableName = "", primaryKeyValue = "", changes
     syncSoundConstructsToSubjectspace(db);
   }
 
+  if (config.name === "subject_constructs") {
+    refreshSubjectConstructRelations(db, String(primaryKeyValue ?? ""));
+  }
+
   return db.prepare(`SELECT * FROM ${safeTableName} WHERE ${safePrimaryKey} = ?`).get(String(primaryKeyValue ?? ""));
 }
 
@@ -901,8 +982,10 @@ function readSubjectspaceParams(source = null) {
   };
 }
 
-function buildSubjectspaceAnswerPayload(recall, { question = "", subjectId = "" } = {}) {
-  const hydratedConstruct = hydrateConstructForClient(recall.matched);
+function buildSubjectspaceAnswerPayload(recall, { question = "", subjectId = "", db = null } = {}) {
+  const hydratedConstruct = db
+    ? hydrateSubjectConstructWithRelations(db, recall.matched)
+    : hydrateConstructForClient(recall.matched);
 
   return {
     ok: true,
@@ -915,6 +998,98 @@ function buildSubjectspaceAnswerPayload(recall, { question = "", subjectId = "" 
       ...recall,
       matched: hydratedConstruct
     }
+  };
+}
+
+function hydrateSubjectConstructWithRelations(db, construct = null) {
+  const hydrated = hydrateConstructForClient(construct);
+  if (!hydrated) {
+    return null;
+  }
+
+  return {
+    ...hydrated,
+    relatedConstructs: listConstructLinks(db, hydrated.id).slice(0, 6),
+    binderPreview: listStrandBinders(db, hydrated.subjectId).slice(0, 6)
+  };
+}
+
+function buildConversationId() {
+  return `chat-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function buildConversationTitle(message = "", subjectLabel = "") {
+  const basis = normalizePromptText(`${subjectLabel ? `${subjectLabel}: ` : ""}${message}`);
+  return basis.slice(0, 96) || "Strandspace chat";
+}
+
+function ensureChatConversation(db, {
+  conversationId = "",
+  subjectId = "",
+  title = "",
+  metadata = null
+} = {}) {
+  ensureSubjectspaceTables(db);
+  const id = String(conversationId ?? "").trim() || buildConversationId();
+  const now = new Date().toISOString();
+  const existing = db.prepare("SELECT * FROM chat_conversations WHERE id = ?").get(id);
+
+  db.prepare(`
+    INSERT INTO chat_conversations (id, subjectId, title, metadataJson, createdAt, lastMessageAt)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      subjectId = excluded.subjectId,
+      title = COALESCE(excluded.title, chat_conversations.title),
+      metadataJson = COALESCE(excluded.metadataJson, chat_conversations.metadataJson),
+      lastMessageAt = excluded.lastMessageAt
+  `).run(
+    id,
+    String(subjectId ?? "").trim() || existing?.subjectId || null,
+    String(title ?? "").trim() || existing?.title || null,
+    metadata && typeof metadata === "object" ? JSON.stringify(metadata) : existing?.metadataJson ?? null,
+    existing?.createdAt ?? now,
+    now
+  );
+
+  return id;
+}
+
+function appendChatMessage(db, {
+  conversationId,
+  role = "user",
+  content = "",
+  subjectId = "",
+  constructId = "",
+  metadata = null
+} = {}) {
+  ensureSubjectspaceTables(db);
+  const messageId = `msg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const createdAt = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO chat_messages (id, conversationId, role, content, subjectId, constructId, metadataJson, createdAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    messageId,
+    String(conversationId ?? "").trim(),
+    String(role ?? "user").trim() || "user",
+    String(content ?? "").trim(),
+    String(subjectId ?? "").trim() || null,
+    String(constructId ?? "").trim() || null,
+    metadata && typeof metadata === "object" ? JSON.stringify(metadata) : null,
+    createdAt
+  );
+
+  db.prepare("UPDATE chat_conversations SET lastMessageAt = ? WHERE id = ?").run(createdAt, String(conversationId ?? "").trim());
+
+  return {
+    id: messageId,
+    conversationId: String(conversationId ?? "").trim(),
+    role: String(role ?? "user").trim() || "user",
+    content: String(content ?? "").trim(),
+    subjectId: String(subjectId ?? "").trim() || null,
+    constructId: String(constructId ?? "").trim() || null,
+    metadata,
+    createdAt
   };
 }
 
@@ -1507,10 +1682,6 @@ function resolvePublicPath(pathname = "") {
     return "/subject/index.html";
   }
 
-  if (pathname === "/soundspace" || pathname === "/soundspace/") {
-    return "/soundspace/index.html";
-  }
-
   return pathname;
 }
 
@@ -1574,6 +1745,10 @@ export function resetExampleData(targetDb = openMemoryDatabase()) {
 
   targetDb.exec("BEGIN");
   try {
+    targetDb.exec("DELETE FROM chat_messages;");
+    targetDb.exec("DELETE FROM chat_conversations;");
+    targetDb.exec("DELETE FROM construct_links;");
+    targetDb.exec("DELETE FROM strand_binders;");
     targetDb.exec("DELETE FROM sound_constructs;");
     targetDb.exec("DELETE FROM subject_constructs;");
     targetDb.exec("COMMIT");
@@ -1604,6 +1779,16 @@ async function readStaticFile(urlPath, rootDir = publicDir) {
 async function handleStatic(req, res) {
   const url = new URL(req.url, "http://localhost");
   const pathname = decodeURIComponent(url.pathname);
+
+  if (pathname === "/soundspace" || pathname === "/soundspace/") {
+    res.writeHead(302, {
+      Location: "/subject?subjectId=music-engineering",
+      "Cache-Control": "no-store"
+    });
+    res.end();
+    return;
+  }
+
   const isDocsRequest = pathname.startsWith("/docs/");
   const resolvedPath = isDocsRequest
     ? pathname.replace(/^\/docs\/+/, "")
@@ -1993,6 +2178,25 @@ async function handleApi(req, res) {
     return;
   }
 
+  if (url.pathname === "/api/stats") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    const overview = await buildBackendOverviewPayload(db);
+    sendJson(res, 200, {
+      ok: true,
+      database: overview.database,
+      counts: overview.counts,
+      tables: overview.tables,
+      subjects: overview.subjects,
+      openai: buildSystemHealthPayload().openai
+    });
+    return;
+  }
+
   if (url.pathname === "/api/backend/overview") {
     if (req.method !== "GET") {
       res.writeHead(405, { Allow: "GET" });
@@ -2103,7 +2307,7 @@ async function handleApi(req, res) {
     }
 
     const subjectId = url.searchParams.get("subjectId") ?? url.searchParams.get("subject") ?? "";
-    const constructs = listSubjectConstructs(db, subjectId).map((construct) => hydrateConstructForClient(construct));
+    const constructs = listSubjectConstructs(db, subjectId).map((construct) => hydrateSubjectConstructWithRelations(db, construct));
 
     sendJson(res, 200, {
       ok: true,
@@ -2329,7 +2533,7 @@ async function handleApi(req, res) {
       subjectId: recall.matched?.subjectId ?? subjectId ?? ""
     });
 
-    sendJson(res, 200, buildSubjectspaceAnswerPayload(recall, { question, subjectId }));
+    sendJson(res, 200, buildSubjectspaceAnswerPayload(recall, { question, subjectId, db }));
     return;
   }
 
@@ -2371,9 +2575,55 @@ async function handleApi(req, res) {
 
     sendJson(res, 200, {
       ok: true,
-      construct: hydrateConstructForClient(saved),
+      construct: hydrateSubjectConstructWithRelations(db, saved),
       subjects: listSubjectSpaces(db),
       count: listSubjectConstructs(db, saved.subjectId).length
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/subjectspace/ingest-conversation") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const transcript = String(payload.transcript ?? "").trim();
+    const messages = Array.isArray(payload.messages) ? payload.messages : [];
+    if (!transcript && !messages.length) {
+      sendJson(res, 400, { error: "transcript or messages is required" });
+      return;
+    }
+
+    const drafts = ingestConversationToConstructs({
+      transcript,
+      messages,
+      subjectId: String(payload.subjectId ?? "").trim(),
+      subjectLabel: String(payload.subjectLabel ?? payload.subject ?? "").trim()
+    });
+    const savedConstructs = drafts.map((draft) => upsertSubjectConstruct(db, {
+      ...draft,
+      provenance: {
+        ...(draft.provenance ?? {}),
+        source: "conversation-ingest",
+        learnedFromQuestion: transcript || messages.map((entry) => String(entry?.content ?? "").trim()).filter(Boolean).join("\n")
+      }
+    }));
+
+    sendJson(res, 200, {
+      ok: true,
+      source: "conversation-ingest",
+      count: savedConstructs.length,
+      constructs: savedConstructs.map((construct) => hydrateSubjectConstructWithRelations(db, construct))
     });
     return;
   }
@@ -2463,7 +2713,7 @@ async function handleApi(req, res) {
       recallLatencyMs: recallRun.latencyMs,
       assist: assistResult.assist,
       suggestedConstruct: hydrateConstructForClient(suggestedConstruct),
-      savedConstruct: hydrateConstructForClient(savedConstruct),
+      savedConstruct: hydrateSubjectConstructWithRelations(db, savedConstruct),
       responseId: assistResult.responseId
     });
     return;
@@ -2629,7 +2879,187 @@ async function handleApi(req, res) {
       subjectId: recall.matched?.subjectId ?? subjectId ?? ""
     });
 
-    sendJson(res, 200, buildSubjectspaceAnswerPayload(recall, { question, subjectId }));
+    sendJson(res, 200, buildSubjectspaceAnswerPayload(recall, { question, subjectId, db }));
+    return;
+  }
+
+  if (url.pathname === "/api/chat") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const message = String(payload.message ?? "").trim();
+    const subjectId = String(payload.subjectId ?? "").trim();
+    if (!message) {
+      sendJson(res, 400, { error: "message is required" });
+      return;
+    }
+
+    const initialRecall = measureSync(() => recallSubjectSpace(db, {
+      question: message,
+      subjectId
+    }));
+    const recall = initialRecall.result;
+    const subjectLabel = resolveSubjectspaceLabel(db, subjectId, recall);
+    const conversationId = ensureChatConversation(db, {
+      conversationId: String(payload.conversationId ?? "").trim(),
+      subjectId: subjectId || recall.matched?.subjectId || "",
+      title: buildConversationTitle(message, subjectLabel),
+      metadata: {
+        route: "/api/chat"
+      }
+    });
+
+    appendChatMessage(db, {
+      conversationId,
+      role: "user",
+      content: message,
+      subjectId: subjectId || recall.matched?.subjectId || "",
+      metadata: {
+        routing: recall.routing?.mode ?? "",
+        confidence: recall.readiness?.confidence ?? null
+      }
+    });
+
+    const localAnswerIsSufficient = Boolean(recall.ready && recall.routing?.mode === "local_recall");
+    if (localAnswerIsSufficient) {
+      appendChatMessage(db, {
+        conversationId,
+        role: "assistant",
+        content: recall.answer,
+        subjectId: recall.matched?.subjectId ?? subjectId,
+        constructId: recall.matched?.id ?? "",
+        metadata: {
+          source: "local"
+        }
+      });
+
+      sendJson(res, 200, {
+        ok: true,
+        source: "local",
+        conversationId,
+        answer: recall.answer,
+        construct: hydrateSubjectConstructWithRelations(db, recall.matched),
+        recall,
+        recallLatencyMs: initialRecall.latencyMs
+      });
+      return;
+    }
+
+    const config = getOpenAiAssistStatus();
+    if (!config.enabled) {
+      appendChatMessage(db, {
+        conversationId,
+        role: "assistant",
+        content: recall.answer,
+        subjectId: subjectId || recall.matched?.subjectId || "",
+        metadata: {
+          source: "local-only",
+          unresolved: true
+        }
+      });
+
+      sendJson(res, 200, {
+        ok: true,
+        source: "local-only",
+        conversationId,
+        answer: recall.answer,
+        recall,
+        recallLatencyMs: initialRecall.latencyMs,
+        config
+      });
+      return;
+    }
+
+    let assistResult;
+    try {
+      assistResult = await runTimed("Subjectspace chat assist", () => generateOpenAiSubjectAssist({
+        question: message,
+        subjectId,
+        subjectLabel,
+        recall
+      }), {
+        route: url.pathname,
+        question: previewQuestionForLogs(message),
+        subjectId: subjectId || recall.matched?.subjectId || ""
+      });
+    } catch (error) {
+      const normalizedError = buildApiErrorPayload(error, "Unable to complete AI chat assist.");
+      sendJson(res, normalizedError.statusCode, {
+        ...normalizedError.payload,
+        conversationId,
+        recall,
+        config
+      });
+      return;
+    }
+
+    const suggestedConstruct = buildSuggestedConstructFromAssist({
+      subjectId: subjectId || recall.matched?.subjectId || undefined,
+      subjectLabel,
+      assist: assistResult.assist,
+      question: message,
+      routingMode: recall.routing?.mode ?? ""
+    });
+    const savedConstruct = upsertSubjectConstruct(db, mergeSubjectConstruct(suggestedConstruct, {
+      provenance: {
+        ...(suggestedConstruct.provenance ?? {}),
+        source: "chatbot-derived",
+        conversationId,
+        chatbotDerived: true
+      }
+    }, {
+      preserveId: false,
+      provenance: {
+        ...(suggestedConstruct.provenance ?? {}),
+        source: "chatbot-derived",
+        conversationId,
+        chatbotDerived: true
+      }
+    }));
+    const refreshedRecall = recallSubjectSpace(db, {
+      question: message,
+      subjectId: savedConstruct.subjectId
+    });
+    const answer = refreshedRecall.ready ? refreshedRecall.answer : (assistResult.assist?.notes ?? recall.answer);
+
+    appendChatMessage(db, {
+      conversationId,
+      role: "assistant",
+      content: answer,
+      subjectId: savedConstruct.subjectId,
+      constructId: savedConstruct.id,
+      metadata: {
+        source: "chatbot-derived",
+        responseId: assistResult.responseId
+      }
+    });
+
+    sendJson(res, 200, {
+      ok: true,
+      source: "chatbot-derived",
+      conversationId,
+      answer,
+      recall: refreshedRecall,
+      recallLatencyMs: initialRecall.latencyMs,
+      assist: assistResult.assist,
+      savedConstruct: hydrateSubjectConstructWithRelations(db, savedConstruct),
+      responseId: assistResult.responseId,
+      config: {
+        ...config,
+        model: assistResult.model ?? config.model
+      }
+    });
     return;
   }
 

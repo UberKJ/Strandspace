@@ -7,7 +7,7 @@
 Strandspace is a local-first recall workspace for reusable knowledge constructs. It ships with two focused modes:
 
 - `Subjectspace` for structured capture and recall across a subject field
-- `Soundspace` for mixer, preset, venue, and event-specific music engineering memory
+- `Music Engineering` as a first-class subject inside the unified topic-view flow for mixer, preset, venue, and event-specific memory
 
 The app prefers local recall first, uses OpenAI only when configured, and stays useful with no API key.
 
@@ -29,7 +29,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - Main construct builder: `/`
 - Backend workspace: `/`
 - Legacy `/studio` route now opens the backend workspace
-- Soundspace / Music Engineer: `/soundspace`
+- Topic view: `/subject?subjectId=music-engineering`
 - SQLite editor and DB size display live inside the backend data browser
 - Recall Lab in the backend now loads a cleaner construct-title search and fills the matched construct back into the editor
 
@@ -37,9 +37,9 @@ If you do not set `OPENAI_API_KEY`, the app runs in local-only mode. Recall, lib
 
 ## Demo Screens
 
-### Soundspace Query Guidance
+### Music Engineering Query Guidance
 
-![Soundspace query guidance](./docs/assets/soundspace-query-guidance.png)
+![Music Engineering query guidance](./docs/assets/soundspace-query-guidance.png)
 
 ### Benchmark View
 
@@ -47,7 +47,7 @@ If you do not set `OPENAI_API_KEY`, the app runs in local-only mode. Recall, lib
 
 ### Query Composer
 
-![Soundspace query composer](./docs/assets/soundspace-query-composer.png)
+![Music Engineering query composer](./docs/assets/soundspace-query-composer.png)
 
 ## Example Use Cases
 

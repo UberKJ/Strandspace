@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Strandspace Topic View</title>
-    <link rel="stylesheet" href="/soundspace/style.css?v=2026-04-17-subject-01" />
+    <link rel="stylesheet" href="/subject/style.css?v=2026-04-17-subject-02" />
     <script type="module" src="/subject/app.js?v=2026-04-17-subject-01" defer></script>
   </head>
   <body>
@@ -14,7 +14,6 @@
         <nav class="page-nav" aria-label="Workspace switcher">
           <a class="switch-link" href="/">Home</a>
           <a class="switch-link is-active" href="/subject" aria-current="page">Topic View</a>
-          <a class="switch-link" href="/soundspace">Soundspace</a>
           <a class="switch-link" href="/backend">Backend</a>
         </nav>
         <span id="subject-status-badge" class="status-badge">Loading status...</span>
@@ -29,7 +28,7 @@
           <h1 id="subject-title">Loading subject...</h1>
         </div>
         <p id="subject-masthead-copy" class="masthead-copy">
-          Strandspace is loading the local constructs for this subject and preparing a Soundspace-style recall page.
+          Strandspace is loading the local constructs for this subject and preparing a unified topic recall page.
         </p>
       </section>
 
@@ -96,18 +95,6 @@
       </section>
 
       <section class="results-grid">
-        <section class="result-surface">
-          <div class="panel-head">
-            <div>
-              <p class="section-tag">Result</p>
-              <h2>Construct Return</h2>
-            </div>
-          </div>
-          <div id="subject-answer" class="answer-card empty">
-            <p>Pick a subject and run a question to see the matched construct and why it won.</p>
-          </div>
-        </section>
-
         <section class="library-surface">
           <div class="panel-head">
             <div>
@@ -128,8 +115,27 @@
               placeholder="Search construct label, target, objective, note, tag, or strand"
             />
           </label>
+          <div class="library-toolbar">
+            <p id="subject-library-pager" class="meta">Showing stored construct titles</p>
+            <div class="library-pager-actions">
+              <button type="button" id="subject-library-prev" class="ghost-action pager-button">Back</button>
+              <button type="button" id="subject-library-next" class="ghost-action pager-button">Forward</button>
+            </div>
+          </div>
           <div id="subject-library" class="library empty">
             <p>Loading subject constructs...</p>
+          </div>
+        </section>
+
+        <section class="result-surface">
+          <div class="panel-head">
+            <div>
+              <p class="section-tag">Result</p>
+              <h2>Construct Return</h2>
+            </div>
+          </div>
+          <div id="subject-answer" class="answer-card empty">
+            <p>Pick a subject and run a question to see the matched construct and why it won.</p>
           </div>
         </section>
       </section>

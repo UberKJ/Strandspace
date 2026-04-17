@@ -12,6 +12,9 @@ const answerEl = document.getElementById("subject-answer");
 const libraryMetaEl = document.getElementById("subject-library-meta");
 const librarySearchInput = document.getElementById("subject-library-search");
 const libraryEl = document.getElementById("subject-library");
+const libraryPagerEl = document.getElementById("subject-library-pager");
+const libraryPrevButton = document.getElementById("subject-library-prev");
+const libraryNextButton = document.getElementById("subject-library-next");
 const openBackendButton = document.getElementById("subject-open-backend");
 const assistToggle = document.getElementById("subject-assist-toggle");
 const assistToggleWrap = document.getElementById("subject-assist-toggle-wrap");
@@ -33,6 +36,8 @@ let subjectLibrary = [];
 let currentSubject = null;
 let latestResult = null;
 let systemHealth = null;
+let libraryPageIndex = 0;
+const libraryPageSize = 10;
 
 function escapeHtml(value = "") {
   return String(value)
@@ -234,7 +239,6 @@ function renderSubjectChrome() {
   if (subjectLinksEl) {
     subjectLinksEl.innerHTML = `
       <a class="ghost-action search-suggestion" href="/backend">Open backend</a>
-      ${currentSubjectId === "music-engineering" ? '<a class="ghost-action search-suggestion" href="/soundspace">Open dedicated Soundspace</a>' : ""}
       <a class="ghost-action search-suggestion" href="/">Back to landing</a>
     `;
   }
@@ -330,7 +334,54 @@ function filterLibrary(items = subjectLibrary, query = getLibrarySearchQuery()) 
   });
 }
 
+function libraryPageCount(total = 0) {
+  return Math.max(1, Math.ceil(Number(total ?? 0) / libraryPageSize));
+}
+
+function clampLibraryPage(totalItems = 0) {
+  const pageCount = libraryPageCount(totalItems);
+  libraryPageIndex = Math.min(Math.max(libraryPageIndex, 0), pageCount - 1);
+  return pageCount;
+}
+
+function pagedLibrary(items = []) {
+  clampLibraryPage(items.length);
+  const start = libraryPageIndex * libraryPageSize;
+  return {
+    start,
+    end: start + libraryPageSize,
+    items: items.slice(start, start + libraryPageSize)
+  };
+}
+
+function updateLibraryPager(items = []) {
+  const filteredCount = items.length;
+  const pageCount = clampLibraryPage(filteredCount);
+  const currentPage = pageCount ? libraryPageIndex + 1 : 1;
+  const startNumber = filteredCount ? (libraryPageIndex * libraryPageSize) + 1 : 0;
+  const endNumber = Math.min(filteredCount, (libraryPageIndex * libraryPageSize) + libraryPageSize);
+
+  if (libraryPagerEl) {
+    libraryPagerEl.textContent = filteredCount
+      ? `Showing ${startNumber}-${endNumber} of ${filteredCount} matching construct titles`
+      : "No matching construct titles";
+  }
+
+  if (libraryPrevButton) {
+    libraryPrevButton.disabled = filteredCount <= libraryPageSize;
+  }
+
+  if (libraryNextButton) {
+    libraryNextButton.disabled = filteredCount <= libraryPageSize;
+    libraryNextButton.textContent = filteredCount > libraryPageSize
+      ? `Forward ${currentPage}/${pageCount}`
+      : "Forward";
+  }
+}
+
 function renderLibrary(items = filterLibrary(subjectLibrary)) {
+  updateLibraryPager(items);
+
   if (!items.length) {
     libraryMetaEl.textContent = subjectLibrary.length
       ? `No constructs in ${currentSubjectLabel()} match this filter`
@@ -340,11 +391,12 @@ function renderLibrary(items = filterLibrary(subjectLibrary)) {
     return;
   }
 
+  const page = pagedLibrary(items);
   libraryMetaEl.textContent = items.length === subjectLibrary.length
-    ? `${items.length} construct${items.length === 1 ? "" : "s"} in ${currentSubjectLabel()}`
-    : `${items.length} of ${subjectLibrary.length} constructs shown`;
+    ? `${subjectLibrary.length} construct${subjectLibrary.length === 1 ? "" : "s"} in ${currentSubjectLabel()}`
+    : `${items.length} of ${subjectLibrary.length} constructs match this filter`;
   libraryEl.className = "library";
-  libraryEl.innerHTML = items.map((item) => `
+  libraryEl.innerHTML = page.items.map((item) => `
     <button type="button" class="library-card" data-construct-id="${escapeHtml(item.id)}">
       <strong>${escapeHtml(item.constructLabel ?? "Construct")}</strong>
       <span>${escapeHtml(item.target ?? item.subjectLabel ?? currentSubjectLabel())}</span>
@@ -356,6 +408,7 @@ function renderLibrary(items = filterLibrary(subjectLibrary)) {
 async function loadLibrary() {
   const payload = await fetchJson(`/api/subjectspace/library?subjectId=${encodeURIComponent(currentSubjectId)}`);
   subjectLibrary = Array.isArray(payload.constructs) ? payload.constructs : [];
+  libraryPageIndex = 0;
   renderSubjectChrome();
   renderPromptRow();
   renderLibrary();
@@ -494,6 +547,28 @@ function renderConstructDetails(construct = {}) {
   `;
 }
 
+function buildLocalAnswerParagraph(construct = {}, fallbackAnswer = "") {
+  const contextEntries = Object.entries(construct.context ?? {})
+    .filter(([, value]) => value)
+    .slice(0, 4)
+    .map(([key, value]) => `${key}: ${value}`);
+  const stepLead = Array.isArray(construct.steps) ? construct.steps.slice(0, 3).filter(Boolean) : [];
+  const normalizedNotes = String(construct.notes ?? "").trim();
+
+  return [
+    `Strandspace recalled "${construct.constructLabel ?? "this construct"}" in ${construct.subjectLabel ?? currentSubjectLabel()}.`,
+    construct.target ? `It is anchored to ${construct.target}.` : "",
+    construct.objective ? `The goal is ${construct.objective}.` : "",
+    contextEntries.length ? `Key context: ${contextEntries.join(" | ")}.` : "",
+    stepLead.length ? `A practical starting flow is ${stepLead.join(", then ").replace(/\.$/, "")}.` : "",
+    normalizedNotes || fallbackAnswer
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function renderUnresolvedResult(payload = null) {
   const recall = payload?.recall ?? {};
   const routing = recall.routing ?? {};
@@ -570,7 +645,7 @@ function renderLocalResult(payload = null) {
       </div>
       <span class="meta">${escapeHtml(currentSubjectLabel())}</span>
     </div>
-    <p class="answer-summary">${escapeHtml(payload?.answer ?? "Local recall found a stored construct.")}</p>
+    <p class="answer-summary answer-summary-paragraph">${escapeHtml(buildLocalAnswerParagraph(construct, payload?.answer ?? ""))}</p>
     ${renderConstructDetails(construct)}
     ${renderWhyMatchedPanel(payload?.recall ?? {})}
   `;
@@ -667,6 +742,7 @@ themeToggleButton?.addEventListener("click", toggleTheme);
 
 subjectPicker?.addEventListener("change", async () => {
   currentSubjectId = String(subjectPicker.value ?? "").trim();
+  libraryPageIndex = 0;
   updateQueryString(currentSubjectId);
   metaEl.textContent = `Loading ${currentSubjectLabel()}...`;
   renderAnswer(null);
@@ -674,7 +750,30 @@ subjectPicker?.addEventListener("change", async () => {
 });
 
 librarySearchInput?.addEventListener("input", () => {
+  libraryPageIndex = 0;
   renderLibrary();
+});
+
+libraryPrevButton?.addEventListener("click", () => {
+  const items = filterLibrary(subjectLibrary);
+  if (items.length <= libraryPageSize) {
+    return;
+  }
+
+  const pageCount = libraryPageCount(items.length);
+  libraryPageIndex = libraryPageIndex <= 0 ? pageCount - 1 : libraryPageIndex - 1;
+  renderLibrary(items);
+});
+
+libraryNextButton?.addEventListener("click", () => {
+  const items = filterLibrary(subjectLibrary);
+  if (items.length <= libraryPageSize) {
+    return;
+  }
+
+  const pageCount = libraryPageCount(items.length);
+  libraryPageIndex = (libraryPageIndex + 1) % pageCount;
+  renderLibrary(items);
 });
 
 promptRowEl?.addEventListener("click", (event) => {

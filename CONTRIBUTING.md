@@ -70,11 +70,11 @@ The test runner covers:
 - seed/reset behavior
 - timeout handling
 - assist fallbacks
-- Soundspace and Subjectspace learning flows
+- music-engineering and subjectspace learning flows
 
 ## Demo Data
 
-The UI includes a `Reset with Examples` action that restores the bundled examples for both Subjectspace and Soundspace. Use that when verifying seeded demos or reproducing UI behavior.
+The UI includes a `Reset with Examples` action that restores the bundled examples for both subjectspace and the music-engineering memory set. Use that when verifying seeded demos or reproducing UI behavior.
 
 ## Docs
 
