@@ -262,7 +262,7 @@ function renderMemoryDrawer(linkedConstructs = [], construct = null, recall = {}
   const candidates = Array.isArray(recall.candidates) ? recall.candidates.slice(0, 4) : [];
 
   return `
-    <details class="memory-drawer">
+    <details class="memory-drawer"${subjectConstructs.length ? " open" : ""}>
       <summary>
         <div class="memory-summary">
           <span class="memory-label">${escapeHtml(subjectConstructs.length ? "Open Shared Construct Memory" : latestProposal ? "Open Proposed Construct" : "Open Stored Construct")}</span>
@@ -578,6 +578,7 @@ function renderAnswer(payload = null) {
       </div>
       <span class="meta">${escapeHtml(construct?.name ?? "Focused result")}</span>
     </div>
+    ${renderMemoryDrawer(payload.linkedSubjectConstructs ?? [], construct, recall)}
     <p class="answer-summary">${escapeHtml(payload.answer ?? "No answer returned.")}</p>
     ${askedForTags.length ? `
       <div class="asked-for">
@@ -598,7 +599,6 @@ function renderAnswer(payload = null) {
       <div><dt>Venue</dt><dd>${escapeHtml(construct?.venueSize ?? "n/a")}</dd></div>
       <div><dt>Ready</dt><dd>${review ? (review.canLearn ? "reviewed draft" : "needs detail") : (recall.ready ? "yes" : "no")}</dd></div>
     </dl>
-    ${renderMemoryDrawer(payload.linkedSubjectConstructs ?? [], construct, recall)}
   `;
 }
 
