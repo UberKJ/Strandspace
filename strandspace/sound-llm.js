@@ -64,6 +64,11 @@ function inferSpeakerConfig(parsed) {
       ? "two Bose L1 Pro8 mains"
       : "single Bose L1 Pro8 main";
   }
+  if (parsed.deviceModel === "ZLX-12P-G2" && parsed.sourceType === "speaker system") {
+    return /\b(two|pair|stereo)\b/.test(String(parsed.raw ?? "").toLowerCase())
+      ? "two EV ZLX-12P-G2 mains"
+      : "single EV ZLX-12P-G2 main";
+  }
 
   if (Array.isArray(parsed.deviceMatches) && parsed.deviceMatches.length >= 2) {
     const models = parsed.deviceMatches.map((entry) => entry.model);

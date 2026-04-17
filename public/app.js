@@ -733,10 +733,13 @@ function renderTrace(trace = null) {
 
   const lanes = [
     { title: "Trigger strands", items: trace.triggerStrands ?? [] },
+    { title: "Alias cues", items: trace.aliasStrands ?? [] },
+    { title: "Phrase cues", items: trace.phraseStrands ?? [] },
     { title: "Anchor strands", items: trace.anchorStrands ?? [] },
     { title: "Composite constructs", items: trace.compositeStrands ?? [] },
+    { title: "Exclusion cues", items: trace.exclusionStrands ?? [] },
     { title: "Stabilized memory", items: trace.stabilizedMemory ?? [] }
-  ];
+  ].filter((lane) => Array.isArray(lane.items));
 
   traceGridEl.className = "trace-grid";
   traceGridEl.innerHTML = lanes
@@ -763,6 +766,96 @@ function renderTrace(trace = null) {
   animateFresh(traceGridEl);
 }
 
+function renderHitChipRow(items = [], formatter) {
+  const values = (Array.isArray(items) ? items : [])
+    .map((item) => formatter(item))
+    .filter(Boolean);
+
+  if (!values.length) {
+    return "";
+  }
+
+  return `<div class="assist-missing">${values.map((value) => `<span class="chip subtle">${escapeHtml(value)}</span>`).join("")}</div>`;
+}
+
+function renderSupportBreakdown(support = []) {
+  const items = Array.isArray(support) ? support : [];
+  if (!items.length) {
+    return "";
+  }
+
+  return `
+    <div class="why-support-list">
+      ${items.slice(0, 4).map((entry) => `
+        <article class="why-support-item">
+          <strong>${escapeHtml(entry.label ?? "support")}</strong>
+          <span>${escapeHtml(entry.summary ?? "")}</span>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderWhyMatchedPanel(candidate = null, routing = {}, readiness = {}) {
+  if (!candidate && !routing?.label && !readiness) {
+    return "";
+  }
+
+  const score = Number(candidate?.score ?? readiness?.matchedScore ?? 0);
+  const confidence = Number(routing?.confidence ?? readiness?.confidence ?? 0);
+  const matchedTokens = Array.isArray(candidate?.matchedTokens) ? candidate.matchedTokens : [];
+  const aliasHits = Array.isArray(candidate?.aliasHits) ? candidate.aliasHits : [];
+  const phraseHits = Array.isArray(candidate?.phraseHits) ? candidate.phraseHits : [];
+  const excludedHits = Array.isArray(candidate?.excludedHits) ? candidate.excludedHits : [];
+  const support = Array.isArray(candidate?.support) ? candidate.support : [];
+  const routeLabel = String(routing?.label ?? "").trim() || "Scoring only";
+
+  if (!score && !matchedTokens.length && !aliasHits.length && !phraseHits.length && !excludedHits.length && !support.length) {
+    return "";
+  }
+
+  return `
+    <section class="why-card">
+      <div class="assist-head">
+        <div>
+          <p class="assist-kicker">Why this matched</p>
+          <h3>${escapeHtml(candidate?.constructLabel ?? candidate?.target ?? "Top candidate")}</h3>
+        </div>
+        <span class="assist-badge">${escapeHtml(routeLabel)}</span>
+      </div>
+      <div class="assist-stats">
+        <span>Score ${escapeHtml(score.toFixed(1))}</span>
+        <span>Confidence ${escapeHtml(formatPercent(confidence))}</span>
+      </div>
+      ${matchedTokens.length ? `
+        <div class="why-block">
+          <p class="answer-label">Matched tokens</p>
+          ${renderHitChipRow(matchedTokens, (value) => value)}
+        </div>
+      ` : ""}
+      ${aliasHits.length ? `
+        <div class="why-block">
+          <p class="answer-label">Alias hits</p>
+          ${renderHitChipRow(aliasHits, (item) => `${item.source} -> ${item.term}`)}
+        </div>
+      ` : ""}
+      ${phraseHits.length ? `
+        <div class="why-block">
+          <p class="answer-label">Phrase hits</p>
+          ${renderHitChipRow(phraseHits, (item) => item.via === "alias" ? `${item.source} -> ${item.phrase}` : item.phrase)}
+        </div>
+      ` : ""}
+      ${excludedHits.length ? `
+        <div class="why-block">
+          <p class="answer-label">Excluded cues</p>
+          ${renderHitChipRow(excludedHits, (item) => `${item.cue} (-${Number(item.penalty ?? 0).toFixed(1)})`)}
+        </div>
+      ` : ""}
+      ${renderSupportBreakdown(support)}
+    </section>
+  `;
+}
+
 function renderRoutingPanel(routing = {}, readiness = {}) {
   if (!routing || !routing.label) {
     return "";
@@ -772,6 +865,7 @@ function renderRoutingPanel(routing = {}, readiness = {}) {
   const matchedRatio = Number(routing.matchedRatio ?? readiness.matchedRatio ?? 0);
   const margin = Number(routing.margin ?? readiness.margin ?? 0);
   const missingKeywords = Array.isArray(routing.missingKeywords) ? routing.missingKeywords : [];
+  const exclusions = Array.isArray(routing.exclusions) ? routing.exclusions : [];
   const routeClass = routing.apiRecommended ? "assist-card api" : "assist-card local";
   const assistControls = routing.apiRecommended
     ? assistStatus.enabled
@@ -812,6 +906,16 @@ function renderRoutingPanel(routing = {}, readiness = {}) {
         ? `
           <div class="assist-missing">
             ${missingKeywords.map((token) => `<span class="chip subtle">${escapeHtml(token)}</span>`).join("")}
+          </div>
+        `
+        : ""}
+      ${exclusions.length
+        ? `
+          <div class="why-block">
+            <p class="answer-label">Excluded cues</p>
+            <div class="assist-missing">
+              ${exclusions.map((token) => `<span class="chip subtle">${escapeHtml(token)}</span>`).join("")}
+            </div>
           </div>
         `
         : ""}
@@ -1047,14 +1151,18 @@ function renderAnswer(payload = null) {
   const candidates = recall.candidates ?? [];
   const routing = recall.routing ?? {};
   const readiness = recall.readiness ?? {};
+  const topCandidate = construct ?? recall.matched ?? candidates[0] ?? null;
+  const libraryCount = Number(readiness.libraryCount ?? 0);
 
   if (!construct) {
     answerPanelEl.className = "answer-surface unresolved";
     answerPanelEl.innerHTML = `
       <p class="answer-kicker">Expression field unresolved</p>
-      <h2>No stable construct yet</h2>
+      <h2>${libraryCount === 0 ? "No constructs stored yet" : "No stable construct yet"}</h2>
       <p>${escapeHtml(payload.answer ?? "Strandspace needs a learned construct before it can emit a trusted answer.")}</p>
+      ${libraryCount === 0 ? `<p class="answer-label">Start by storing one concrete construct in this subject, then test recall again with the same prompt.</p>` : ""}
       ${renderRoutingPanel(routing, readiness)}
+      ${renderWhyMatchedPanel(topCandidate, routing, readiness)}
       ${renderAssistResult()}
       ${candidates.length
         ? `
@@ -1063,6 +1171,7 @@ function renderAnswer(payload = null) {
               <article class="candidate-item">
                 <strong>${escapeHtml(candidate.constructLabel ?? "Possible construct")}</strong>
                 <span>${escapeHtml(candidate.objective ?? candidate.target ?? "Partial overlap only")}</span>
+                <p class="meta">Score ${escapeHtml(Number(candidate.score ?? 0).toFixed(1))} | Match ${escapeHtml(formatPercent(candidate.matchedRatio ?? 0))}</p>
               </article>
             `).join("")}
           </div>
@@ -1117,6 +1226,7 @@ function renderAnswer(payload = null) {
     </div>
     ${answerActions}
     ${renderRoutingPanel(routing, readiness)}
+    ${renderWhyMatchedPanel(topCandidate, routing, readiness)}
     ${renderAssistResult()}
     ${sources.length
       ? `

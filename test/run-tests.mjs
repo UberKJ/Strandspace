@@ -105,6 +105,88 @@ async function createSubjectConstruct(port, overrides = {}) {
   return learned.construct;
 }
 
+function createWeightedRecallFixtureDb() {
+  const db = new DatabaseSync(":memory:");
+  ensureSubjectspaceTables(db);
+
+  upsertSubjectConstruct(db, {
+    subjectId: "music-engineering",
+    subjectLabel: "Music Engineering",
+    constructLabel: "Lead vocal small room recall",
+    target: "Lead vocal chain for a compact room",
+    objective: "clean vocal presence with safe gain staging",
+    context: {
+      room: "small room",
+      console: "Bose T8S",
+      source: "wired vocal mic"
+    },
+    steps: [
+      "Set input gain before touching EQ.",
+      "Keep vocal reverb light until the room fills up.",
+      "Watch the monitor mix before adding more vocal level."
+    ],
+    notes: "Use this for a lead vocal in a compact room when vocal clarity matters most.",
+    tags: ["lead vocal", "small room", "gain staging", "monitor mix"]
+  });
+
+  upsertSubjectConstruct(db, {
+    subjectId: "music-engineering",
+    subjectLabel: "Music Engineering",
+    constructLabel: "Lead vocal dry room recall",
+    target: "Lead vocal chain without vocal wash",
+    objective: "clean singer presence without reverb",
+    context: {
+      room: "small room",
+      console: "Bose T8S"
+    },
+    steps: [
+      "Set input gain first.",
+      "Leave the channel dry.",
+      "Use monitor placement before adding more level."
+    ],
+    notes: "Use this when the singer needs a dry vocal and the room is already lively.",
+    tags: ["lead vocal", "dry vocal", "small room"]
+  });
+
+  upsertSubjectConstruct(db, {
+    subjectId: "music-engineering",
+    subjectLabel: "Music Engineering",
+    constructLabel: "Conference room playback recall",
+    target: "Conference room speech and playback",
+    objective: "clear spoken word with stable backing track level",
+    context: {
+      room: "conference room",
+      source: "playback track"
+    },
+    steps: [
+      "Set speech first.",
+      "Bring the backing track up under speech.",
+      "Keep playback level consistent."
+    ],
+    notes: "Conference room playback should stay underneath the presenter.",
+    tags: ["conference room", "playback", "speech"]
+  });
+
+  upsertSubjectConstruct(db, {
+    subjectId: "music-engineering",
+    subjectLabel: "Music Engineering",
+    constructLabel: "Parallel compression drum bus recall",
+    target: "Parallel compression on the drum bus",
+    objective: "fatter drum energy without losing transient snap",
+    context: {
+      room: "studio control room"
+    },
+    steps: [
+      "Blend the compressed return under the dry drums.",
+      "Keep the parallel path punchy."
+    ],
+    notes: "Parallel compression works best when the dry kit still carries the attack.",
+    tags: ["parallel compression", "drum bus"]
+  });
+
+  return db;
+}
+
 await check("GET / serves the construct builder page", async () => {
   await withServer(async (address) => {
     const response = await fetch(`http://127.0.0.1:${address.port}/`);
@@ -362,9 +444,108 @@ await check("empty subjectspace recall returns a clear teach-first message", asy
     assert.equal(recall.ready, false);
     assert.equal(recall.readiness.libraryCount, 0);
     assert.equal(recall.routing?.mode, "teach_local");
-    assert.match(String(recall.answer), /Teach a construct|still empty/i);
+    assert.match(String(recall.answer), /Teach one strong construct|No constructs are stored/i);
   } finally {
     emptyDb.close();
+  }
+});
+
+await check("weighted subjectspace recall handles exact, reordered, and partial wording", async () => {
+  const db = createWeightedRecallFixtureDb();
+
+  try {
+    const exact = recallSubjectSpace(db, {
+      subjectId: "music-engineering",
+      question: "Recall my lead vocal small room setup."
+    });
+    assert.equal(exact.ready, true);
+    assert.equal(exact.matched?.constructLabel, "Lead vocal small room recall");
+
+    const reordered = recallSubjectSpace(db, {
+      subjectId: "music-engineering",
+      question: "In a small room, what is my setup for lead vocal?"
+    });
+    assert.equal(reordered.ready, true);
+    assert.equal(reordered.matched?.constructLabel, "Lead vocal small room recall");
+
+    const partial = recallSubjectSpace(db, {
+      subjectId: "music-engineering",
+      question: "lead vocal room"
+    });
+    assert.equal(partial.ready, true);
+    assert.equal(partial.matched?.constructLabel, "Lead vocal small room recall");
+  } finally {
+    db.close();
+  }
+});
+
+await check("weighted subjectspace recall uses synonym aliases and exposes them in support and trace", async () => {
+  const db = createWeightedRecallFixtureDb();
+
+  try {
+    const recall = recallSubjectSpace(db, {
+      subjectId: "music-engineering",
+      question: "What is my singer setup for a small venue?"
+    });
+
+    assert.equal(recall.ready, true);
+    assert.equal(recall.matched?.constructLabel, "Lead vocal small room recall");
+    assert.ok(Array.isArray(recall.matched?.aliasHits));
+    assert.ok(recall.matched.aliasHits.some((hit) => hit.source === "singer" && /vocal/.test(String(hit.term))));
+    assert.ok(Array.isArray(recall.trace?.aliasStrands));
+    assert.ok(recall.trace.aliasStrands.some((entry) => entry.name === "singer"));
+    assert.ok(Array.isArray(recall.matched?.support));
+    assert.ok(recall.matched.support.some((entry) => Array.isArray(entry.aliasHits) && entry.aliasHits.length > 0));
+  } finally {
+    db.close();
+  }
+});
+
+await check("weighted subjectspace recall gives phrase-level concepts extra precision", async () => {
+  const db = createWeightedRecallFixtureDb();
+
+  try {
+    const conferenceRecall = recallSubjectSpace(db, {
+      subjectId: "music-engineering",
+      question: "conference room backing track"
+    });
+    assert.equal(conferenceRecall.ready, true);
+    assert.equal(conferenceRecall.matched?.constructLabel, "Conference room playback recall");
+    assert.ok(Array.isArray(conferenceRecall.matched?.phraseHits));
+    assert.ok(conferenceRecall.matched.phraseHits.some((hit) => hit.source === "conference room"));
+
+    const compressionRecall = recallSubjectSpace(db, {
+      subjectId: "music-engineering",
+      question: "parallel compression for drums"
+    });
+    assert.equal(compressionRecall.ready, true);
+    assert.equal(compressionRecall.matched?.constructLabel, "Parallel compression drum bus recall");
+    assert.ok(compressionRecall.matched.phraseHits.some((hit) => hit.source === "parallel compression"));
+  } finally {
+    db.close();
+  }
+});
+
+await check("weighted subjectspace recall penalizes excluded cues and preserves explainability", async () => {
+  const db = createWeightedRecallFixtureDb();
+
+  try {
+    const recall = recallSubjectSpace(db, {
+      subjectId: "music-engineering",
+      question: "lead vocal small room without reverb"
+    });
+
+    assert.equal(recall.ready, true);
+    assert.ok(Array.isArray(recall.parsed?.exclusions));
+    assert.ok(recall.parsed.exclusions.some((entry) => entry.cue === "reverb"));
+    assert.ok(Array.isArray(recall.candidates));
+    assert.ok(recall.candidates.some((candidate) => candidate.constructLabel === "Lead vocal small room recall" && Array.isArray(candidate.excludedHits) && candidate.excludedHits.some((entry) => entry.cue === "reverb")));
+    assert.ok(Array.isArray(recall.routing?.exclusions));
+    assert.ok(recall.routing.exclusions.includes("reverb"));
+    assert.ok(Array.isArray(recall.trace?.exclusionStrands));
+    assert.ok(recall.trace.exclusionStrands.some((entry) => entry.name === "reverb"));
+  } finally {
+    db.close();
   }
 });
 
@@ -1030,6 +1211,15 @@ await check("soundspace recognizes Bose L1 Pro16 as a specific speaker-system qu
   assert.equal(parsed.sourceType, "speaker system");
 });
 
+await check("soundspace recognizes Electro-Voice ZLX-12P-G2 as a specific speaker-system query", async () => {
+  const parsed = parseSoundQuestion("what are the settings for two Electro Voice ZLX-12p G2 front of house speakers");
+
+  assert.equal(parsed.deviceBrand, "EV");
+  assert.equal(parsed.deviceModel, "ZLX-12P-G2");
+  assert.equal(parsed.deviceType, "speaker_system");
+  assert.equal(parsed.sourceType, "speaker system");
+});
+
 await check("soundspace answers Bose Pro 8 spacing questions locally and returns placement only", async () => {
   await withServer(async (address) => {
     const response = await fetch(
@@ -1118,6 +1308,26 @@ await check("soundspace proposes a reviewable new construct for Bose L1 Pro16 in
     assert.ok(Array.isArray(payload.review?.changeSummary));
     assert.ok(payload.review.changeSummary.some((item) => /L1 Pro16 is not stored in Soundspace yet|new construct/i.test(String(item))));
     assert.equal(payload.recall?.readiness?.requiresReview, true);
+  });
+});
+
+await check("soundspace proposes a reviewable EV ZLX-12P-G2 construct for an unstored FOH query", async () => {
+  await withServer(async (address) => {
+    const response = await postJson(`http://127.0.0.1:${address.port}/api/soundspace/answer`, {
+      question: "what are the settings for two Electro Voice ZLX-12p G2 front of house speakers",
+      reviewBeforeStore: true,
+      preferApi: false
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.needsReview, true);
+    assert.equal(payload.source, "generated-proposal");
+    assert.equal(payload.construct?.deviceBrand, "EV");
+    assert.equal(payload.construct?.deviceModel, "ZLX-12P-G2");
+    assert.equal(payload.construct?.sourceType, "speaker system");
+    assert.equal(payload.review?.canLearn, true);
+    assert.match(String(payload.review?.summary), /not stored yet|ready for review/i);
   });
 });
 
@@ -1275,6 +1485,53 @@ await check("POST /api/soundspace/answer can force AI assist even when local rec
       assert.equal(payload.needsReview, true);
       assert.equal(payload.source, "openai-proposal");
       assert.equal(payload.construct?.deviceModel, "T8S");
+      assert.match(String(payload.construct?.setup?.notes), /Forced AI suggestion path/i);
+    });
+  } finally {
+    __setOpenAiAssistMock(null);
+  }
+});
+
+await check("POST /api/soundspace/answer can force AI assist for a new EV FOH query", async () => {
+  __setOpenAiAssistMock(async ({ mode, question, seedConstruct }) => {
+    if (mode !== "sound-builder") {
+      throw new Error(`Unexpected mode: ${mode}`);
+    }
+
+    assert.match(String(question), /electro voice zlx-12p g2/i);
+
+    return {
+      responseId: "resp_force_assist_ev_soundspace",
+      model: "gpt-5.4-mini",
+      usage: {
+        input_tokens: 20,
+        output_tokens: 44,
+        total_tokens: 64
+      },
+      construct: {
+        ...seedConstruct,
+        setup: {
+          ...(seedConstruct.setup ?? {}),
+          notes: "Forced AI suggestion path: reviewed EV ZLX-12P-G2 front-of-house starting point."
+        },
+        shouldLearn: true
+      }
+    };
+  });
+
+  try {
+    await withServer(async (address) => {
+      const response = await postJson(`http://127.0.0.1:${address.port}/api/soundspace/answer`, {
+        question: "what are the settings for two Electro Voice ZLX-12p G2 front of house speakers",
+        reviewBeforeStore: true,
+        forceAssist: true
+      });
+
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.needsReview, true);
+      assert.equal(payload.source, "openai-proposal");
+      assert.equal(payload.construct?.deviceModel, "ZLX-12P-G2");
       assert.match(String(payload.construct?.setup?.notes), /Forced AI suggestion path/i);
     });
   } finally {

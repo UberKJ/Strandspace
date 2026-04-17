@@ -52,6 +52,50 @@ const QUERY_STOPWORDS = new Set([
   "with"
 ]);
 
+const NEGATIVE_CUE_TOKENS = new Set([
+  "exclude",
+  "excluding",
+  "minus",
+  "no",
+  "not",
+  "without"
+]);
+
+const GLOBAL_ALIAS_GROUPS = [
+  {
+    canonical: "room",
+    terms: ["room", "rooms", "venue", "venues", "space", "spaces"]
+  },
+  {
+    canonical: "playback",
+    terms: ["playback", "track", "tracks", "backing track", "backing tracks", "music source", "music sources"]
+  }
+];
+
+const SUBJECT_ALIAS_GROUPS = [
+  {
+    match: /music|sound|audio/i,
+    groups: [
+      {
+        canonical: "vocal",
+        terms: ["vocal", "vocals", "singer", "singers", "lead vocal", "lead vocals", "karaoke vocal", "karaoke vocals", "mic vocal", "vocal mic", "vocal mics"]
+      },
+      {
+        canonical: "feedback",
+        terms: ["feedback", "ringing", "ring out", "squeal", "howl"]
+      },
+      {
+        canonical: "gain staging",
+        terms: ["gain staging", "trim setup", "input gain", "signal level"]
+      },
+      {
+        canonical: "reverb",
+        terms: ["reverb", "verb", "fx", "effect", "effects"]
+      }
+    ]
+  }
+];
+
 const BUILDER_FIELD_ALIASES = new Map([
   ["subject", "subjectLabel"],
   ["subject label", "subjectLabel"],
@@ -617,6 +661,145 @@ function tokenize(value = "") {
     .filter((token) => !QUERY_STOPWORDS.has(token));
 }
 
+function escapeRegExp(value = "") {
+  return String(value ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function containsTerm(haystack = "", term = "") {
+  const normalizedHaystack = String(haystack ?? "").trim();
+  const normalizedTerm = String(term ?? "").trim();
+  if (!normalizedHaystack || !normalizedTerm) {
+    return false;
+  }
+
+  return new RegExp(`(^|\\s)${escapeRegExp(normalizedTerm)}(?=\\s|$)`).test(normalizedHaystack);
+}
+
+function expressesAbsence(haystack = "", term = "") {
+  const normalizedHaystack = String(haystack ?? "").trim();
+  const normalizedTerm = String(term ?? "").trim();
+  if (!normalizedHaystack || !normalizedTerm) {
+    return false;
+  }
+
+  return new RegExp(`(^|\\s)(?:no|without|minus|exclude|excluding|not)(?:\\s+for)?\\s+${escapeRegExp(normalizedTerm)}(?=\\s|$)`).test(normalizedHaystack);
+}
+
+function uniqueValues(items = []) {
+  return [...new Set(
+    items
+      .map((item) => String(item ?? "").trim())
+      .filter(Boolean)
+  )];
+}
+
+function buildPhrases(tokens = [], maxSize = 3) {
+  const normalizedTokens = Array.isArray(tokens) ? tokens.filter(Boolean) : [];
+  const phrases = [];
+
+  for (let size = 2; size <= maxSize; size += 1) {
+    for (let index = 0; index <= normalizedTokens.length - size; index += 1) {
+      phrases.push(normalizedTokens.slice(index, index + size).join(" "));
+    }
+  }
+
+  return uniqueValues(phrases);
+}
+
+function resolveAliasGroups(subjectId = "") {
+  const normalizedSubjectId = String(subjectId ?? "").trim();
+  const groups = [...GLOBAL_ALIAS_GROUPS];
+
+  for (const entry of SUBJECT_ALIAS_GROUPS) {
+    if (!normalizedSubjectId || entry.match.test(normalizedSubjectId)) {
+      groups.push(...entry.groups);
+    }
+  }
+
+  return groups.map((group) => ({
+    canonical: normalizeText(group.canonical ?? ""),
+    terms: uniqueValues((group.terms ?? []).map((term) => normalizeText(term)))
+  }));
+}
+
+function expandAliasTerms(normalizedQuery = "", subjectId = "") {
+  const aliasTerms = [];
+  const seen = new Set();
+
+  for (const group of resolveAliasGroups(subjectId)) {
+    const matchedSources = group.terms.filter((term) => containsTerm(normalizedQuery, term));
+    if (!matchedSources.length) {
+      continue;
+    }
+
+    for (const source of matchedSources) {
+      for (const term of group.terms) {
+        if (!term || term === source) {
+          continue;
+        }
+
+        const key = `${source}=>${term}`;
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        aliasTerms.push({
+          source,
+          term,
+          canonical: group.canonical || term,
+          kind: term.includes(" ") ? "phrase" : "token"
+        });
+      }
+    }
+  }
+
+  return aliasTerms;
+}
+
+function extractNegativeCues(normalized = "", subjectId = "") {
+  const tokens = String(normalized ?? "").split(/\s+/).filter(Boolean);
+  const cues = [];
+  const seen = new Set();
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (!NEGATIVE_CUE_TOKENS.has(tokens[index])) {
+      continue;
+    }
+
+    const excludedTokens = [];
+    for (let pointer = index + 1; pointer < tokens.length && excludedTokens.length < 3; pointer += 1) {
+      const candidate = tokens[pointer];
+      if (!candidate || NEGATIVE_CUE_TOKENS.has(candidate)) {
+        break;
+      }
+      if ((candidate === "for" || QUERY_STOPWORDS.has(candidate)) && excludedTokens.length === 0) {
+        continue;
+      }
+
+      excludedTokens.push(candidate);
+      const next = tokens[pointer + 1] ?? "";
+      if (!next || NEGATIVE_CUE_TOKENS.has(next) || (QUERY_STOPWORDS.has(next) && excludedTokens.length >= 1)) {
+        break;
+      }
+    }
+
+    const phrase = excludedTokens.join(" ").trim();
+    if (!phrase || seen.has(phrase)) {
+      continue;
+    }
+
+    seen.add(phrase);
+    cues.push({
+      cue: phrase,
+      source: tokens[index],
+      tokens: uniqueValues(excludedTokens.filter((token) => !QUERY_STOPWORDS.has(token))),
+      aliasTerms: expandAliasTerms(phrase, subjectId)
+    });
+  }
+
+  return cues;
+}
+
 function buildNeedles(record) {
   const contextEntries = Object.entries(record.context ?? {});
 
@@ -633,108 +816,382 @@ function buildNeedles(record) {
   };
 }
 
-function computeSupport(record, parsed) {
-  const needles = buildNeedles(record);
-  const support = [];
-
-  const checks = [
+function buildFieldEntries(record, needles = buildNeedles(record)) {
+  return [
     {
+      key: "construct",
       label: "construct",
-      haystack: needles.label,
-      summary: record.constructLabel
-    },
-    {
-      label: "target",
-      haystack: needles.target,
-      summary: record.target
-    },
-    {
-      label: "objective",
-      haystack: needles.objective,
-      summary: record.objective
-    },
-    ...Object.entries(record.context ?? {}).flatMap(([key, value]) => ([
-      {
-        label: `context:${key}`,
-        haystack: normalizeText(`${key} ${value}`),
-        summary: `${key}: ${value}`
+      summary: record.constructLabel,
+      haystacks: [needles.label],
+      weights: {
+        token: 15,
+        aliasToken: 10,
+        phrase: 23,
+        aliasPhrase: 17,
+        exclusion: 18
       }
-    ])),
-    ...(record.tags ?? []).map((tag) => ({
+    },
+    {
+      key: "target",
+      label: "target",
+      summary: record.target,
+      haystacks: [needles.target],
+      weights: {
+        token: 13,
+        aliasToken: 9,
+        phrase: 21,
+        aliasPhrase: 15,
+        exclusion: 16
+      }
+    },
+    {
+      key: "objective",
+      label: "objective",
+      summary: record.objective,
+      haystacks: [needles.objective],
+      weights: {
+        token: 11,
+        aliasToken: 8,
+        phrase: 18,
+        aliasPhrase: 13,
+        exclusion: 15
+      }
+    },
+    ...Object.entries(record.context ?? {}).map(([key, value], index) => ({
+      key: `context:${key}:${index}`,
+      label: `context:${key}`,
+      summary: `${key}: ${value}`,
+      haystacks: [normalizeText(`${key} ${value}`), normalizeText(value)],
+      weights: {
+        token: 9,
+        aliasToken: 6,
+        phrase: 14,
+        aliasPhrase: 10,
+        exclusion: 12
+      }
+    })),
+    ...(record.tags ?? []).map((tag, index) => ({
+      key: `tag:${index}`,
       label: "tag",
-      haystack: normalizeText(tag),
-      summary: tag
-    }))
-  ];
+      summary: tag,
+      haystacks: [normalizeText(tag)],
+      weights: {
+        token: 8,
+        aliasToken: 5,
+        phrase: 16,
+        aliasPhrase: 12,
+        exclusion: 14
+      }
+    })),
+    ...(record.strands ?? []).map((strand, index) => ({
+      key: `strand:${index}`,
+      label: "strand",
+      summary: strand,
+      haystacks: [normalizeText(String(strand ?? "").replace(/[:_]/g, " "))],
+      weights: {
+        token: 7,
+        aliasToken: 5,
+        phrase: 15,
+        aliasPhrase: 11,
+        exclusion: 14
+      }
+    })),
+    ...(record.steps ?? []).map((step, index) => ({
+      key: `step:${index}`,
+      label: "step",
+      summary: step,
+      haystacks: [normalizeText(step)],
+      weights: {
+        token: 4,
+        aliasToken: 3,
+        phrase: 8,
+        aliasPhrase: 6,
+        exclusion: 10
+      }
+    })),
+    {
+      key: "notes",
+      label: "notes",
+      summary: record.notes,
+      haystacks: [needles.notes],
+      weights: {
+        token: 4,
+        aliasToken: 3,
+        phrase: 7,
+        aliasPhrase: 5,
+        exclusion: 10
+      }
+    }
+  ].filter((entry) => entry.summary && entry.haystacks.some(Boolean));
+}
 
-  for (const entry of checks) {
-    const matchedTokens = parsed.keywords.filter((token) => entry.haystack.includes(token));
-    if (matchedTokens.length === 0) {
+function upsertSupportHit(supportMap, entry, payload = {}) {
+  const existing = supportMap.get(entry.key) ?? {
+    label: entry.label,
+    summary: entry.summary,
+    tokens: [],
+    aliasHits: [],
+    phraseHits: [],
+    excludedHits: [],
+    totalWeight: 0
+  };
+
+  const next = {
+    ...existing,
+    tokens: uniqueValues([...(existing.tokens ?? []), ...(payload.tokens ?? [])]),
+    aliasHits: [...(existing.aliasHits ?? [])],
+    phraseHits: [...(existing.phraseHits ?? [])],
+    excludedHits: [...(existing.excludedHits ?? [])],
+    totalWeight: Number(existing.totalWeight ?? 0) + Number(payload.weight ?? 0)
+  };
+
+  for (const item of payload.aliasHits ?? []) {
+    if (!next.aliasHits.some((candidate) => candidate.source === item.source && candidate.term === item.term)) {
+      next.aliasHits.push(item);
+    }
+  }
+
+  for (const item of payload.phraseHits ?? []) {
+    if (!next.phraseHits.some((candidate) => candidate.phrase === item.phrase && candidate.via === item.via && candidate.source === item.source)) {
+      next.phraseHits.push(item);
+    }
+  }
+
+  for (const item of payload.excludedHits ?? []) {
+    if (!next.excludedHits.some((candidate) => candidate.cue === item.cue && candidate.term === item.term)) {
+      next.excludedHits.push(item);
+    }
+  }
+
+  supportMap.set(entry.key, next);
+}
+
+function findStrongestFieldMatch(entries = [], term = "", kind = "token") {
+  let strongest = null;
+
+  for (const entry of entries) {
+    if (!entry?.haystacks?.some((haystack) => containsTerm(haystack, term))) {
       continue;
     }
 
-    support.push({
-      label: entry.label,
-      summary: entry.summary,
-      tokens: matchedTokens
-    });
+    const weight = Number(entry.weights?.[kind] ?? 0);
+    if (!weight) {
+      continue;
+    }
+
+    if (!strongest || weight > strongest.weight) {
+      strongest = {
+        entry,
+        weight
+      };
+    }
   }
 
-  return support.slice(0, 8);
+  return strongest;
+}
+
+function findStrongestExclusionMatch(entries = [], exclusionCue = "", term = "") {
+  let strongest = null;
+
+  for (const entry of entries) {
+    const matchedHaystack = entry?.haystacks?.find((haystack) => containsTerm(haystack, term));
+    if (!matchedHaystack) {
+      continue;
+    }
+
+    if (expressesAbsence(matchedHaystack, exclusionCue) || expressesAbsence(matchedHaystack, term)) {
+      continue;
+    }
+
+    const weight = Number(entry.weights?.exclusion ?? 0);
+    if (!weight) {
+      continue;
+    }
+
+    if (!strongest || weight > strongest.weight) {
+      strongest = {
+        entry,
+        weight
+      };
+    }
+  }
+
+  return strongest;
 }
 
 function scoreConstruct(record, parsed) {
   const needles = buildNeedles(record);
+  const entries = buildFieldEntries(record, needles);
   let score = 0;
   const matchedTokens = new Set();
+  const matchedSources = new Set();
+  const matchedPhrases = new Set();
+  const aliasHits = [];
+  const phraseHits = [];
+  const excludedHits = [];
+  const supportMap = new Map();
+
+  function recordPositiveMatch(match, payload = {}) {
+    if (!match?.entry || !match.weight) {
+      return false;
+    }
+
+    score += match.weight;
+    upsertSupportHit(supportMap, match.entry, {
+      weight: match.weight,
+      tokens: payload.tokens ?? [],
+      aliasHits: payload.aliasHits ?? [],
+      phraseHits: payload.phraseHits ?? []
+    });
+    return true;
+  }
 
   if (parsed.subjectId && record.subjectId === parsed.subjectId) {
     score += 26;
   }
 
-  if (parsed.normalized && needles.label.includes(parsed.normalized)) {
+  if (parsed.normalized && containsTerm(needles.label, parsed.normalized)) {
     score += 36;
   }
 
   for (const token of parsed.keywords) {
-    let tokenScore = 0;
-
-    if (needles.label.includes(token)) {
-      tokenScore = Math.max(tokenScore, 15);
-    }
-    if (needles.target.includes(token)) {
-      tokenScore = Math.max(tokenScore, 13);
-    }
-    if (needles.objective.includes(token)) {
-      tokenScore = Math.max(tokenScore, 11);
-    }
-    if (needles.contextValues.some((value) => value.includes(token))) {
-      tokenScore = Math.max(tokenScore, 9);
-    }
-    if (needles.contextKeys.some((value) => value.includes(token))) {
-      tokenScore = Math.max(tokenScore, 8);
-    }
-    if (needles.tags.some((value) => value.includes(token))) {
-      tokenScore = Math.max(tokenScore, 8);
-    }
-    if (needles.strands.some((value) => value.includes(token))) {
-      tokenScore = Math.max(tokenScore, 7);
-    }
-    if (needles.steps.some((value) => value.includes(token))) {
-      tokenScore = Math.max(tokenScore, 4);
-    }
-    if (needles.notes.includes(token)) {
-      tokenScore = Math.max(tokenScore, 4);
+    const match = findStrongestFieldMatch(entries, token, "token");
+    if (!recordPositiveMatch(match, {
+      tokens: [token]
+    })) {
+      continue;
     }
 
-    if (tokenScore > 0) {
-      matchedTokens.add(token);
-      score += tokenScore;
+    matchedTokens.add(token);
+    matchedSources.add(token);
+  }
+
+  for (const phrase of parsed.phrases ?? []) {
+    const match = findStrongestFieldMatch(entries, phrase, "phrase");
+    if (!recordPositiveMatch(match, {
+      phraseHits: [
+        {
+          phrase,
+          via: "direct",
+          source: phrase
+        }
+      ]
+    })) {
+      continue;
+    }
+
+    matchedPhrases.add(phrase);
+    matchedSources.add(phrase);
+    phraseHits.push({
+      phrase,
+      via: "direct",
+      source: phrase,
+      field: match.entry.label
+    });
+  }
+
+  for (const alias of parsed.aliasTerms ?? []) {
+    const match = findStrongestFieldMatch(entries, alias.term, alias.kind === "phrase" ? "aliasPhrase" : "aliasToken");
+    if (!recordPositiveMatch(match, {
+      aliasHits: [
+        {
+          source: alias.source,
+          term: alias.term,
+          canonical: alias.canonical
+        }
+      ],
+      phraseHits: alias.kind === "phrase"
+        ? [
+          {
+            phrase: alias.term,
+            via: "alias",
+            source: alias.source
+          }
+        ]
+        : []
+    })) {
+      continue;
+    }
+
+    matchedSources.add(alias.source);
+    aliasHits.push({
+      source: alias.source,
+      term: alias.term,
+      canonical: alias.canonical,
+      field: match.entry.label
+    });
+
+    if (alias.kind === "phrase") {
+      matchedPhrases.add(alias.source);
+      phraseHits.push({
+        phrase: alias.term,
+        via: "alias",
+        source: alias.source,
+        field: match.entry.label
+      });
     }
   }
 
-  if (parsed.keywords.length > 0) {
-    score += Number(((matchedTokens.size / parsed.keywords.length) * 18).toFixed(2));
+  for (const exclusion of parsed.exclusions ?? []) {
+    let strongestPenalty = null;
+    const exclusionTerms = [
+      {
+        term: exclusion.cue,
+        via: "direct"
+      },
+      ...((exclusion.aliasTerms ?? []).map((alias) => ({
+        term: alias.term,
+        via: "alias"
+      }))),
+      ...(exclusion.tokens ?? []).map((token) => ({
+        term: token,
+        via: "direct"
+      }))
+    ];
+
+    for (const candidate of exclusionTerms) {
+      const match = findStrongestExclusionMatch(entries, exclusion.cue, candidate.term);
+      if (!match) {
+        continue;
+      }
+
+      const penalty = Number(match.weight + (candidate.term.includes(" ") ? 3 : 0) - (candidate.via === "alias" ? 2 : 0));
+      if (!strongestPenalty || penalty > strongestPenalty.penalty) {
+        strongestPenalty = {
+          ...match,
+          penalty,
+          term: candidate.term,
+          via: candidate.via
+        };
+      }
+    }
+
+    if (!strongestPenalty) {
+      continue;
+    }
+
+    score -= strongestPenalty.penalty;
+    const exclusionHit = {
+      cue: exclusion.cue,
+      term: strongestPenalty.term,
+      via: strongestPenalty.via,
+      penalty: strongestPenalty.penalty,
+      field: strongestPenalty.entry.label
+    };
+    excludedHits.push(exclusionHit);
+    upsertSupportHit(supportMap, strongestPenalty.entry, {
+      weight: -strongestPenalty.penalty,
+      excludedHits: [exclusionHit]
+    });
+  }
+
+  const matchedKeywordCount = parsed.keywords.filter((token) => matchedSources.has(token)).length;
+  const matchedPhraseCount = (parsed.phrases ?? []).filter((phrase) => matchedSources.has(phrase)).length;
+  const cueWeightTotal = (parsed.keywords.length || 0) + ((parsed.phrases?.length ?? 0) * 1.35);
+  const cueWeightMatched = matchedKeywordCount + (matchedPhraseCount * 1.35);
+
+  if (cueWeightTotal > 0) {
+    score += Number(((cueWeightMatched / cueWeightTotal) * 18).toFixed(2));
   }
 
   if (record.learnedCount > 1) {
@@ -743,13 +1200,35 @@ function scoreConstruct(record, parsed) {
 
   return {
     score: Number(score.toFixed(2)),
-    support: computeSupport(record, parsed),
-    matchedTokens: [...matchedTokens]
+    support: [...supportMap.values()]
+      .sort((left, right) => Number(right.totalWeight ?? 0) - Number(left.totalWeight ?? 0))
+      .slice(0, 8)
+      .map(({ totalWeight, ...entry }) => entry),
+    matchedTokens: [...matchedTokens],
+    matchedSources: [...matchedSources],
+    matchedRatio: Number((cueWeightTotal > 0 ? cueWeightMatched / cueWeightTotal : 0).toFixed(2)),
+    aliasHits,
+    phraseHits,
+    excludedHits
   };
 }
 
 function buildTrace(record, parsed, candidates = []) {
   const contextEntries = Object.entries(record?.context ?? {});
+  const aliasPreview = (record?.aliasHits ?? []).slice(0, 4);
+  const phrasePreview = (record?.phraseHits ?? []).slice(0, 4);
+  const exclusionPreview = [
+    ...((parsed.exclusions ?? []).map((entry) => ({
+      cue: entry.cue,
+      penalty: null
+    }))),
+    ...((record?.excludedHits ?? []).map((entry) => ({
+      cue: entry.cue,
+      penalty: entry.penalty
+    })))
+  ]
+    .filter((entry, index, all) => all.findIndex((candidate) => candidate.cue === entry.cue) === index)
+    .slice(0, 4);
 
   return {
     triggerStrands: [
@@ -771,6 +1250,18 @@ function buildTrace(record, parsed, candidates = []) {
         detail: "query cue"
       }))
     ].filter(Boolean),
+    aliasStrands: aliasPreview.map((entry) => ({
+      kind: "alias",
+      name: entry.source,
+      value: `matched via ${entry.term}`
+    })),
+    phraseStrands: phrasePreview.map((entry) => ({
+      kind: "phrase",
+      name: entry.source ?? entry.phrase,
+      value: entry.via === "alias"
+        ? `phrase matched through alias ${entry.phrase}`
+        : `phrase matched as ${entry.phrase}`
+    })),
     anchorStrands: [
       record?.target
         ? {
@@ -806,6 +1297,11 @@ function buildTrace(record, parsed, candidates = []) {
         value: "tagged memory"
       }))
     ].filter(Boolean),
+    exclusionStrands: exclusionPreview.map((entry) => ({
+      kind: "exclude",
+      name: entry.cue,
+      value: entry.penalty ? `penalized ${entry.penalty.toFixed(1)} points` : "excluded cue detected"
+    })),
     stabilizedMemory: candidates.slice(0, 4).map((candidate, index) => ({
       kind: "memory",
       name: candidate.constructLabel,
@@ -954,9 +1450,11 @@ export function buildSubjectBenchmarkQuestionCandidates(record = {}, parsed = {}
   ));
 }
 
-function buildUnresolvedAnswer(parsed, candidates = []) {
+function buildUnresolvedAnswer(parsed, candidates = [], libraryCount = 0) {
   if (!candidates.length) {
-    return `No stable Strandspace memory formed for "${parsed.raw}". Teach a construct for this subject and it will become recallable next time.`;
+    return libraryCount > 0
+      ? `No stable Strandspace memory formed for "${parsed.raw}". Teach a sharper construct or tighten the prompt so the field has a stronger anchor next time.`
+      : `No constructs are stored for this subject yet. Teach one strong construct with target, objective, context, and steps, and Strandspace will start recalling it from partial cues.`;
   }
 
   const hints = candidates
@@ -964,7 +1462,7 @@ function buildUnresolvedAnswer(parsed, candidates = []) {
     .map((candidate) => candidate.constructLabel)
     .join(", ");
 
-  return `Strandspace found partial overlap for "${parsed.raw}", but nothing was strong enough to emit a trusted answer. Closest constructs: ${hints}.`;
+  return `Strandspace found partial overlap for "${parsed.raw}", but the field still needs either a stronger local construct or a tighter prompt before it can emit a trusted answer. Closest constructs: ${hints}.`;
 }
 
 function clamp(value, min, max) {
@@ -1001,14 +1499,13 @@ function buildRouting(parsed, ranked = [], constructs = []) {
   const second = ranked[1] ?? null;
   const score = Number(matched?.score ?? 0);
   const margin = Number(Math.max(score - Number(second?.score ?? 0), 0).toFixed(2));
-  const keywordCount = parsed.keywords.length || 1;
-  const matchedRatio = matched ? Number(((matched.matchedTokens?.length ?? 0) / keywordCount).toFixed(2)) : 0;
+  const matchedRatio = Number(matched?.matchedRatio ?? 0);
   const scoreRatio = Number(clamp(score / READY_THRESHOLD, 0, 1.8).toFixed(2));
   const confidence = matched
     ? Number(clamp((scoreRatio * 0.46) + (matchedRatio * 0.4) + (Math.min(margin, 18) / 18) * 0.14, 0.08, 0.98).toFixed(2))
     : Number(clamp(constructs.length ? 0.12 : 0.05, 0, 0.2).toFixed(2));
   const missingKeywords = matched
-    ? parsed.keywords.filter((token) => !(matched.matchedTokens ?? []).includes(token))
+    ? parsed.keywords.filter((token) => !(matched.matchedSources ?? []).includes(token))
     : parsed.keywords.slice(0, 6);
 
   if (!matched) {
@@ -1024,7 +1521,8 @@ function buildRouting(parsed, ranked = [], constructs = []) {
         : "This subject field is still empty, so there is nothing local to recall.",
       nextAction: "Store one strong construct with target, objective, context, and steps before using API assistance.",
       promptDraft: "",
-      missingKeywords
+      missingKeywords,
+      exclusions: (parsed.exclusions ?? []).map((entry) => entry.cue)
     };
   }
 
@@ -1036,10 +1534,13 @@ function buildRouting(parsed, ranked = [], constructs = []) {
       margin,
       matchedRatio,
       apiRecommended: false,
-      reason: "The top construct is clearly ahead and most query cues were satisfied locally.",
+      reason: matched.excludedHits?.length
+        ? "The top construct still won locally, but it had to work around one or more excluded cues."
+        : "The top construct is clearly ahead and most query cues were satisfied locally.",
       nextAction: "Use the recalled construct as-is, then tighten it with more examples if you want even faster recall later.",
       promptDraft: "",
-      missingKeywords
+      missingKeywords,
+      exclusions: (parsed.exclusions ?? []).map((entry) => entry.cue)
     };
   }
 
@@ -1051,7 +1552,9 @@ function buildRouting(parsed, ranked = [], constructs = []) {
       margin,
       matchedRatio,
       apiRecommended: true,
-      reason: "Strandspace found a usable construct, but the overlap is narrow or the winning margin is small.",
+      reason: matched.excludedHits?.length
+        ? "Strandspace found a usable construct, but excluded cues or narrow overlap mean the edge cases should be validated."
+        : "Strandspace found a usable construct, but the overlap is narrow or the winning margin is small.",
       nextAction: "Use the local answer as the baseline and let an API validate or expand only the uncertain parts.",
       promptDraft: buildAssistPrompt({
         parsed,
@@ -1059,7 +1562,8 @@ function buildRouting(parsed, ranked = [], constructs = []) {
         subjectLabel: matched.subjectLabel,
         missingKeywords
       }),
-      missingKeywords
+      missingKeywords,
+      exclusions: (parsed.exclusions ?? []).map((entry) => entry.cue)
     };
   }
 
@@ -1079,7 +1583,8 @@ function buildRouting(parsed, ranked = [], constructs = []) {
         subjectLabel: matched.subjectLabel,
         missingKeywords
       }),
-      missingKeywords
+      missingKeywords,
+      exclusions: (parsed.exclusions ?? []).map((entry) => entry.cue)
     };
   }
 
@@ -1093,7 +1598,8 @@ function buildRouting(parsed, ranked = [], constructs = []) {
     reason: "The local overlap is too thin to justify external expansion yet.",
     nextAction: "Capture one more concrete example for this subject so future API use has a better local anchor.",
     promptDraft: "",
-    missingKeywords
+    missingKeywords,
+    exclusions: (parsed.exclusions ?? []).map((entry) => entry.cue)
   };
 }
 
@@ -1228,13 +1734,20 @@ export function parseSubjectQuestion(question = "", subjectId = "") {
   const raw = String(question ?? "").trim();
   const normalized = normalizeText(raw);
   const tokens = normalized.split(/\s+/).filter(Boolean);
-  const keywords = tokens.filter((token) => !QUERY_STOPWORDS.has(token));
+  const exclusions = extractNegativeCues(normalized, subjectId);
+  const excludedTokens = new Set(exclusions.flatMap((entry) => entry.tokens ?? []));
+  const keywords = tokens.filter((token) => !QUERY_STOPWORDS.has(token) && !NEGATIVE_CUE_TOKENS.has(token) && !excludedTokens.has(token));
+  const phrases = buildPhrases(keywords);
+  const aliasTerms = expandAliasTerms(normalized, subjectId).filter((entry) => !excludedTokens.has(entry.source) && !excludedTokens.has(entry.term));
 
   return {
     raw,
     normalized,
     tokens,
     keywords,
+    phrases,
+    aliasTerms,
+    exclusions,
     subjectId: String(subjectId ?? "").trim(),
     intent: /\bcompare\b|\bvs\b|\bversus\b/.test(normalized) ? "compare" : "recall"
   };
@@ -1250,7 +1763,12 @@ export function recallSubjectSpace(db, { question = "", subjectId = "" } = {}) {
         ...record,
         score: analysis.score,
         support: analysis.support,
-        matchedTokens: analysis.matchedTokens
+        matchedTokens: analysis.matchedTokens,
+        matchedSources: analysis.matchedSources,
+        matchedRatio: analysis.matchedRatio,
+        aliasHits: analysis.aliasHits,
+        phraseHits: analysis.phraseHits,
+        excludedHits: analysis.excludedHits
       };
     })
     .filter((record) => record.score > 0)
@@ -1268,7 +1786,11 @@ export function recallSubjectSpace(db, { question = "", subjectId = "" } = {}) {
     objective: item.objective,
     score: item.score,
     support: item.support,
-    matchedRatio: Number(((item.matchedTokens?.length ?? 0) / (parsed.keywords.length || 1)).toFixed(2))
+    matchedRatio: Number(item.matchedRatio ?? 0),
+    matchedTokens: item.matchedTokens ?? [],
+    aliasHits: item.aliasHits ?? [],
+    phraseHits: item.phraseHits ?? [],
+    excludedHits: item.excludedHits ?? []
   }));
 
   return {
@@ -1277,7 +1799,9 @@ export function recallSubjectSpace(db, { question = "", subjectId = "" } = {}) {
     ready,
     matched: ready ? matched : null,
     candidates,
-    answer: ready && matched ? buildRecallAnswer(matched) : buildUnresolvedAnswer(parsed, candidates),
+    answer: ready && matched
+      ? buildRecallAnswer(matched)
+      : buildUnresolvedAnswer(parsed, candidates, constructs.length),
     recommendation: ready ? "use_strandspace" : "teach_or_refine",
     readiness: {
       threshold: READY_THRESHOLD,
@@ -1289,6 +1813,6 @@ export function recallSubjectSpace(db, { question = "", subjectId = "" } = {}) {
       libraryCount: constructs.length
     },
     routing,
-    trace: buildTrace(ready ? matched : null, parsed, candidates)
+    trace: buildTrace(ready ? matched : (ranked[0] ?? null), parsed, candidates)
   };
 }

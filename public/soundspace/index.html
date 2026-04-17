@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Music Engineer</title>
-    <link rel="stylesheet" href="/soundspace/style.css?v=2026-04-16-10" />
-    <script type="module" src="/soundspace/app.js?v=2026-04-16-10" defer></script>
+    <link rel="stylesheet" href="/soundspace/style.css?v=2026-04-17-ai-refresh-02" />
+    <script type="module" src="/soundspace/app.js?v=2026-04-17-ai-refresh-02" defer></script>
   </head>
   <body>
     <header class="page-switch">
@@ -98,11 +98,12 @@
               rows="4"
               placeholder="Example: t8s SM58 vocal EQ for karaoke"
             ></textarea>
-            <label class="assist-toggle" for="soundspace-assist-toggle">
+            <label id="soundspace-assist-toggle-wrap" class="assist-toggle" for="soundspace-assist-toggle">
               <input id="soundspace-assist-toggle" name="soundspace-assist-toggle" type="checkbox" />
               <span>
-                <strong>AI assistant for suggestions</strong>
-                <small>Off by default. When checked, this search goes straight to the AI suggestion path instead of stopping at local recall.</small>
+                <strong id="soundspace-assist-title">AI assistant for suggestions</strong>
+                <small id="soundspace-assist-help">Off by default. When checked, this search goes straight to the AI suggestion path instead of stopping at local recall.</small>
+                <em id="soundspace-assist-state" class="assist-toggle-state">Local-first search</em>
               </span>
             </label>
             <div class="question-actions">

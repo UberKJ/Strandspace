@@ -414,6 +414,20 @@ h3 {
   cursor: pointer;
 }
 
+.assist-toggle.is-active {
+  border-color: rgba(18, 107, 115, 0.28);
+  background: rgba(18, 107, 115, 0.08);
+}
+
+.assist-toggle.is-recommended {
+  border-color: rgba(182, 120, 63, 0.28);
+  background: rgba(182, 120, 63, 0.08);
+}
+
+.assist-toggle.is-searching {
+  box-shadow: inset 0 0 0 1px rgba(18, 107, 115, 0.14);
+}
+
 .assist-toggle input {
   width: 18px;
   height: 18px;
@@ -432,6 +446,16 @@ h3 {
   margin-top: 4px;
   color: var(--muted);
   font: 600 0.84rem/1.5 var(--font-ui);
+}
+
+.assist-toggle-state {
+  display: inline-flex;
+  margin-top: 8px;
+  color: var(--accent-deep);
+  font: 700 0.78rem/1.2 var(--font-ui);
+  font-style: normal;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .primary-action {
@@ -504,8 +528,9 @@ h3 {
 :root[data-theme="dark"] .library-card span,
 :root[data-theme="dark"] .library-card small,
 :root[data-theme="dark"] .meta,
-:root[data-theme="dark"] .focus-subtitle,
-:root[data-theme="dark"] .masthead-copy {
+:root[data-theme="dark"] .assist-toggle-state,
+  :root[data-theme="dark"] .focus-subtitle,
+  :root[data-theme="dark"] .masthead-copy {
   color: #dde8e8;
 }
 

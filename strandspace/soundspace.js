@@ -277,8 +277,42 @@ const DEVICE_PATTERNS = [
   { brand: "Bose", model: "Sub2", type: "subwoofer", terms: ["bose sub2", "bose sub 2", "sub2", "sub 2"] },
   { brand: "Innopaw", model: "WM333", type: "wireless_receiver", terms: ["innopaw wm333", "wm333", "innopaw receiver", "innopaw receivers"] },
   { brand: "Behringer", model: "Composer Pro-XL MDX-2600", type: "dynamics_processor", terms: ["behringer composer pro xl mdx 2600", "composer pro xl", "composer pro-xl", "mdx-2600", "mdx 2600"] },
-  { brand: "EV", model: "ZLX-8P-G2", type: "monitor_speaker", terms: ["ev zlx-8p-g2", "zlx-8p-g2", "zlx 8p g2", "ev zlx 8p g2"] }
+  { brand: "EV", model: "ZLX-8P-G2", type: "monitor_speaker", terms: ["ev zlx-8p-g2", "zlx-8p-g2", "zlx 8p g2", "ev zlx 8p g2"] },
+  { brand: "EV", model: "ZLX-12P-G2", type: "speaker_system", terms: ["electro voice zlx-12p g2", "electro voice zlx 12p g2", "electro-voice zlx-12p g2", "electro-voice zlx 12p g2", "ev zlx-12p-g2", "ev zlx 12p g2", "zlx-12p-g2", "zlx 12p g2"] }
 ];
+
+const FREEFORM_DEVICE_BRANDS = [
+  { brand: "EV", aliases: ["electro voice", "electro-voice", "ev"], type: "speaker_system" }
+];
+
+const FREEFORM_DEVICE_STOPWORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "for",
+  "front",
+  "from",
+  "house",
+  "in",
+  "main",
+  "mains",
+  "monitor",
+  "monitors",
+  "of",
+  "on",
+  "pair",
+  "setting",
+  "settings",
+  "speaker",
+  "speakers",
+  "system",
+  "systems",
+  "the",
+  "to",
+  "two",
+  "what",
+  "with"
+]);
 
 const DEVICE_TYPE_PRIORITY = {
   mixer: 0,
@@ -361,6 +395,74 @@ const VENUE_PATTERNS = [
   { size: "large", terms: ["large room", "large venue", "large event", "outdoor", "festival"] }
 ];
 
+function formatDetectedDeviceToken(token = "") {
+  const value = String(token ?? "").trim();
+  if (!value) {
+    return "";
+  }
+
+  if (/^\d+$/.test(value)) {
+    return value;
+  }
+
+  if (/^[a-z0-9-]+$/i.test(value)) {
+    return value.toUpperCase();
+  }
+
+  return value.replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function formatDetectedDeviceModel(tokens = []) {
+  const items = Array.isArray(tokens) ? tokens.filter(Boolean) : [];
+  return items.map((token) => formatDetectedDeviceToken(token)).join(" ").trim() || null;
+}
+
+function extractFreeformDeviceMatch(normalized = "", source = null) {
+  const question = String(normalized ?? "").trim();
+  if (!question) {
+    return null;
+  }
+
+  for (const entry of FREEFORM_DEVICE_BRANDS) {
+    for (const alias of entry.aliases) {
+      const marker = `${alias} `;
+      const index = question.indexOf(marker);
+      if (index === -1) {
+        continue;
+      }
+
+      const tail = question.slice(index + marker.length).trim();
+      if (!tail) {
+        continue;
+      }
+
+      const tokens = [];
+      for (const token of tail.split(/\s+/)) {
+        if (!token || FREEFORM_DEVICE_STOPWORDS.has(token)) {
+          break;
+        }
+        tokens.push(token);
+        if (tokens.length >= 4) {
+          break;
+        }
+      }
+
+      if (!tokens.length || !tokens.some((token) => /\d/.test(token))) {
+        continue;
+      }
+
+      return {
+        brand: entry.brand,
+        model: formatDetectedDeviceModel(tokens),
+        type: entry.type ?? (source?.type === "speaker system" ? "speaker_system" : "audio_device"),
+        terms: [tokens.join(" ")]
+      };
+    }
+  }
+
+  return null;
+}
+
 function titleCase(value = "") {
   return String(value)
     .replace(/[_-]+/g, " ")
@@ -391,8 +493,13 @@ function buildGearChainLabel(deviceMatches = []) {
 
 export function parseSoundQuestion(question = "") {
   const normalized = normalizeText(question);
+  const source = SOURCE_PATTERNS.find((entry) => entry.terms.some((term) => normalized.includes(term))) ?? null;
   const deviceMatches = DEVICE_PATTERNS.filter((entry) => entry.terms.some((term) => normalized.includes(term)))
     .filter((entry, index, all) => all.findIndex((candidate) => candidate.model === entry.model) === index);
+  const freeformDevice = deviceMatches.length ? null : extractFreeformDeviceMatch(normalized, source);
+  if (freeformDevice?.model) {
+    deviceMatches.push(freeformDevice);
+  }
   const primaryDevice = [...deviceMatches].sort((left, right) => {
     const priorityDelta = devicePriority(left) - devicePriority(right);
     if (priorityDelta !== 0) {
@@ -400,7 +507,6 @@ export function parseSoundQuestion(question = "") {
     }
     return left.model.localeCompare(right.model);
   })[0] ?? null;
-  const source = SOURCE_PATTERNS.find((entry) => entry.terms.some((term) => normalized.includes(term))) ?? null;
   const sourceBrand = SOURCE_BRAND_PATTERNS.find((entry) => entry.terms.some((term) => normalized.includes(term))) ?? null;
   const sourceModel = SOURCE_MODEL_PATTERNS.find((entry) => entry.terms.some((term) => normalized.includes(term))) ?? null;
   const presetCategory = PRESET_CATEGORY_PATTERNS.find((entry) => entry.terms.some((term) => normalized.includes(term))) ?? null;
@@ -415,6 +521,8 @@ export function parseSoundQuestion(question = "") {
     || /\bfrom .* to the speakers\b/.test(normalized)
     || /\bwhole rig\b/.test(normalized)
     || /\bcomplete karaoke gain staging reset\b/.test(normalized);
+  const shouldTreatAsSpeakerSystem = /\b(front of house|front-of-house|foh|speaker|speakers|main speakers|mains)\b/.test(normalized)
+    && primaryDevice?.type === "speaker_system";
   const prefersAssist = wantsDetailedWalkthrough
     || (wantsSystemReset && deviceMatches.length >= 2)
     || deviceMatches.length >= 3
@@ -432,7 +540,9 @@ export function parseSoundQuestion(question = "") {
     deviceBrand: primaryDevice?.brand ?? null,
     deviceModel: primaryDevice?.model ?? null,
     deviceType: primaryDevice?.type ?? null,
-    sourceType: source?.type ?? null,
+    sourceType: shouldTreatAsSpeakerSystem
+      ? "speaker system"
+      : (source?.type ?? (primaryDevice?.type === "speaker_system" ? "speaker system" : null)),
     sourceBrand: sourceModel?.brand ?? sourceBrand?.brand ?? null,
     sourceModel: sourceModel?.model ?? null,
     presetSystem: mentionsPreset ? "ToneMatch" : null,

@@ -11,6 +11,10 @@ const statusLineEl = document.getElementById("soundspace-status-line");
 const themeToggleButton = document.getElementById("theme-toggle");
 const resetExamplesButton = document.getElementById("soundspace-reset-examples");
 const assistToggle = document.getElementById("soundspace-assist-toggle");
+const assistToggleWrap = document.getElementById("soundspace-assist-toggle-wrap");
+const assistToggleTitle = document.getElementById("soundspace-assist-title");
+const assistToggleHelp = document.getElementById("soundspace-assist-help");
+const assistToggleState = document.getElementById("soundspace-assist-state");
 const submitButton = form?.querySelector("button[type=\"submit\"]");
 const quickQueryButtons = Array.from(document.querySelectorAll("[data-query]"));
 const themeStorageKey = "strandspace:theme";
@@ -91,6 +95,103 @@ function focusLabel(key = "") {
 
 function escapeAttribute(value = "") {
   return escapeHtml(value).replaceAll("`", "&#96;");
+}
+
+function normalizeQuery(value = "") {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function analyzeAssistIntent(question = "") {
+  const normalized = normalizeQuery(question);
+  if (!normalized) {
+    return {
+      recommended: false,
+      reason: "Off by default. Turn this on when you want AI to draft, validate, or expand beyond local recall.",
+      stateLabel: "Local-first search"
+    };
+  }
+
+  const wantsDetailedWalkthrough = /\b(step by step|every setting|exact value|exact values|exact clock|clock positions|maximum gain before feedback|no edge of feedback)\b/.test(normalized);
+  const wantsRigReset = /\b(reset|gain staging reset|whole rig|from the mic capsules to the speakers|from the capsules to the speakers)\b/.test(normalized);
+  const mentionsNewOrSpecificModel = /\b(zlx ?12p ?g2|zlx ?8p ?g2|l1 pro ?8|l1 pro ?16|l1 pro ?32|sub ?2|mdx ?2600|wm333|sm58|beta 58a|sm57)\b/.test(normalized);
+  const mentionsSpeakerBuild = /\b(front of house|foh|speaker|speakers|main|mains)\b/.test(normalized);
+  const mentionsManyDevices = /\b(my gear includes|receivers|monitors|compressor|compressors|mixer|and a|and two|and 2|pair)\b/.test(normalized);
+  const recommended = wantsDetailedWalkthrough || wantsRigReset || (mentionsNewOrSpecificModel && mentionsSpeakerBuild) || mentionsManyDevices;
+
+  if (wantsDetailedWalkthrough || wantsRigReset) {
+    return {
+      recommended,
+      reason: "Recommended here because this looks like a full reset or exact-value walkthrough.",
+      stateLabel: "AI recommended"
+    };
+  }
+
+  if (mentionsNewOrSpecificModel && mentionsSpeakerBuild) {
+    return {
+      recommended,
+      reason: "Recommended here because you named a specific speaker model that may need a draft-and-review path.",
+      stateLabel: "AI recommended"
+    };
+  }
+
+  if (mentionsManyDevices) {
+    return {
+      recommended,
+      reason: "Recommended here because the query looks like a multi-device rig instead of a single local recall.",
+      stateLabel: "AI recommended"
+    };
+  }
+
+  return {
+    recommended: false,
+    reason: "Off by default. When checked, this search goes straight to the AI suggestion path instead of stopping at local recall.",
+    stateLabel: "Local-first search"
+  };
+}
+
+function syncSubmitButtonLabel(label = "Search Memory") {
+  if (!submitButton || submitButton.disabled) {
+    return;
+  }
+
+  submitButton.textContent = label;
+  submitButton.dataset.defaultLabel = label;
+}
+
+function updateAssistToggleState({ phase = "idle" } = {}) {
+  const checked = Boolean(assistToggle?.checked);
+  const analysis = analyzeAssistIntent(questionInput?.value ?? "");
+
+  if (assistToggleWrap) {
+    assistToggleWrap.classList.toggle("is-active", checked);
+    assistToggleWrap.classList.toggle("is-recommended", analysis.recommended && !checked);
+    assistToggleWrap.classList.toggle("is-searching", phase === "running");
+  }
+
+  if (assistToggleTitle) {
+    assistToggleTitle.textContent = checked
+      ? "AI assistant for this search"
+      : analysis.recommended
+        ? "AI assistant recommended"
+        : "AI assistant for suggestions";
+  }
+
+  if (assistToggleHelp) {
+    assistToggleHelp.textContent = checked
+      ? "This click will force the AI suggestion path first, then stop at review before anything is saved."
+      : analysis.reason;
+  }
+
+  if (assistToggleState) {
+    assistToggleState.textContent = phase === "running"
+      ? (checked ? "AI search active" : "Checking local memory")
+      : (checked ? "AI search on" : analysis.stateLabel);
+  }
+
+  syncSubmitButtonLabel(checked ? "Search with AI" : "Search Memory");
 }
 
 function statusBadgeMarkup(health = null) {
@@ -815,19 +916,21 @@ async function askQuestion(event) {
     return;
   }
 
-  metaEl.textContent = "Searching...";
-  setButtonBusy(submitButton, true, "Searching...");
+  const useAssistSuggestions = Boolean(assistToggle?.checked);
+  metaEl.textContent = useAssistSuggestions ? "Running AI suggestion path..." : "Checking local memory...";
+  updateAssistToggleState({ phase: "running" });
+  setButtonBusy(submitButton, true, useAssistSuggestions ? "Searching with AI..." : "Searching...");
   try {
-    const useAssistSuggestions = Boolean(assistToggle?.checked);
     const payload = await searchSoundspace(question, {
       reviewBeforeStore: true,
       useAssistSuggestions
     });
+    const aiSuggestionUsed = useAssistSuggestions && isAssistPayload(payload);
     metaEl.textContent = payload.source === "search-guidance"
-      ? (useAssistSuggestions ? "Local memory needs one more detail" : "Local-only search needs one more detail")
+      ? (useAssistSuggestions ? "AI search needs a recognizable device or one more detail" : "Local-only search needs one more detail")
       : payload.needsReview
-      ? `${payload.review?.canLearn ? "Proposal ready" : "Need detail"} | ${payload.construct?.deviceModel ?? "Soundspace"}`
-      : `${payload.source === "strandspace" ? "Recall hit" : "Learned result"} | ${payload.construct?.deviceModel ?? "Soundspace"}`;
+      ? `${aiSuggestionUsed ? "AI proposal ready" : "Proposal ready"} | ${payload.construct?.deviceModel ?? "Soundspace"}`
+      : `${aiSuggestionUsed ? "AI suggestion used" : payload.source === "strandspace" ? "Recall hit" : "Learned result"} | ${payload.construct?.deviceModel ?? "Soundspace"}`;
     try {
       renderAnswer(payload);
     } catch (renderError) {
@@ -854,11 +957,13 @@ async function askQuestion(event) {
     answerEl.innerHTML = `<p>${escapeHtml(error instanceof Error ? error.message : "Unable to answer that sound question.")}</p>`;
   } finally {
     setButtonBusy(submitButton, false);
+    updateAssistToggleState();
   }
 }
 
 function seedQuery(value = "", { runSearch = false } = {}) {
   questionInput.value = value;
+  updateAssistToggleState();
   questionInput.focus();
   if (runSearch) {
     void askQuestion();
@@ -872,6 +977,7 @@ clearButton?.addEventListener("click", () => {
   questionInput.value = "";
   metaEl.textContent = "Ready";
   renderAnswer(null);
+  updateAssistToggleState();
   questionInput.focus();
 });
 
@@ -903,6 +1009,14 @@ libraryEl?.addEventListener("click", (event) => {
 
 librarySearchInput?.addEventListener("input", () => {
   renderLibrary();
+});
+
+questionInput?.addEventListener("input", () => {
+  updateAssistToggleState();
+});
+
+assistToggle?.addEventListener("change", () => {
+  updateAssistToggleState();
 });
 
 answerEl?.addEventListener("click", async (event) => {
@@ -979,5 +1093,6 @@ applyTheme(readStoredTheme() || "light");
 if (assistToggle) {
   assistToggle.checked = false;
 }
+updateAssistToggleState();
 void loadSystemHealth();
 void loadLibrary();

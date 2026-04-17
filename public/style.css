@@ -550,6 +550,46 @@ h3 {
   background: linear-gradient(180deg, rgba(40, 92, 90, 0.16), rgba(248, 236, 223, 0.05));
 }
 
+.why-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(248, 236, 223, 0.12);
+  background: linear-gradient(180deg, rgba(248, 236, 223, 0.08), rgba(248, 236, 223, 0.04));
+}
+
+.why-block {
+  display: grid;
+  gap: 8px;
+}
+
+.why-support-list {
+  display: grid;
+  gap: 8px;
+}
+
+.why-support-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(248, 236, 223, 0.06);
+  border: 1px solid rgba(248, 236, 223, 0.1);
+}
+
+.why-support-item strong {
+  font-size: 0.84rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(248, 236, 223, 0.74);
+}
+
+.why-support-item span {
+  color: rgba(248, 236, 223, 0.88);
+  line-height: 1.5;
+}
+
 .assist-head {
   display: flex;
   flex-wrap: wrap;
