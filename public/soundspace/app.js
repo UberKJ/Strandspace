@@ -859,6 +859,29 @@ async function fetchAnswer(question, { reviewBeforeStore = true, preferApi = tru
   return response.json();
 }
 
+function shouldDraftLocalSuggestion(recall = {}) {
+  if (!recall || recall.ready) {
+    return false;
+  }
+
+  const parsed = recall.parsed ?? {};
+  const normalized = String(parsed.normalized ?? "").trim();
+  if (/\bvenue preset\b|\bgeneric venue preset\b/.test(normalized)) {
+    return false;
+  }
+
+  const deviceMatches = Array.isArray(parsed.deviceMatches) ? parsed.deviceMatches : [];
+  const recognizedGear = Array.isArray(parsed.recognizedGear) ? parsed.recognizedGear : [];
+  const candidates = Array.isArray(recall.candidates) ? recall.candidates : [];
+
+  return Boolean(
+    parsed.deviceModel
+    || deviceMatches.length >= 2
+    || recognizedGear.length >= 2
+    || (parsed.deviceBrand && candidates.length)
+  );
+}
+
 async function searchSoundspace(question, { reviewBeforeStore = true, useAssistSuggestions = false } = {}) {
   if (useAssistSuggestions) {
     return fetchAnswer(question, {
@@ -872,6 +895,14 @@ async function searchSoundspace(question, { reviewBeforeStore = true, useAssistS
 
   if (recall.ready && ["use_strandspace", "use_strandspace_combined"].includes(String(recall.recommendation ?? ""))) {
     return buildLocalOnlyPayload(recall);
+  }
+
+  if (shouldDraftLocalSuggestion(recall)) {
+    return fetchAnswer(question, {
+      reviewBeforeStore,
+      preferApi: false,
+      forceAssist: false
+    });
   }
 
   return buildLocalOnlyPayload(recall);
@@ -929,7 +960,7 @@ async function askQuestion(event) {
     metaEl.textContent = payload.source === "search-guidance"
       ? (useAssistSuggestions ? "AI search needs a recognizable device or one more detail" : "Local-only search needs one more detail")
       : payload.needsReview
-      ? `${aiSuggestionUsed ? "AI proposal ready" : "Proposal ready"} | ${payload.construct?.deviceModel ?? "Soundspace"}`
+      ? `${aiSuggestionUsed ? "AI proposal ready" : payload.source === "generated-proposal" ? "Local proposal ready" : "Proposal ready"} | ${payload.construct?.deviceModel ?? "Soundspace"}`
       : `${aiSuggestionUsed ? "AI suggestion used" : payload.source === "strandspace" ? "Recall hit" : "Learned result"} | ${payload.construct?.deviceModel ?? "Soundspace"}`;
     try {
       renderAnswer(payload);
@@ -1001,9 +1032,12 @@ libraryEl?.addEventListener("click", (event) => {
     return;
   }
 
-  questionInput.value = construct.target
-    ? `What is the setup for ${construct.target}?`
-    : `Recall ${construct.constructLabel ?? construct.name ?? "this Music Engineering construct"}.`;
+  questionInput.value = construct.constructLabel
+    ?? construct.name
+    ?? construct.target
+    ?? "Selected construct";
+  metaEl.textContent = "Construct title loaded as the search";
+  updateAssistToggleState();
   questionInput.focus();
 });
 

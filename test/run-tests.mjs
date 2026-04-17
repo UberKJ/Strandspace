@@ -187,24 +187,34 @@ function createWeightedRecallFixtureDb() {
   return db;
 }
 
-await check("GET / serves the construct builder page", async () => {
+await check("GET / serves the backend construct workspace", async () => {
   await withServer(async (address) => {
     const response = await fetch(`http://127.0.0.1:${address.port}/`);
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.match(html, /Strandspace Construct Builder/);
-    assert.match(html, /Turn rough notes into a reusable Strandspace construct/i);
-    assert.match(html, /Construct Builder/);
+    assert.match(html, /Strandspace Backend/);
+    assert.match(html, /Run Strandspace like an editable memory system/i);
+    assert.match(html, /SQLite Editor/i);
   });
 });
 
-await check("GET /studio serves Strandspace Studio", async () => {
+await check("GET /backend serves the backend construct workspace", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(`http://127.0.0.1:${address.port}/backend`);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /Strandspace Backend/);
+    assert.match(html, /Backend Data Browser/i);
+  });
+});
+
+await check("GET /studio aliases to the backend workspace", async () => {
   await withServer(async (address) => {
     const response = await fetch(`http://127.0.0.1:${address.port}/studio`);
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.match(html, /Strandspace Studio/);
-    assert.match(html, /Teach a subject once/);
+    assert.match(html, /Strandspace Backend/);
+    assert.match(html, /SQLite Editor/);
   });
 });
 
@@ -252,6 +262,66 @@ await check("GET /api/system/health reports the active mode and DB connection", 
     assert.ok(["assist-enabled", "local-only"].includes(payload.mode));
     assert.equal(payload.database.connected, true);
     assert.match(String(payload.database.path), /strandspace/i);
+  });
+});
+
+await check("GET /api/backend/overview reports backend counts and tables", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/backend/overview`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.ok(payload.database?.connected);
+    assert.ok(Array.isArray(payload.tables));
+    assert.ok(payload.tables.some((table) => table.name === "subject_constructs"));
+    assert.ok(payload.tables.some((table) => table.name === "sound_constructs"));
+    assert.ok(Number(payload.counts?.subjectCount) >= 1);
+  });
+});
+
+await check("GET /api/backend/db/table exposes schema and rows for a safe table browser", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/backend/db/table?table=subject_constructs&limit=5`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.table?.name, "subject_constructs");
+    assert.ok(Array.isArray(payload.columns));
+    assert.ok(payload.columns.some((column) => column.name === "constructLabel"));
+    assert.ok(Array.isArray(payload.rows));
+    assert.ok(payload.rows.length >= 1);
+  });
+});
+
+await check("POST /api/backend/db/row updates an editable subject construct row", async () => {
+  await withServer(async (address) => {
+    const libraryResponse = await fetch(`http://127.0.0.1:${address.port}/api/subjectspace/library?subjectId=music-engineering`);
+    assert.equal(libraryResponse.status, 200);
+    const libraryPayload = await libraryResponse.json();
+    const editableConstruct = libraryPayload.constructs.find((construct) => !String(construct.id ?? "").startsWith("sound-"));
+    assert.ok(editableConstruct);
+
+    const updatedNotes = `Backend editor update ${Date.now()}`;
+    const updateResponse = await postJson(`http://127.0.0.1:${address.port}/api/backend/db/row`, {
+      table: "subject_constructs",
+      id: editableConstruct.id,
+      changes: {
+        notes: updatedNotes
+      }
+    });
+
+    assert.equal(updateResponse.status, 200);
+    const updatePayload = await updateResponse.json();
+    assert.equal(updatePayload.ok, true);
+    assert.equal(updatePayload.row?.notes, updatedNotes);
+
+    const refreshedLibraryResponse = await fetch(`http://127.0.0.1:${address.port}/api/subjectspace/library?subjectId=${encodeURIComponent(editableConstruct.subjectId)}`);
+    assert.equal(refreshedLibraryResponse.status, 200);
+    const refreshedLibrary = await refreshedLibraryResponse.json();
+    assert.equal(
+      refreshedLibrary.constructs.find((construct) => construct.id === editableConstruct.id)?.notes,
+      updatedNotes
+    );
   });
 });
 
@@ -1220,6 +1290,18 @@ await check("soundspace recognizes Electro-Voice ZLX-12P-G2 as a specific speake
   assert.equal(parsed.sourceType, "speaker system");
 });
 
+await check("soundspace recognizes Yamaha MG12XU and WM333 as a local strandable rig query", async () => {
+  const parsed = parseSoundQuestion("what is a good Yamaha MG12XU and WM333 wireless mic setup for karaoke");
+
+  assert.equal(parsed.deviceBrand, "Yamaha");
+  assert.equal(parsed.deviceModel, "MG12XU");
+  assert.equal(parsed.deviceType, "mixer");
+  assert.equal(parsed.sourceType, "microphone");
+  assert.ok(Array.isArray(parsed.deviceMatches));
+  assert.ok(parsed.deviceMatches.some((item) => item.model === "MG12XU"));
+  assert.ok(parsed.deviceMatches.some((item) => item.model === "WM333"));
+});
+
 await check("soundspace answers Bose Pro 8 spacing questions locally and returns placement only", async () => {
   await withServer(async (address) => {
     const response = await fetch(
@@ -1328,6 +1410,26 @@ await check("soundspace proposes a reviewable EV ZLX-12P-G2 construct for an uns
     assert.equal(payload.construct?.sourceType, "speaker system");
     assert.equal(payload.review?.canLearn, true);
     assert.match(String(payload.review?.summary), /not stored yet|ready for review/i);
+  });
+});
+
+await check("soundspace proposes a local reviewable construct for Yamaha MG12XU and WM333", async () => {
+  await withServer(async (address) => {
+    const response = await postJson(`http://127.0.0.1:${address.port}/api/soundspace/answer`, {
+      question: "what is a good Yamaha MG12XU and WM333 wireless mic setup for karaoke",
+      reviewBeforeStore: true,
+      preferApi: false
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.needsReview, true);
+    assert.equal(payload.source, "generated-proposal");
+    assert.equal(payload.construct?.deviceBrand, "Yamaha");
+    assert.equal(payload.construct?.deviceModel, "MG12XU");
+    assert.equal(payload.construct?.sourceType, "microphone");
+    assert.match(String(payload.construct?.setup?.notes), /WM333|Recognized gear chain/i);
+    assert.equal(payload.review?.canLearn, true);
   });
 });
 
@@ -1536,6 +1638,122 @@ await check("POST /api/soundspace/answer can force AI assist for a new EV FOH qu
     });
   } finally {
     __setOpenAiAssistMock(null);
+  }
+});
+
+await check("POST /api/subjectspace/subject-ideas returns AI suggested starter constructs for a described subject", async () => {
+  __setOpenAiAssistMock(async ({ mode, description, requestedSubjectLabel }) => {
+    assert.equal(mode, "subject-ideas");
+    assert.match(String(description), /wireless karaoke rigs/i);
+    assert.equal(requestedSubjectLabel, "Music Engineering");
+
+    return {
+      responseId: "resp_mock_subject_ideas",
+      model: "gpt-5.4-mini",
+      usage: {
+        input_tokens: 28,
+        output_tokens: 118,
+        total_tokens: 146
+      },
+      suggestions: {
+        subjectLabel: "Music Engineering",
+        subjectSummary: "Starter construct map for karaoke and small live-sound workflows.",
+        suggestedConstructs: [
+          {
+            constructLabel: "Wireless karaoke gain staging reset",
+            target: "Wireless karaoke vocal chain",
+            objective: "clean vocal gain before feedback across a full karaoke signal path",
+            contextEntries: [
+              { key: "venue", value: "karaoke bar" },
+              { key: "wireless", value: "dual handheld receivers" }
+            ],
+            starterSteps: [
+              "Set receiver output before touching mixer trim.",
+              "Raise input gain until loud vocal peaks stay clean.",
+              "Ring out monitors only after the vocal path is stable."
+            ],
+            tags: ["karaoke", "wireless", "gain staging"],
+            rationale: "This creates the reusable baseline for most karaoke resets."
+          },
+          {
+            constructLabel: "Monitor ring-out for karaoke vocals",
+            target: "Stage monitor feedback control",
+            objective: "stable singer monitoring without edge-of-feedback tension",
+            contextEntries: [
+              { key: "monitor type", value: "powered wedges" },
+              { key: "priority", value: "gain before feedback" }
+            ],
+            starterSteps: [
+              "Start monitor sends low.",
+              "Cut the first feedback frequency before adding more level.",
+              "Re-check vocal tone after each monitor cut."
+            ],
+            tags: ["monitor mix", "feedback control", "karaoke"],
+            rationale: "Separating monitor control keeps monitor decisions from muddying the main reset flow."
+          }
+        ]
+      }
+    };
+  });
+
+  try {
+    await withServer(async (address) => {
+      const response = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/subject-ideas`, {
+        subjectLabel: "Music Engineering",
+        description: "Build a reusable subject around wireless karaoke rigs, gain staging, monitor ring-out, and recallable live-sound starting points."
+      });
+
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.ok, true);
+      assert.equal(payload.source, "openai-subject-mapper");
+      assert.equal(payload.suggestions?.subjectLabel, "Music Engineering");
+      assert.match(String(payload.suggestions?.subjectSummary), /karaoke|live-sound/i);
+      assert.equal(payload.suggestions?.suggestedConstructs?.length, 2);
+      assert.equal(payload.suggestions?.suggestedConstructs?.[0]?.constructLabel, "Wireless karaoke gain staging reset");
+      assert.deepEqual(payload.suggestions?.suggestedConstructs?.[0]?.context, {
+        venue: "karaoke bar",
+        wireless: "dual handheld receivers"
+      });
+      assert.ok(Array.isArray(payload.suggestions?.suggestedConstructs?.[0]?.starterSteps));
+      assert.equal(payload.responseId, "resp_mock_subject_ideas");
+      assert.equal(payload.usage?.total_tokens, 146);
+    });
+  } finally {
+    __setOpenAiAssistMock(null);
+  }
+});
+
+await check("POST /api/subjectspace/subject-ideas returns a timeout payload when AI subject mapping stalls", async () => {
+  const originalTimeout = process.env.SUBJECTSPACE_OPENAI_TIMEOUT_MS;
+  process.env.SUBJECTSPACE_OPENAI_TIMEOUT_MS = "25";
+  __setOpenAiAssistMock(async ({ mode }) => {
+    assert.equal(mode, "subject-ideas");
+    return await new Promise(() => {});
+  });
+
+  try {
+    await withServer(async (address) => {
+      const started = Date.now();
+      const response = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/subject-ideas`, {
+        subjectLabel: "Music Engineering",
+        description: "Create subject starter constructs for karaoke recall and monitor tuning."
+      });
+
+      assert.equal(response.status, 504);
+      const payload = await response.json();
+      assert.equal(payload.ok, false);
+      assert.equal(payload.code, "OPENAI_REQUEST_TIMEOUT");
+      assert.match(String(payload.error), /timed out/i);
+      assert.ok(Date.now() - started < 1000);
+    });
+  } finally {
+    __setOpenAiAssistMock(null);
+    if (originalTimeout === undefined) {
+      delete process.env.SUBJECTSPACE_OPENAI_TIMEOUT_MS;
+    } else {
+      process.env.SUBJECTSPACE_OPENAI_TIMEOUT_MS = originalTimeout;
+    }
   }
 });
 

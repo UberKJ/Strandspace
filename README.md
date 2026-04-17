@@ -27,7 +27,8 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000).
 
 - Main construct builder: `/`
-- Studio view: `/studio`
+- Backend workspace: `/`
+- Legacy `/studio` route now opens the backend workspace
 - Soundspace / Music Engineer: `/soundspace`
 
 If you do not set `OPENAI_API_KEY`, the app runs in local-only mode. Recall, library browsing, seed data, and construct editing still work; OpenAI assist and benchmark assist calls are simply disabled.

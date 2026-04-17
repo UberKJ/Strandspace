@@ -435,6 +435,12 @@ h3 {
   gap: 10px;
 }
 
+.example-pill-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .example-pill {
   min-height: 42px;
   padding: 0 16px;
@@ -970,6 +976,27 @@ h3 {
   gap: 10px;
 }
 
+.pager-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.pager-controls.compact {
+  margin-top: 2px;
+}
+
+.pager-status {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
 .trace-chip {
   display: grid;
   gap: 4px;
@@ -1371,5 +1398,377 @@ h3 {
 
   .speed-actions {
     align-items: stretch;
+  }
+}
+
+body.backend-page {
+  background:
+    radial-gradient(circle at top left, rgba(40, 92, 90, 0.16), transparent 28%),
+    radial-gradient(circle at top right, rgba(181, 109, 54, 0.18), transparent 30%),
+    linear-gradient(180deg, #f6efe5 0%, #efe1cd 48%, #e7d6c2 100%);
+}
+
+:root[data-theme="dark"] body.backend-page {
+  background:
+    radial-gradient(circle at top left, rgba(102, 179, 174, 0.16), transparent 28%),
+    radial-gradient(circle at top right, rgba(216, 137, 75, 0.18), transparent 30%),
+    linear-gradient(180deg, #12100f 0%, #171412 48%, #1e1815 100%);
+}
+
+.backend-shell {
+  width: min(1500px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 20px 0 52px;
+  display: grid;
+  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+  gap: 22px;
+}
+
+.backend-sidebar,
+.backend-main,
+.backend-stack {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.backend-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  align-items: start;
+  gap: 18px;
+  padding: 22px 24px;
+  background: linear-gradient(135deg, rgba(255, 252, 247, 0.9), rgba(241, 232, 219, 0.88));
+}
+
+.admin-panel {
+  padding: 22px;
+}
+
+.admin-intro h1 {
+  max-width: 7ch;
+  font-size: clamp(2.4rem, 3.2vw, 3.8rem);
+  line-height: 0.94;
+  margin-bottom: 8px;
+}
+
+.admin-intro .lede {
+  max-width: 28ch;
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.admin-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-summary-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(71, 48, 31, 0.1);
+  background: rgba(255, 252, 247, 0.7);
+}
+
+.admin-summary-card strong,
+.admin-db-path code {
+  font-size: 1.08rem;
+}
+
+.admin-db-path {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(71, 48, 31, 0.1);
+  background: rgba(255, 252, 247, 0.64);
+}
+
+.admin-db-path code {
+  white-space: normal;
+  word-break: break-word;
+}
+
+.detail-label {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.backend-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(380px, 0.95fr);
+  gap: 22px;
+}
+
+.subject-ideas-panel,
+.subject-ideas-form,
+.subject-ideas-results,
+.subject-ideas-grid,
+.subject-idea-card,
+.subject-ideas-summary {
+  display: grid;
+  gap: 14px;
+}
+
+.subject-ideas-panel {
+  padding: 22px 24px;
+}
+
+.subject-idea-card,
+.subject-ideas-summary {
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(71, 48, 31, 0.1);
+  background: linear-gradient(180deg, rgba(255, 252, 247, 0.96), rgba(252, 244, 236, 0.84));
+}
+
+.subject-ideas-results.empty {
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px dashed rgba(71, 48, 31, 0.14);
+  background: rgba(255, 253, 249, 0.62);
+}
+
+.subject-ideas-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.subject-idea-card .section-head {
+  align-items: start;
+}
+
+.answer-panel-shell .answer-surface {
+  min-height: 420px;
+}
+
+.db-panel {
+  gap: 20px;
+}
+
+.db-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  justify-content: space-between;
+}
+
+.db-search {
+  display: grid;
+  gap: 8px;
+  min-width: min(100%, 420px);
+}
+
+.db-search span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.db-search input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(71, 48, 31, 0.14);
+  background: rgba(255, 253, 249, 0.9);
+  color: var(--ink);
+}
+
+.db-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.42fr) minmax(0, 1fr) minmax(240px, 0.48fr);
+  gap: 16px;
+}
+
+.db-card,
+.db-editor-shell {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(71, 48, 31, 0.1);
+  background: linear-gradient(180deg, rgba(255, 252, 247, 0.96), rgba(252, 244, 236, 0.84));
+}
+
+.section-head.compact {
+  align-items: start;
+}
+
+.db-table-list,
+.db-schema,
+.db-editor-fields {
+  display: grid;
+  gap: 10px;
+}
+
+.db-table-list.empty,
+.db-schema.empty,
+.db-rows.empty,
+.db-editor-fields.empty {
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px dashed rgba(71, 48, 31, 0.14);
+  background: rgba(255, 253, 249, 0.62);
+}
+
+.db-table-button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 14px;
+  text-align: left;
+  border-radius: 18px;
+  border: 1px solid rgba(71, 48, 31, 0.12);
+  background: rgba(255, 252, 247, 0.88);
+}
+
+.db-table-button.is-active {
+  border-color: rgba(40, 92, 90, 0.34);
+  background: linear-gradient(180deg, rgba(40, 92, 90, 0.12), rgba(255, 252, 247, 0.94));
+}
+
+.db-table-button span,
+.db-schema-item span,
+.db-schema-item small {
+  color: var(--muted);
+}
+
+.db-rows {
+  overflow: auto;
+}
+
+.db-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.db-table th,
+.db-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(71, 48, 31, 0.1);
+  text-align: left;
+  vertical-align: top;
+}
+
+.db-table th {
+  color: var(--muted);
+  font-size: 0.76rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.db-row {
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.db-row:hover {
+  background: rgba(40, 92, 90, 0.06);
+}
+
+.db-row.is-selected {
+  background: rgba(40, 92, 90, 0.12);
+}
+
+.db-schema-item {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(71, 48, 31, 0.1);
+  background: rgba(255, 252, 247, 0.76);
+}
+
+.db-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.db-editor-field {
+  display: grid;
+  gap: 8px;
+}
+
+.db-editor-field span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.db-editor-field input,
+.db-editor-field textarea {
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid rgba(71, 48, 31, 0.14);
+  padding: 12px 14px;
+  background: rgba(255, 253, 249, 0.9);
+  color: var(--ink);
+  resize: vertical;
+}
+
+:root[data-theme="dark"] .admin-summary-card,
+:root[data-theme="dark"] .admin-db-path,
+:root[data-theme="dark"] .backend-banner,
+:root[data-theme="dark"] .db-card,
+:root[data-theme="dark"] .db-editor-shell,
+:root[data-theme="dark"] .db-table-button,
+:root[data-theme="dark"] .db-schema-item,
+:root[data-theme="dark"] .db-search input,
+:root[data-theme="dark"] .db-editor-field input,
+:root[data-theme="dark"] .db-editor-field textarea {
+  background: rgba(40, 34, 30, 0.9);
+  border-color: rgba(240, 223, 207, 0.12);
+}
+
+:root[data-theme="dark"] .backend-banner {
+  background: linear-gradient(135deg, rgba(48, 40, 35, 0.94), rgba(33, 27, 24, 0.96));
+}
+
+:root[data-theme="dark"] .backend-banner .meta,
+:root[data-theme="dark"] .admin-intro .lede,
+:root[data-theme="dark"] .pager-status {
+  color: rgba(244, 234, 223, 0.8);
+}
+
+:root[data-theme="dark"] .page-switch-controls .switch-link {
+  background: rgba(42, 35, 31, 0.92);
+}
+
+@media (max-width: 1280px) {
+  .backend-shell,
+  .backend-grid,
+  .backend-banner,
+  .db-workspace-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .backend-shell {
+    width: min(100%, calc(100% - 20px));
+    gap: 16px;
+  }
+
+  .admin-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .example-pill-grid,
+  .pager-controls,
+  .backend-banner {
+    grid-template-columns: 1fr;
   }
 }

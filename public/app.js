@@ -20,6 +20,12 @@ const builderForm = document.getElementById("builder-form");
 const builderMetaEl = document.getElementById("builder-meta");
 const builderInput = document.getElementById("builder-input");
 const builderChecksEl = document.getElementById("builder-checks");
+const subjectIdeasForm = document.getElementById("subject-ideas-form");
+const subjectIdeasLabelInput = document.getElementById("subject-ideas-label");
+const subjectIdeasInput = document.getElementById("subject-ideas-input");
+const subjectIdeasMetaEl = document.getElementById("subject-ideas-meta");
+const subjectIdeasResultsEl = document.getElementById("subject-ideas-results");
+const subjectIdeasSubmitButton = document.getElementById("subject-ideas-submit");
 const learnForm = document.getElementById("learn-form");
 const learnMetaEl = document.getElementById("learn-meta");
 const learnModeMetaEl = document.getElementById("learn-mode-meta");
@@ -33,6 +39,23 @@ const learnContextInput = document.getElementById("learn-context");
 const learnStepsInput = document.getElementById("learn-steps");
 const learnNotesInput = document.getElementById("learn-notes");
 const learnTagsInput = document.getElementById("learn-tags");
+const backendModeLabelEl = document.getElementById("backend-mode-label");
+const backendModeDetailEl = document.getElementById("backend-mode-detail");
+const backendSubjectCountEl = document.getElementById("backend-subject-count");
+const backendConstructCountEl = document.getElementById("backend-construct-count");
+const backendSoundCountEl = document.getElementById("backend-sound-count");
+const backendDbPathEl = document.getElementById("backend-db-path");
+const backendDbMetaEl = document.getElementById("backend-db-meta");
+const backendDbTableListEl = document.getElementById("backend-db-tables");
+const backendDbRowsEl = document.getElementById("backend-db-rows");
+const backendDbSchemaEl = document.getElementById("backend-db-schema");
+const backendDbSearchInput = document.getElementById("backend-db-search");
+const backendDbRefreshButton = document.getElementById("backend-db-refresh");
+const backendDbPrevButton = document.getElementById("backend-db-prev");
+const backendDbNextButton = document.getElementById("backend-db-next");
+const backendDbEditorForm = document.getElementById("backend-db-editor-form");
+const backendDbEditorFieldsEl = document.getElementById("backend-db-editor-fields");
+const backendDbEditorMetaEl = document.getElementById("backend-db-editor-meta");
 const isBuilderPage = document.body?.classList.contains("builder-page");
 const subjectStorageKey = "strandspace:last-subject-id";
 const themeStorageKey = "strandspace:theme";
@@ -60,6 +83,29 @@ let benchmarkState = {
   message: ""
 };
 let systemHealth = null;
+let latestSubjectIdeas = null;
+let backendOverview = null;
+let lastRenderedTrace = null;
+const pagedListSize = 5;
+let pagerState = {
+  suggestedPrompts: 0,
+  examplePrompts: 0
+};
+let tracePagerState = {};
+let backendDbState = {
+  table: "subject_constructs",
+  label: "",
+  primaryKey: "id",
+  editableColumns: [],
+  columns: [],
+  rows: [],
+  offset: 0,
+  limit: 15,
+  total: 0,
+  search: "",
+  selectedRowId: "",
+  selectedRow: null
+};
 let editorState = {
   mode: "new",
   constructId: "",
@@ -140,6 +186,23 @@ function toggleTheme() {
   applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
 }
 
+function formatBytes(value = 0) {
+  const size = Number(value ?? 0);
+  if (!Number.isFinite(size) || size <= 0) {
+    return "n/a";
+  }
+
+  if (size < 1024) {
+    return `${size} B`;
+  }
+
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+}
+
 function setButtonBusy(button, isBusy, busyText = "Working...") {
   if (!button) {
     return;
@@ -212,6 +275,34 @@ function previewQuestion(value = "", limit = 112) {
   return `${normalized.slice(0, limit - 1)}...`;
 }
 
+function pageItems(items = [], page = 0, pageSize = pagedListSize) {
+  const values = Array.isArray(items) ? items : [];
+  const totalPages = Math.max(1, Math.ceil(values.length / pageSize));
+  const safePage = Math.max(0, Math.min(Number(page) || 0, totalPages - 1));
+  const start = safePage * pageSize;
+
+  return {
+    items: values.slice(start, start + pageSize),
+    page: safePage,
+    totalPages,
+    totalItems: values.length
+  };
+}
+
+function pagerControlsMarkup({ target = "", page = 0, totalPages = 1, compact = false } = {}) {
+  if (totalPages <= 1) {
+    return "";
+  }
+
+  return `
+    <div class="pager-controls${compact ? " compact" : ""}">
+      <button type="button" class="secondary-button subtle-button pager-button" data-page-target="${escapeHtml(target)}" data-page-action="prev" ${page <= 0 ? "disabled" : ""}>Back</button>
+      <span class="pager-status">Page ${page + 1} of ${totalPages}</span>
+      <button type="button" class="secondary-button subtle-button pager-button" data-page-target="${escapeHtml(target)}" data-page-action="next" ${page >= totalPages - 1 ? "disabled" : ""}>Next</button>
+    </div>
+  `;
+}
+
 function renderSourceLinks(sources = [], { compact = false } = {}) {
   const items = Array.isArray(sources) ? sources : [];
   if (!items.length) {
@@ -273,10 +364,42 @@ function subjectMetaText() {
   return `${subjectPart} ${apiPart}`.trim();
 }
 
+function buildRecallSearchQuery(construct = {}) {
+  const constructLabel = String(construct.constructLabel ?? "").trim();
+  if (constructLabel) {
+    return constructLabel;
+  }
+
+  const target = String(construct.target ?? construct.name ?? "").trim();
+  if (target) {
+    return target;
+  }
+
+  const objective = String(construct.objective ?? "").trim();
+  if (objective) {
+    return objective;
+  }
+
+  return "Stored construct";
+}
+
 function buildExampleQuestion(construct) {
-  const room = construct.context?.room ?? construct.context?.environment ?? construct.context?.["show type"] ?? "";
-  const focus = construct.target || construct.constructLabel;
-  return `Recall the ${construct.constructLabel} setup for ${focus}${room ? ` in ${room}` : ""}.`;
+  return buildRecallSearchQuery(construct);
+}
+
+function syncEditorToRecalledConstruct(payload = null, { focus = false } = {}) {
+  const recalledConstruct = payload?.construct ?? payload?.recall?.matched ?? null;
+  if (!recalledConstruct?.constructLabel) {
+    return false;
+  }
+
+  loadConstructIntoEditor(recalledConstruct, {
+    mode: recalledConstruct.id ? "saved" : "draft",
+    focus
+  });
+  learnMetaEl.textContent = `Recalled "${recalledConstruct.constructLabel}" and loaded it into the editor.`;
+  builderMetaEl.textContent = "Local recall loaded the matched construct into the backend editor so you can inspect it, refine it, or extend it.";
+  return true;
 }
 
 function renderSuggestedPrompts() {
@@ -285,16 +408,41 @@ function renderSuggestedPrompts() {
   }
 
   const prompts = library.length
-    ? library.slice(0, 4).map((construct) => buildExampleQuestion(construct))
-    : fallbackSuggestedPrompts;
+    ? library.map((construct) => ({
+      query: buildRecallSearchQuery(construct),
+      constructId: construct.id,
+      label: construct.constructLabel || buildRecallSearchQuery(construct)
+    }))
+    : fallbackSuggestedPrompts.map((prompt) => ({
+      query: prompt,
+      constructId: "",
+      label: prompt
+    }));
+  const paged = pageItems(prompts, pagerState.suggestedPrompts);
+  pagerState.suggestedPrompts = paged.page;
 
-  suggestedRowEl.innerHTML = prompts
+  suggestedRowEl.innerHTML = `
+    <div class="example-pill-grid">
+      ${paged.items
     .map((prompt, index) => `
-      <button type="button" class="example-pill subtle-chip" data-suggested-prompt="${escapeHtml(prompt)}" style="--delay:${index * 45}ms">
-        ${escapeHtml(previewQuestion(prompt, 72))}
+      <button
+        type="button"
+        class="example-pill subtle-chip"
+        data-suggested-prompt="${escapeHtml(prompt.query)}"
+        data-suggested-construct-id="${escapeHtml(prompt.constructId)}"
+        style="--delay:${index * 45}ms"
+      >
+        ${escapeHtml(previewQuestion(prompt.label, 72))}
       </button>
     `)
-    .join("");
+    .join("")}
+    </div>
+    ${pagerControlsMarkup({
+      target: "suggestedPrompts",
+      page: paged.page,
+      totalPages: paged.totalPages
+    })}
+  `;
 }
 
 function previewTrace(construct) {
@@ -504,6 +652,73 @@ function renderBuilderChecks({ buildChecks = [], checkedReferences = [] } = {}) 
   `;
 }
 
+function suggestionToDraftConstruct(suggestion = {}, subjectLabel = "") {
+  const resolvedSubjectLabel = String(subjectLabel ?? "").trim() || currentSubjectLabel();
+  const matchingSubject = subjects.find((item) => item.subjectLabel.toLowerCase() === resolvedSubjectLabel.toLowerCase());
+
+  return {
+    subjectId: matchingSubject?.subjectId ?? "",
+    subjectLabel: resolvedSubjectLabel,
+    constructLabel: suggestion.constructLabel ?? "Suggested construct",
+    target: suggestion.target ?? "",
+    objective: suggestion.objective ?? "",
+    context: suggestion.context ?? {},
+    steps: Array.isArray(suggestion.starterSteps) ? suggestion.starterSteps : [],
+    notes: suggestion.rationale ?? "",
+    tags: Array.isArray(suggestion.tags) ? suggestion.tags : []
+  };
+}
+
+function renderSubjectIdeas() {
+  if (!subjectIdeasResultsEl) {
+    return;
+  }
+
+  const suggestions = Array.isArray(latestSubjectIdeas?.suggestedConstructs) ? latestSubjectIdeas.suggestedConstructs : [];
+  if (!suggestions.length) {
+    subjectIdeasResultsEl.className = "subject-ideas-results empty";
+    subjectIdeasResultsEl.innerHTML = "<p>Suggested constructs will appear here after you describe a subject.</p>";
+    return;
+  }
+
+  subjectIdeasResultsEl.className = "subject-ideas-results";
+  subjectIdeasResultsEl.innerHTML = `
+    <div class="subject-ideas-summary">
+      <strong>${escapeHtml(latestSubjectIdeas.subjectLabel ?? "Suggested subject")}</strong>
+      <p>${escapeHtml(latestSubjectIdeas.subjectSummary ?? "AI suggested starter constructs for this subject.")}</p>
+    </div>
+    <div class="subject-ideas-grid">
+      ${suggestions.map((suggestion, index) => `
+        <article class="subject-idea-card">
+          <div class="section-head compact">
+            <div>
+              <p class="eyebrow small">Suggested construct ${index + 1}</p>
+              <h3>${escapeHtml(suggestion.constructLabel ?? "Suggested construct")}</h3>
+            </div>
+            <button type="button" class="assist-action-button" data-subject-idea-index="${index}">Load into builder</button>
+          </div>
+          <p class="meta"><strong>Target:</strong> ${escapeHtml(suggestion.target ?? "")}</p>
+          <p class="meta"><strong>Objective:</strong> ${escapeHtml(suggestion.objective ?? "")}</p>
+          <p class="meta">${escapeHtml(suggestion.rationale ?? "")}</p>
+          ${Array.isArray(suggestion.starterSteps) && suggestion.starterSteps.length ? `
+            <div class="review-list">
+              <strong>Starter steps</strong>
+              <ul>
+                ${suggestion.starterSteps.slice(0, 5).map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
+              </ul>
+            </div>
+          ` : ""}
+          ${Array.isArray(suggestion.tags) && suggestion.tags.length ? `
+            <div class="chip-row">
+              ${suggestion.tags.slice(0, 8).map((tag) => `<span class="chip">${escapeHtml(tag)}</span>`).join("")}
+            </div>
+          ` : ""}
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
 function hasEditorBaseConstruct() {
   return Boolean(editorState.constructId) && editorState.mode !== "new";
 }
@@ -708,6 +923,264 @@ async function resetWithExamples() {
   }
 }
 
+function dbStateSummary() {
+  const start = backendDbState.total ? backendDbState.offset + 1 : 0;
+  const end = Math.min(backendDbState.offset + backendDbState.rows.length, backendDbState.total);
+  return backendDbState.total
+    ? `${backendDbState.label || backendDbState.table} · rows ${start}-${end} of ${backendDbState.total}`
+    : `${backendDbState.label || backendDbState.table} · no rows returned`;
+}
+
+function renderBackendOverview() {
+  if (!backendModeLabelEl && !backendDbTableListEl) {
+    return;
+  }
+
+  const overview = backendOverview ?? {};
+  const system = overview.system ?? {};
+  const counts = overview.counts ?? {};
+  const tables = Array.isArray(overview.tables) ? overview.tables : [];
+
+  if (backendModeLabelEl) {
+    backendModeLabelEl.textContent = system.openai?.enabled ? "Assist Enabled" : "Local-only mode";
+  }
+  if (backendModeDetailEl) {
+    backendModeDetailEl.textContent = system.openai?.reason ?? "Backend status unavailable.";
+  }
+  if (backendSubjectCountEl) {
+    backendSubjectCountEl.textContent = String(counts.subjectSpaceCount ?? 0);
+  }
+  if (backendConstructCountEl) {
+    backendConstructCountEl.textContent = String(counts.subjectCount ?? 0);
+  }
+  if (backendSoundCountEl) {
+    backendSoundCountEl.textContent = String(counts.soundCount ?? 0);
+  }
+  if (backendDbPathEl) {
+    const dbPath = overview.database?.path ?? "Database path unavailable";
+    const dbSize = formatBytes(overview.database?.sizeBytes ?? 0);
+    backendDbPathEl.textContent = `${dbPath}${dbSize !== "n/a" ? ` · ${dbSize}` : ""}`;
+  }
+
+  if (!backendDbTableListEl) {
+    return;
+  }
+
+  if (!tables.length) {
+    backendDbTableListEl.className = "db-table-list empty";
+    backendDbTableListEl.innerHTML = "<p>No backend tables available.</p>";
+    return;
+  }
+
+  backendDbTableListEl.className = "db-table-list";
+  backendDbTableListEl.innerHTML = tables.map((table) => `
+    <button
+      type="button"
+      class="db-table-button${backendDbState.table === table.name ? " is-active" : ""}"
+      data-db-table="${escapeHtml(table.name)}"
+    >
+      <strong>${escapeHtml(table.label ?? table.name)}</strong>
+      <span>${escapeHtml(String(table.rowCount ?? 0))} rows</span>
+    </button>
+  `).join("");
+}
+
+function renderBackendSchema() {
+  if (!backendDbSchemaEl) {
+    return;
+  }
+
+  const columns = Array.isArray(backendDbState.columns) ? backendDbState.columns : [];
+  if (!columns.length) {
+    backendDbSchemaEl.className = "db-schema empty";
+    backendDbSchemaEl.innerHTML = "<p>Column details will appear here when a table is loaded.</p>";
+    return;
+  }
+
+  backendDbSchemaEl.className = "db-schema";
+  backendDbSchemaEl.innerHTML = columns.map((column) => `
+    <article class="db-schema-item">
+      <strong>${escapeHtml(column.name)}</strong>
+      <span>${escapeHtml(column.type || "TEXT")}</span>
+      <small>${escapeHtml(
+        [
+          column.primaryKey ? "primary key" : "",
+          column.notNull ? "required" : "nullable",
+          column.editable ? "editable" : "read-only"
+        ].filter(Boolean).join(" · ")
+      )}</small>
+    </article>
+  `).join("");
+}
+
+function renderBackendRows() {
+  if (!backendDbRowsEl) {
+    return;
+  }
+
+  const columns = Array.isArray(backendDbState.columns) ? backendDbState.columns : [];
+  const rows = Array.isArray(backendDbState.rows) ? backendDbState.rows : [];
+
+  if (backendDbMetaEl) {
+    backendDbMetaEl.textContent = dbStateSummary();
+  }
+  if (backendDbPrevButton) {
+    backendDbPrevButton.disabled = backendDbState.offset <= 0;
+  }
+  if (backendDbNextButton) {
+    backendDbNextButton.disabled = backendDbState.offset + rows.length >= backendDbState.total;
+  }
+
+  if (!rows.length || !columns.length) {
+    backendDbRowsEl.className = "db-rows empty";
+    backendDbRowsEl.innerHTML = "<p>Select a table to inspect rows.</p>";
+    return;
+  }
+
+  const visibleColumns = columns.slice(0, 6);
+  backendDbRowsEl.className = "db-rows";
+  backendDbRowsEl.innerHTML = `
+    <table class="db-table">
+      <thead>
+        <tr>
+          ${visibleColumns.map((column) => `<th>${escapeHtml(column.name)}</th>`).join("")}
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((row) => `
+          <tr class="db-row${backendDbState.selectedRowId === String(row[backendDbState.primaryKey] ?? "") ? " is-selected" : ""}" data-db-row-id="${escapeHtml(String(row[backendDbState.primaryKey] ?? ""))}">
+            ${visibleColumns.map((column) => `<td>${escapeHtml(String(row[column.name] ?? "")).slice(0, 120)}</td>`).join("")}
+            <td>${escapeHtml(row._editor?.editable === false ? "read-only" : "editable")}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderBackendEditor() {
+  if (!backendDbEditorFieldsEl || !backendDbEditorMetaEl || !backendDbEditorForm) {
+    return;
+  }
+
+  const row = backendDbState.selectedRow;
+  const columns = Array.isArray(backendDbState.columns) ? backendDbState.columns : [];
+  const editableColumns = columns.filter((column) => backendDbState.editableColumns.includes(column.name) && column.name !== backendDbState.primaryKey);
+  const rowEditable = row?._editor?.editable !== false;
+
+  if (!row) {
+    backendDbEditorForm.dataset.rowId = "";
+    backendDbEditorMetaEl.textContent = "Select a row to edit it.";
+    backendDbEditorFieldsEl.className = "db-editor-fields empty";
+    backendDbEditorFieldsEl.innerHTML = "<p>Select a row from the table browser to edit Strandspace data.</p>";
+    return;
+  }
+
+  backendDbEditorForm.dataset.rowId = String(row[backendDbState.primaryKey] ?? "");
+  backendDbEditorMetaEl.textContent = rowEditable
+    ? `Editing ${backendDbState.table}:${row[backendDbState.primaryKey]}`
+    : (row._editor?.reason ?? "This row is read-only.");
+
+  if (!rowEditable) {
+    backendDbEditorFieldsEl.className = "db-editor-fields empty";
+    backendDbEditorFieldsEl.innerHTML = `<p>${escapeHtml(row._editor?.reason ?? "This row is read-only.")}</p>`;
+    return;
+  }
+
+  backendDbEditorFieldsEl.className = "db-editor-fields";
+  backendDbEditorFieldsEl.innerHTML = editableColumns.map((column) => {
+    const value = row[column.name] ?? "";
+    const isShort = !column.name.endsWith("Json") && String(value).length < 120 && !String(column.type ?? "").toUpperCase().includes("TEXT");
+
+    return `
+      <label class="db-editor-field">
+        <span>${escapeHtml(column.name)}</span>
+        ${isShort
+          ? `<input name="${escapeHtml(column.name)}" type="text" value="${escapeHtml(String(value))}" />`
+          : `<textarea name="${escapeHtml(column.name)}" rows="${column.name.endsWith("Json") ? 7 : 4}">${escapeHtml(String(value))}</textarea>`}
+      </label>
+    `;
+  }).join("");
+}
+
+function syncSelectedBackendRow() {
+  const rows = Array.isArray(backendDbState.rows) ? backendDbState.rows : [];
+  backendDbState.selectedRow = rows.find((row) => String(row[backendDbState.primaryKey] ?? "") === backendDbState.selectedRowId) ?? null;
+}
+
+function renderBackendDbWorkspace() {
+  renderBackendOverview();
+  renderBackendSchema();
+  renderBackendRows();
+  renderBackendEditor();
+}
+
+async function loadBackendOverview() {
+  if (!backendDbTableListEl) {
+    return;
+  }
+
+  try {
+    backendOverview = await fetchJson("/api/backend/overview");
+    renderBackendOverview();
+
+    const availableTables = Array.isArray(backendOverview.tables) ? backendOverview.tables : [];
+    const preferredTable = availableTables.some((table) => table.name === backendDbState.table)
+      ? backendDbState.table
+      : (availableTables[0]?.name ?? "");
+
+    if (preferredTable) {
+      await loadBackendTable(preferredTable, {
+        offset: 0,
+        search: backendDbSearchInput?.value?.trim() ?? ""
+      });
+    }
+  } catch (error) {
+    if (backendDbMetaEl) {
+      backendDbMetaEl.textContent = error instanceof Error ? error.message : "Unable to load backend overview.";
+    }
+    if (backendDbTableListEl) {
+      backendDbTableListEl.className = "db-table-list empty";
+      backendDbTableListEl.innerHTML = `<p>${escapeHtml(error instanceof Error ? error.message : "Unable to load backend overview.")}</p>`;
+    }
+  }
+}
+
+async function loadBackendTable(tableName = backendDbState.table, { offset = 0, search = "" } = {}) {
+  if (!backendDbRowsEl) {
+    return;
+  }
+
+  const url = new URL("/api/backend/db/table", window.location.origin);
+  url.searchParams.set("table", tableName);
+  url.searchParams.set("offset", String(Math.max(0, Number(offset) || 0)));
+  url.searchParams.set("limit", String(backendDbState.limit));
+  if (search) {
+    url.searchParams.set("search", search);
+  }
+
+  const payload = await fetchJson(url.toString());
+  backendDbState = {
+    ...backendDbState,
+    table: payload.table?.name ?? tableName,
+    label: payload.table?.label ?? tableName,
+    primaryKey: payload.table?.primaryKey ?? "id",
+    editableColumns: Array.isArray(payload.table?.editableColumns) ? payload.table.editableColumns : [],
+    columns: payload.columns ?? [],
+    rows: payload.rows ?? [],
+    offset: payload.pagination?.offset ?? 0,
+    limit: payload.pagination?.limit ?? backendDbState.limit,
+    total: payload.pagination?.total ?? 0,
+    search: payload.search ?? search,
+    selectedRowId: payload.rows?.some((row) => String(row[payload.table?.primaryKey ?? "id"] ?? "") === backendDbState.selectedRowId)
+      ? backendDbState.selectedRowId
+      : String(payload.rows?.[0]?.[payload.table?.primaryKey ?? "id"] ?? "")
+  };
+  syncSelectedBackendRow();
+  renderBackendDbWorkspace();
+}
+
 function resetTransientState({ clearAssist = true, clearComparison = true } = {}) {
   if (clearAssist) {
     latestAssist = null;
@@ -724,6 +1197,7 @@ function resetTransientState({ clearAssist = true, clearComparison = true } = {}
 }
 
 function renderTrace(trace = null) {
+  lastRenderedTrace = trace;
   if (!trace) {
     traceGridEl.className = "trace-grid empty";
     traceGridEl.innerHTML = "<p>The field will populate when Strandspace has something to stabilize.</p>";
@@ -749,14 +1223,25 @@ function renderTrace(trace = null) {
           <h3>${escapeHtml(lane.title)}</h3>
         </header>
         <div class="trace-chip-row">
-          ${lane.items.length
-            ? lane.items.map((item, itemIndex) => `
+          ${(() => {
+            const laneKey = lane.title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+            const paged = pageItems(lane.items, tracePagerState[laneKey]);
+            tracePagerState[laneKey] = paged.page;
+            return paged.items.length
+              ? `${paged.items.map((item, itemIndex) => `
               <article class="trace-chip" style="--delay:${(laneIndex * 80) + (itemIndex * 55)}ms">
                 <strong>${escapeHtml(item.name ?? item.kind ?? "strand")}</strong>
                 <span>${escapeHtml(item.value ?? item.detail ?? item.role ?? (item.score !== undefined ? `score ${Number(item.score).toFixed(1)}` : "active"))}</span>
               </article>
-            `).join("")
-            : "<p class=\"trace-empty\">No active strands in this lane yet.</p>"}
+            `).join("")}
+              ${pagerControlsMarkup({
+                target: `trace:${laneKey}`,
+                page: paged.page,
+                totalPages: paged.totalPages,
+                compact: true
+              })}`
+              : "<p class=\"trace-empty\">No active strands in this lane yet.</p>";
+          })()}
         </div>
       </section>
     `)
@@ -1345,14 +1830,33 @@ function renderExamples() {
     return;
   }
 
-  exampleRowEl.innerHTML = library
-    .slice(0, 3)
-    .map((construct) => `
-      <button type="button" class="example-pill" data-example-id="${escapeHtml(construct.id)}">
-        ${escapeHtml(construct.constructLabel)}
-      </button>
-    `)
-    .join("");
+  const paged = pageItems(library, pagerState.examplePrompts);
+  pagerState.examplePrompts = paged.page;
+
+  exampleRowEl.innerHTML = `
+    <div class="example-pill-grid">
+      ${paged.items
+        .map((construct) => `
+          <button type="button" class="example-pill" data-example-id="${escapeHtml(construct.id)}">
+            ${escapeHtml(construct.constructLabel)}
+          </button>
+        `)
+        .join("")}
+    </div>
+    ${pagerControlsMarkup({
+      target: "examplePrompts",
+      page: paged.page,
+      totalPages: paged.totalPages
+    })}
+  `;
+}
+
+function resetPagedViews() {
+  pagerState = {
+    suggestedPrompts: 0,
+    examplePrompts: 0
+  };
+  tracePagerState = {};
 }
 
 function renderLibrary() {
@@ -1397,6 +1901,7 @@ async function loadLibrary() {
   const query = currentSubjectId ? `?subjectId=${encodeURIComponent(currentSubjectId)}` : "";
   const payload = await fetchJson(`/api/subjectspace/library${query}`);
   library = payload.constructs ?? [];
+  resetPagedViews();
   renderLibrary();
 
   if (!lastPayload || lastPayload.construct?.subjectId !== currentSubjectId) {
@@ -1452,6 +1957,9 @@ async function handleRecallSubmit(event) {
       ? `${routeLabel || "Stable recall"} at ${matchedScore.toFixed(1)}`
       : (routeLabel || "Nothing crossed the stability threshold yet.");
     renderAnswer(payload);
+    if (payload.recall?.ready) {
+      syncEditorToRecalledConstruct(payload);
+    }
   } catch (error) {
     recallMetaEl.textContent = error instanceof Error ? error.message : "Recall failed.";
     renderAnswer({
@@ -1567,6 +2075,49 @@ async function handleBuilderSubmit(event) {
   }
 }
 
+async function handleSubjectIdeasSubmit(event) {
+  event.preventDefault();
+
+  const description = subjectIdeasInput?.value.trim() ?? "";
+  const subjectLabel = subjectIdeasLabelInput?.value.trim() || currentSubjectLabel();
+
+  if (!description) {
+    if (subjectIdeasMetaEl) {
+      subjectIdeasMetaEl.textContent = "Describe the subject first so AI has something to map.";
+    }
+    return;
+  }
+
+  if (subjectIdeasMetaEl) {
+    subjectIdeasMetaEl.textContent = "Generating suggested constructs for this subject...";
+  }
+  setButtonBusy(subjectIdeasSubmitButton, true, "Suggesting...");
+
+  try {
+    const payload = await postJson("/api/subjectspace/subject-ideas", {
+      subjectLabel,
+      description
+    });
+
+    latestSubjectIdeas = payload.suggestions ?? null;
+    renderSubjectIdeas();
+    if (subjectIdeasMetaEl) {
+      subjectIdeasMetaEl.textContent = `AI suggested ${latestSubjectIdeas?.suggestedConstructs?.length ?? 0} starter constructs for ${latestSubjectIdeas?.subjectLabel ?? subjectLabel}.`;
+    }
+    if (subjectIdeasLabelInput && latestSubjectIdeas?.subjectLabel) {
+      subjectIdeasLabelInput.value = latestSubjectIdeas.subjectLabel;
+    }
+  } catch (error) {
+    latestSubjectIdeas = null;
+    renderSubjectIdeas();
+    if (subjectIdeasMetaEl) {
+      subjectIdeasMetaEl.textContent = error instanceof Error ? error.message : "Unable to generate subject suggestions.";
+    }
+  } finally {
+    setButtonBusy(subjectIdeasSubmitButton, false);
+  }
+}
+
 async function runApiAssist() {
   if (!lastQuestion) {
     recallMetaEl.textContent = "Run a recall prompt before asking for API assist.";
@@ -1667,6 +2218,7 @@ subjectSelect?.addEventListener("change", async () => {
 
 recallForm?.addEventListener("submit", handleRecallSubmit);
 builderForm?.addEventListener("submit", handleBuilderSubmit);
+subjectIdeasForm?.addEventListener("submit", handleSubjectIdeasSubmit);
 learnForm?.addEventListener("submit", handleLearnSubmit);
 learnCancelEditButton?.addEventListener("click", () => {
   clearEditorState({
@@ -1688,11 +2240,28 @@ libraryListEl?.addEventListener("click", (event) => {
   }
 
   resetTransientState();
-  recallQuestionInput.value = buildExampleQuestion(construct);
+  loadConstructIntoEditor(construct, {
+    mode: "saved",
+    focus: false
+  });
+  recallQuestionInput.value = buildRecallSearchQuery(construct);
+  recallMetaEl.textContent = "Construct title loaded as the search. Run recall to verify the local match.";
+  recallQuestionInput.focus();
   renderAnswer(previewPayload(construct));
 });
 
 exampleRowEl?.addEventListener("click", (event) => {
+  const pagerButton = event.target instanceof Element ? event.target.closest("[data-page-target]") : null;
+  if (pagerButton) {
+    const target = pagerButton.getAttribute("data-page-target") ?? "";
+    const action = pagerButton.getAttribute("data-page-action") ?? "";
+    if (target === "examplePrompts") {
+      pagerState.examplePrompts = Math.max(0, pagerState.examplePrompts + (action === "next" ? 1 : -1));
+      renderExamples();
+    }
+    return;
+  }
+
   const button = event.target instanceof Element ? event.target.closest("[data-example-id]") : null;
   if (!button) {
     return;
@@ -1704,18 +2273,44 @@ exampleRowEl?.addEventListener("click", (event) => {
   }
 
   resetTransientState();
-  recallQuestionInput.value = buildExampleQuestion(construct);
+  loadConstructIntoEditor(construct, {
+    mode: "saved",
+    focus: false
+  });
+  recallQuestionInput.value = buildRecallSearchQuery(construct);
+  recallMetaEl.textContent = "Construct title loaded as the search. Run recall to verify the local match.";
   recallQuestionInput.focus();
   renderAnswer(previewPayload(construct));
 });
 
 suggestedRowEl?.addEventListener("click", (event) => {
+  const pagerButton = event.target instanceof Element ? event.target.closest("[data-page-target]") : null;
+  if (pagerButton) {
+    const target = pagerButton.getAttribute("data-page-target") ?? "";
+    const action = pagerButton.getAttribute("data-page-action") ?? "";
+    if (target === "suggestedPrompts") {
+      pagerState.suggestedPrompts = Math.max(0, pagerState.suggestedPrompts + (action === "next" ? 1 : -1));
+      renderSuggestedPrompts();
+    }
+    return;
+  }
+
   const button = event.target instanceof Element ? event.target.closest("[data-suggested-prompt]") : null;
   if (!button) {
     return;
   }
 
   recallQuestionInput.value = button.getAttribute("data-suggested-prompt") ?? "";
+  const constructId = button.getAttribute("data-suggested-construct-id") ?? "";
+  const construct = library.find((item) => item.id === constructId);
+  if (construct) {
+    loadConstructIntoEditor(construct, {
+      mode: "saved",
+      focus: false
+    });
+    renderAnswer(previewPayload(construct));
+  }
+  recallMetaEl.textContent = "Suggested search loaded. Run recall to match it locally.";
   recallQuestionInput.focus();
 });
 
@@ -1750,9 +2345,171 @@ answerPanelEl?.addEventListener("click", (event) => {
         mode: previewConstruct.id ? "saved" : "draft",
         focus: true
       });
-      recallQuestionInput.value = buildExampleQuestion(previewConstruct);
+      recallQuestionInput.value = buildRecallSearchQuery(previewConstruct);
+      recallMetaEl.textContent = "Construct title loaded as the search. Run recall to verify the local match.";
       renderAnswer(previewPayload(previewConstruct));
     }
+  }
+});
+
+subjectIdeasResultsEl?.addEventListener("click", (event) => {
+  const button = event.target instanceof Element ? event.target.closest("[data-subject-idea-index]") : null;
+  if (!button || !latestSubjectIdeas) {
+    return;
+  }
+
+  const index = Number(button.getAttribute("data-subject-idea-index"));
+  const suggestion = latestSubjectIdeas.suggestedConstructs?.[index];
+  if (!suggestion) {
+    return;
+  }
+
+  const draft = suggestionToDraftConstruct(suggestion, latestSubjectIdeas.subjectLabel);
+  applyConstructDraftToLearnForm(draft);
+  setEditorState("draft", draft);
+  learnMetaEl.textContent = `Loaded "${draft.constructLabel}" into the builder for review.`;
+  builderMetaEl.textContent = "AI subject suggestion loaded into the builder. Review it, refine it, then save it when it looks right.";
+  if (subjectIdeasMetaEl) {
+    subjectIdeasMetaEl.textContent = `Loaded "${draft.constructLabel}" into the builder.`;
+  }
+  renderAnswer(draftPayload(draft, {
+    source: "openai",
+    input: subjectIdeasInput?.value.trim() ?? "",
+    mergeMode: "draft",
+    buildChecks: [`AI subject mapper suggested this construct for ${latestSubjectIdeas.subjectLabel}.`]
+  }));
+  learnConstructInput.focus();
+});
+
+traceGridEl?.addEventListener("click", (event) => {
+  const pagerButton = event.target instanceof Element ? event.target.closest("[data-page-target]") : null;
+  if (!pagerButton) {
+    return;
+  }
+
+  const target = pagerButton.getAttribute("data-page-target") ?? "";
+  const action = pagerButton.getAttribute("data-page-action") ?? "";
+  if (!target.startsWith("trace:")) {
+    return;
+  }
+
+  const laneKey = target.replace(/^trace:/, "");
+  tracePagerState[laneKey] = Math.max(0, Number(tracePagerState[laneKey] ?? 0) + (action === "next" ? 1 : -1));
+  renderTrace(lastRenderedTrace);
+});
+
+backendDbTableListEl?.addEventListener("click", (event) => {
+  const button = event.target instanceof Element ? event.target.closest("[data-db-table]") : null;
+  if (!button) {
+    return;
+  }
+
+  backendDbState.selectedRowId = "";
+  void loadBackendTable(button.getAttribute("data-db-table") ?? "subject_constructs", {
+    offset: 0,
+    search: backendDbSearchInput?.value?.trim() ?? ""
+  });
+});
+
+backendDbRowsEl?.addEventListener("click", (event) => {
+  const row = event.target instanceof Element ? event.target.closest("[data-db-row-id]") : null;
+  if (!row) {
+    return;
+  }
+
+  backendDbState.selectedRowId = row.getAttribute("data-db-row-id") ?? "";
+  syncSelectedBackendRow();
+  renderBackendDbWorkspace();
+});
+
+backendDbRefreshButton?.addEventListener("click", () => {
+  void loadBackendOverview();
+});
+
+backendDbSearchInput?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") {
+    return;
+  }
+
+  event.preventDefault();
+  void loadBackendTable(backendDbState.table, {
+    offset: 0,
+    search: backendDbSearchInput.value.trim()
+  });
+});
+
+backendDbPrevButton?.addEventListener("click", () => {
+  void loadBackendTable(backendDbState.table, {
+    offset: Math.max(0, backendDbState.offset - backendDbState.limit),
+    search: backendDbSearchInput?.value?.trim() ?? backendDbState.search
+  });
+});
+
+backendDbNextButton?.addEventListener("click", () => {
+  void loadBackendTable(backendDbState.table, {
+    offset: backendDbState.offset + backendDbState.limit,
+    search: backendDbSearchInput?.value?.trim() ?? backendDbState.search
+  });
+});
+
+backendDbEditorForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const rowId = String(backendDbEditorForm.dataset.rowId ?? "").trim();
+  if (!rowId || !backendDbState.selectedRow) {
+    if (backendDbEditorMetaEl) {
+      backendDbEditorMetaEl.textContent = "Select a row to edit it.";
+    }
+    return;
+  }
+
+  if (backendDbState.selectedRow._editor?.editable === false) {
+    if (backendDbEditorMetaEl) {
+      backendDbEditorMetaEl.textContent = backendDbState.selectedRow._editor.reason ?? "This row is read-only.";
+    }
+    return;
+  }
+
+  const formData = new FormData(backendDbEditorForm);
+  const changes = {};
+  for (const columnName of backendDbState.editableColumns) {
+    if (columnName === backendDbState.primaryKey || !formData.has(columnName)) {
+      continue;
+    }
+
+    changes[columnName] = formData.get(columnName);
+  }
+
+  const submitButton = backendDbEditorForm.querySelector("button[type=\"submit\"]");
+  setButtonBusy(submitButton, true, "Saving...");
+  if (backendDbEditorMetaEl) {
+    backendDbEditorMetaEl.textContent = `Saving ${backendDbState.table}:${rowId}...`;
+  }
+
+  try {
+    const payload = await postJson("/api/backend/db/row", {
+      table: backendDbState.table,
+      id: rowId,
+      changes
+    });
+
+    backendDbState.selectedRowId = String(payload.row?.[backendDbState.primaryKey] ?? rowId);
+    await Promise.all([
+      loadBackendTable(backendDbState.table, {
+        offset: backendDbState.offset,
+        search: backendDbSearchInput?.value?.trim() ?? backendDbState.search
+      }),
+      loadSubjects(currentSubjectId)
+    ]);
+    if (backendDbEditorMetaEl) {
+      backendDbEditorMetaEl.textContent = `Saved ${backendDbState.table}:${backendDbState.selectedRowId}.`;
+    }
+  } catch (error) {
+    if (backendDbEditorMetaEl) {
+      backendDbEditorMetaEl.textContent = error instanceof Error ? error.message : "Unable to save row changes.";
+    }
+  } finally {
+    setButtonBusy(submitButton, false);
   }
 });
 
@@ -1770,9 +2527,10 @@ applyTheme(readStoredTheme() || "light");
 syncEditorUi();
 renderBuilderChecks();
 renderSuggestedPrompts();
+renderSubjectIdeas();
 
-Promise.all([loadAssistStatus(), loadSubjects()]).catch((error) => {
-  subjectMetaEl.textContent = error instanceof Error ? error.message : "Unable to load Strandspace Studio.";
+Promise.all([loadAssistStatus(), loadSubjects(), loadBackendOverview()]).catch((error) => {
+  subjectMetaEl.textContent = error instanceof Error ? error.message : "Unable to load the Strandspace backend.";
   recallMetaEl.textContent = "Startup failed.";
   renderAnswer({
     answer: error instanceof Error ? error.message : "Unable to load the workspace.",

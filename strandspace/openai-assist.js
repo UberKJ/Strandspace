@@ -381,6 +381,121 @@ function buildBuilderInstructions() {
   ].join(" ");
 }
 
+function subjectSuggestionSchema() {
+  return {
+    type: "object",
+    properties: {
+      subjectLabel: {
+        type: "string",
+        minLength: 1
+      },
+      subjectSummary: {
+        type: "string",
+        minLength: 1
+      },
+      suggestedConstructs: {
+        type: "array",
+        minItems: 2,
+        maxItems: 5,
+        items: {
+          type: "object",
+          properties: {
+            constructLabel: {
+              type: "string",
+              minLength: 1
+            },
+            target: {
+              type: "string",
+              minLength: 1
+            },
+            objective: {
+              type: "string",
+              minLength: 1
+            },
+            contextEntries: {
+              type: "array",
+              minItems: 1,
+              maxItems: 8,
+              items: {
+                type: "object",
+                properties: {
+                  key: {
+                    type: "string",
+                    minLength: 1
+                  },
+                  value: {
+                    type: "string",
+                    minLength: 1
+                  }
+                },
+                required: ["key", "value"],
+                additionalProperties: false
+              }
+            },
+            starterSteps: {
+              type: "array",
+              minItems: 3,
+              maxItems: 6,
+              items: {
+                type: "string",
+                minLength: 1
+              }
+            },
+            tags: {
+              type: "array",
+              minItems: 2,
+              maxItems: 8,
+              items: {
+                type: "string",
+                minLength: 1
+              }
+            },
+            rationale: {
+              type: "string",
+              minLength: 1
+            }
+          },
+          required: [
+            "constructLabel",
+            "target",
+            "objective",
+            "contextEntries",
+            "starterSteps",
+            "tags",
+            "rationale"
+          ],
+          additionalProperties: false
+        }
+      }
+    },
+    required: ["subjectLabel", "subjectSummary", "suggestedConstructs"],
+    additionalProperties: false
+  };
+}
+
+function buildSubjectSuggestionInstructions() {
+  return [
+    "You help Strandspace define a new subject space from a plain-language description.",
+    "Return only JSON that matches the provided schema.",
+    "Infer the best reusable subject label when needed.",
+    "Suggest 2 to 5 constructs that would make the subject teachable and recallable.",
+    "Each suggested construct should cover a clearly different reusable slice of the subject.",
+    "Keep context entries short, starter steps actionable, and tags useful for recall."
+  ].join(" ");
+}
+
+function buildSubjectSuggestionInput({
+  description = "",
+  requestedSubjectLabel = ""
+} = {}) {
+  return [
+    `Requested subject label: ${requestedSubjectLabel || "infer from description"}`,
+    `Subject description: ${description}`,
+    "Suggest the first reusable constructs that should exist in this subject space.",
+    "Aim for strong foundational constructs rather than minor variants."
+  ].join("\n\n");
+}
+
 function summarizeBuilderReferences(references = []) {
   if (!Array.isArray(references) || !references.length) {
     return [];
@@ -427,6 +542,34 @@ function buildBuilderInput({
     `Checked references: ${JSON.stringify(summarizeBuilderReferences(references), null, 2)}`,
     "Produce the strongest reusable Strandspace construct draft you can derive from these notes."
   ].join("\n\n");
+}
+
+function normalizeSubjectSuggestionPayload(payload = {}, meta = {}) {
+  const suggestedConstructs = Array.isArray(payload.suggestedConstructs)
+    ? payload.suggestedConstructs.slice(0, 5).map((item, index) => {
+      const contextEntries = normalizeContextEntries(item?.contextEntries);
+      const constructLabel = String(item?.constructLabel ?? `Suggested construct ${index + 1}`).trim() || `Suggested construct ${index + 1}`;
+      const target = String(item?.target ?? constructLabel).trim() || constructLabel;
+      const objective = String(item?.objective ?? "Reusable working objective").trim() || "Reusable working objective";
+
+      return {
+        constructLabel,
+        target,
+        objective,
+        contextEntries,
+        context: contextObject(contextEntries),
+        starterSteps: normalizeArray(item?.starterSteps, 6),
+        tags: normalizeArray(item?.tags, 8),
+        rationale: String(item?.rationale ?? "").trim() || "Good starting construct for the subject."
+      };
+    }).filter((item) => item.constructLabel && item.target && item.objective)
+    : [];
+
+  return {
+    subjectLabel: String(payload.subjectLabel ?? meta.subjectLabel ?? "Suggested Subject").trim() || "Suggested Subject",
+    subjectSummary: String(payload.subjectSummary ?? meta.subjectSummary ?? "").trim() || "Suggested starter constructs for this subject.",
+    suggestedConstructs
+  };
 }
 
 function soundSetupObject(setup = {}) {
@@ -764,6 +907,60 @@ export async function generateOpenAiSubjectConstructBuilder({
     model: response.model ?? DEFAULT_MODEL,
     usage: normalizeUsagePayload(response.usage),
     assist
+  };
+}
+
+export async function generateOpenAiSubjectSuggestions({
+  description = "",
+  requestedSubjectLabel = ""
+} = {}) {
+  if (mockAssistRunner) {
+    const mocked = await runOpenAiRequest(() => mockAssistRunner({
+      mode: "subject-ideas",
+      description,
+      requestedSubjectLabel
+    }));
+
+    return {
+      responseId: mocked?.responseId ?? null,
+      model: mocked?.model ?? DEFAULT_MODEL,
+      usage: normalizeUsagePayload(mocked?.usage),
+      suggestions: normalizeSubjectSuggestionPayload(mocked?.suggestions ?? mocked, {
+        subjectLabel: requestedSubjectLabel
+      })
+    };
+  }
+
+  const openai = getClient();
+  const response = await runOpenAiRequest((requestOptions) => (
+    openai.responses.create({
+      model: DEFAULT_MODEL,
+      store: false,
+      instructions: buildSubjectSuggestionInstructions(),
+      input: buildSubjectSuggestionInput({
+        description,
+        requestedSubjectLabel
+      }),
+      text: {
+        format: {
+          type: "json_schema",
+          name: "subjectspace_subject_suggestions",
+          strict: true,
+          schema: subjectSuggestionSchema()
+        }
+      }
+    }, requestOptions)
+  ));
+
+  const parsed = JSON.parse(response.output_text);
+
+  return {
+    responseId: response.id,
+    model: response.model ?? DEFAULT_MODEL,
+    usage: normalizeUsagePayload(response.usage),
+    suggestions: normalizeSubjectSuggestionPayload(parsed, {
+      subjectLabel: requestedSubjectLabel
+    })
   };
 }
 

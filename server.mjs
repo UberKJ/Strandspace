@@ -2,7 +2,7 @@ import http from "node:http";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { basename, dirname, extname, isAbsolute, join, normalize } from "node:path";
 import { readdirSync } from "node:fs";
-import { access, readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir, stat } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -31,6 +31,7 @@ import {
   buildSuggestedConstructFromAssist,
   generateOpenAiSoundConstructBuilder,
   generateOpenAiSubjectConstructBuilder,
+  generateOpenAiSubjectSuggestions,
   generateOpenAiSubjectAssist,
   getOpenAiAssistStatus
 } from "./strandspace/openai-assist.js";
@@ -94,6 +95,11 @@ const LOG_LEVELS = {
   error: 40
 };
 const API_TIMEOUTS_MS = new Map([
+  ["/api/backend/overview", DEFAULT_API_TIMEOUT_MS],
+  ["/api/backend/db/tables", DEFAULT_API_TIMEOUT_MS],
+  ["/api/backend/db/table", DEFAULT_API_TIMEOUT_MS],
+  ["/api/backend/db/row", DEFAULT_API_TIMEOUT_MS],
+  ["/api/subjectspace/subject-ideas", EXTENDED_API_TIMEOUT_MS],
   ["/api/subjectspace/build", EXTENDED_API_TIMEOUT_MS],
   ["/api/subjectspace/assist", EXTENDED_API_TIMEOUT_MS],
   ["/api/subjectspace/compare", EXTENDED_API_TIMEOUT_MS],
@@ -111,6 +117,79 @@ let shutdownInProgress = false;
 const appStartedAt = Date.now();
 const configuredLogLevel = String(process.env.STRANDSPACE_LOG_LEVEL ?? process.env.LOG_LEVEL ?? "info").trim().toLowerCase();
 const activeLogLevel = Object.hasOwn(LOG_LEVELS, configuredLogLevel) ? configuredLogLevel : "info";
+const BACKEND_TABLES = {
+  subject_constructs: {
+    label: "Subject Constructs",
+    primaryKey: "id",
+    editableColumns: [
+      "subjectId",
+      "subjectLabel",
+      "constructLabel",
+      "target",
+      "objective",
+      "contextJson",
+      "stepsJson",
+      "notes",
+      "tagsJson",
+      "strandsJson",
+      "provenanceJson",
+      "learnedCount"
+    ],
+    searchColumns: [
+      "subjectId",
+      "subjectLabel",
+      "constructLabel",
+      "target",
+      "objective",
+      "notes",
+      "tagsJson",
+      "strandsJson"
+    ],
+    orderBy: "updatedAt DESC, constructLabel ASC"
+  },
+  sound_constructs: {
+    label: "Sound Constructs",
+    primaryKey: "id",
+    editableColumns: [
+      "name",
+      "deviceBrand",
+      "deviceModel",
+      "deviceType",
+      "sourceType",
+      "sourceBrand",
+      "sourceModel",
+      "presetSystem",
+      "presetCategory",
+      "presetName",
+      "goal",
+      "venueSize",
+      "eventType",
+      "speakerConfig",
+      "setupJson",
+      "tagsJson",
+      "strandsJson",
+      "llmSummary",
+      "provenanceJson",
+      "learnedCount"
+    ],
+    searchColumns: [
+      "name",
+      "deviceBrand",
+      "deviceModel",
+      "deviceType",
+      "sourceType",
+      "sourceBrand",
+      "sourceModel",
+      "goal",
+      "venueSize",
+      "eventType",
+      "speakerConfig",
+      "tagsJson",
+      "strandsJson"
+    ],
+    orderBy: "updatedAt DESC, name ASC"
+  }
+};
 
 function shouldLog(level = "info") {
   const normalizedLevel = String(level ?? "info").trim().toLowerCase();
@@ -393,6 +472,297 @@ function countConstructs(db) {
   return {
     subjectCount,
     soundCount
+  };
+}
+
+function quoteSqlIdentifier(value = "") {
+  const normalized = String(value ?? "").trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(normalized)) {
+    throw Object.assign(new Error("Invalid SQL identifier"), {
+      statusCode: 400,
+      payload: {
+        code: "INVALID_IDENTIFIER",
+        error: `The identifier "${normalized}" is not allowed.`
+      }
+    });
+  }
+
+  return `"${normalized}"`;
+}
+
+function getBackendTableConfig(tableName = "") {
+  const normalized = String(tableName ?? "").trim();
+  const config = BACKEND_TABLES[normalized] ?? null;
+
+  if (!config) {
+    throw Object.assign(new Error(`Unknown table: ${normalized}`), {
+      statusCode: 404,
+      payload: {
+        code: "UNKNOWN_TABLE",
+        error: `The table "${normalized}" is not available in the Strandspace backend.`
+      }
+    });
+  }
+
+  return {
+    name: normalized,
+    ...config
+  };
+}
+
+function readBackendTableColumns(db, tableName = "") {
+  const safeTableName = quoteSqlIdentifier(tableName);
+  return db.prepare(`PRAGMA table_info(${safeTableName})`).all().map((column) => ({
+    cid: Number(column.cid ?? 0),
+    name: String(column.name ?? ""),
+    type: String(column.type ?? ""),
+    notNull: Boolean(column.notnull),
+    defaultValue: column.dflt_value ?? null,
+    primaryKey: Number(column.pk ?? 0) > 0
+  }));
+}
+
+function buildBackendRowMeta(tableName = "", row = null) {
+  if (!row || typeof row !== "object") {
+    return {
+      editable: false,
+      reason: "Row data is unavailable."
+    };
+  }
+
+  if (tableName === "subject_constructs" && /^sound-/.test(String(row.id ?? ""))) {
+    return {
+      editable: false,
+      reason: "This row mirrors a Soundspace construct. Edit it from sound_constructs so both memories stay in sync."
+    };
+  }
+
+  return {
+    editable: true,
+    reason: ""
+  };
+}
+
+function normalizeBackendSearchValue(value = "") {
+  return String(value ?? "").trim();
+}
+
+function coerceBackendValueByColumn(column = {}, value = "") {
+  const columnType = String(column.type ?? "").trim().toUpperCase();
+
+  if (value === "" && !column.notNull) {
+    return null;
+  }
+
+  if (column.name.endsWith("Json")) {
+    if (value === "") {
+      return column.notNull ? (column.name.includes("steps") || column.name.includes("tags") || column.name.includes("strands") ? "[]" : "{}") : null;
+    }
+
+    try {
+      JSON.parse(String(value));
+    } catch {
+      throw Object.assign(new Error(`"${column.name}" must contain valid JSON.`), {
+        statusCode: 400,
+        payload: {
+          code: "INVALID_JSON_FIELD",
+          error: `"${column.name}" must contain valid JSON before it can be saved.`
+        }
+      });
+    }
+  }
+
+  if (columnType.includes("INT")) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+      throw Object.assign(new Error(`"${column.name}" must be a valid number.`), {
+        statusCode: 400,
+        payload: {
+          code: "INVALID_NUMERIC_FIELD",
+          error: `"${column.name}" must be a valid number before it can be saved.`
+        }
+      });
+    }
+    return Math.round(parsed);
+  }
+
+  return String(value ?? "");
+}
+
+function listBackendTableSummaries(db) {
+  return Object.entries(BACKEND_TABLES).map(([name, config]) => {
+    const safeTableName = quoteSqlIdentifier(name);
+    const rowCount = Number(db.prepare(`SELECT COUNT(*) as count FROM ${safeTableName}`).get().count ?? 0);
+
+    return {
+      name,
+      label: config.label,
+      rowCount,
+      primaryKey: config.primaryKey
+    };
+  });
+}
+
+function readBackendTable(db, tableName = "", options = {}) {
+  const config = getBackendTableConfig(tableName);
+  const columns = readBackendTableColumns(db, config.name);
+  const safeTableName = quoteSqlIdentifier(config.name);
+  const limit = Math.max(1, Math.min(Number(options.limit ?? 15) || 15, 50));
+  const offset = Math.max(0, Number(options.offset ?? 0) || 0);
+  const search = normalizeBackendSearchValue(options.search);
+  const searchableColumns = config.searchColumns.filter((columnName) => columns.some((column) => column.name === columnName));
+  const whereClauses = [];
+  const params = [];
+
+  if (search && searchableColumns.length) {
+    for (const columnName of searchableColumns) {
+      whereClauses.push(`${quoteSqlIdentifier(columnName)} LIKE ?`);
+      params.push(`%${search}%`);
+    }
+  }
+
+  const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(" OR ")}` : "";
+  const total = Number(
+    db.prepare(`SELECT COUNT(*) as count FROM ${safeTableName} ${whereSql}`)
+      .get(...params).count ?? 0
+  );
+  const rows = db.prepare(`
+    SELECT * FROM ${safeTableName}
+    ${whereSql}
+    ORDER BY ${config.orderBy}
+    LIMIT ? OFFSET ?
+  `).all(...params, limit, offset).map((row) => ({
+    ...row,
+    _editor: buildBackendRowMeta(config.name, row)
+  }));
+
+  return {
+    table: {
+      name: config.name,
+      label: config.label,
+      primaryKey: config.primaryKey,
+      editableColumns: config.editableColumns
+    },
+    columns: columns.map((column) => ({
+      ...column,
+      editable: config.editableColumns.includes(column.name)
+    })),
+    rows,
+    pagination: {
+      limit,
+      offset,
+      returned: rows.length,
+      total,
+      hasPrevious: offset > 0,
+      hasNext: offset + rows.length < total
+    },
+    search
+  };
+}
+
+function updateBackendTableRow(db, tableName = "", primaryKeyValue = "", changes = {}) {
+  const config = getBackendTableConfig(tableName);
+  const columns = readBackendTableColumns(db, config.name);
+  const safeTableName = quoteSqlIdentifier(config.name);
+  const primaryKey = config.primaryKey;
+  const safePrimaryKey = quoteSqlIdentifier(primaryKey);
+  const existing = db.prepare(`SELECT * FROM ${safeTableName} WHERE ${safePrimaryKey} = ?`).get(String(primaryKeyValue ?? ""));
+
+  if (!existing) {
+    throw Object.assign(new Error(`No row found in ${config.name} for ${primaryKey}=${primaryKeyValue}`), {
+      statusCode: 404,
+      payload: {
+        code: "ROW_NOT_FOUND",
+        error: `No row found in ${config.name} for ${primaryKey}=${primaryKeyValue}.`
+      }
+    });
+  }
+
+  const rowMeta = buildBackendRowMeta(config.name, existing);
+  if (!rowMeta.editable) {
+    throw Object.assign(new Error(rowMeta.reason), {
+      statusCode: 409,
+      payload: {
+        code: "ROW_READ_ONLY",
+        error: rowMeta.reason
+      }
+    });
+  }
+
+  const editableColumns = new Set(config.editableColumns);
+  const entries = Object.entries(changes ?? {})
+    .filter(([key]) => editableColumns.has(key))
+    .filter(([key]) => key !== primaryKey);
+
+  if (!entries.length) {
+    throw Object.assign(new Error("No editable changes were provided."), {
+      statusCode: 400,
+      payload: {
+        code: "NO_CHANGES",
+        error: "No editable changes were provided."
+      }
+    });
+  }
+
+  const assignments = [];
+  const values = [];
+
+  for (const [columnName, rawValue] of entries) {
+    const column = columns.find((item) => item.name === columnName);
+    if (!column) {
+      continue;
+    }
+
+    assignments.push(`${quoteSqlIdentifier(columnName)} = ?`);
+    values.push(coerceBackendValueByColumn(column, rawValue));
+  }
+
+  if (columns.some((column) => column.name === "updatedAt")) {
+    assignments.push(`${quoteSqlIdentifier("updatedAt")} = ?`);
+    values.push(new Date().toISOString());
+  }
+
+  db.prepare(`
+    UPDATE ${safeTableName}
+    SET ${assignments.join(", ")}
+    WHERE ${safePrimaryKey} = ?
+  `).run(...values, String(primaryKeyValue ?? ""));
+
+  if (config.name === "sound_constructs") {
+    syncSoundConstructsToSubjectspace(db);
+  }
+
+  return db.prepare(`SELECT * FROM ${safeTableName} WHERE ${safePrimaryKey} = ?`).get(String(primaryKeyValue ?? ""));
+}
+
+async function buildBackendOverviewPayload(db) {
+  const system = buildSystemHealthPayload();
+  const counts = countConstructs(db);
+  const subjects = listSubjectSpaces(db);
+  const tables = listBackendTableSummaries(db);
+  let databaseSizeBytes = null;
+
+  try {
+    const metadata = await stat(databasePath);
+    databaseSizeBytes = Number(metadata.size ?? 0);
+  } catch {
+    databaseSizeBytes = null;
+  }
+
+  return {
+    ok: true,
+    system,
+    database: {
+      connected: Boolean(database),
+      path: databasePath,
+      sizeBytes: databaseSizeBytes
+    },
+    counts: {
+      ...counts,
+      subjectSpaceCount: subjects.length
+    },
+    tables,
+    subjects: subjects.slice(0, 8)
   };
 }
 
@@ -1121,12 +1491,12 @@ async function resolveDatabasePath() {
 }
 
 function resolvePublicPath(pathname = "") {
-  if (pathname === "/" || pathname === "/builder" || pathname === "/builder/") {
+  if (pathname === "/" || pathname === "/builder" || pathname === "/builder/" || pathname === "/backend" || pathname === "/backend/") {
     return "/index.html";
   }
 
   if (pathname === "/studio" || pathname === "/studio/") {
-    return "/studio/index.html";
+    return "/index.html";
   }
 
   if (pathname === "/soundspace" || pathname === "/soundspace/") {
@@ -1615,6 +1985,108 @@ async function handleApi(req, res) {
     return;
   }
 
+  if (url.pathname === "/api/backend/overview") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    sendJson(res, 200, await buildBackendOverviewPayload(db));
+    return;
+  }
+
+  if (url.pathname === "/api/backend/db/tables") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      tables: listBackendTableSummaries(db)
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/backend/db/table") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    const tableName = String(url.searchParams.get("table") ?? "").trim();
+    if (!tableName) {
+      sendJson(res, 400, {
+        ok: false,
+        code: "TABLE_REQUIRED",
+        error: "table is required"
+      });
+      return;
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      ...readBackendTable(db, tableName, {
+        limit: url.searchParams.get("limit"),
+        offset: url.searchParams.get("offset"),
+        search: url.searchParams.get("search")
+      })
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/backend/db/row") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const tableName = String(payload.table ?? "").trim();
+    const primaryKeyValue = String(payload.id ?? payload.primaryKeyValue ?? "").trim();
+    const changes = payload.changes && typeof payload.changes === "object" ? payload.changes : {};
+
+    if (!tableName) {
+      sendJson(res, 400, {
+        ok: false,
+        code: "TABLE_REQUIRED",
+        error: "table is required"
+      });
+      return;
+    }
+
+    if (!primaryKeyValue) {
+      sendJson(res, 400, {
+        ok: false,
+        code: "ROW_ID_REQUIRED",
+        error: "id is required"
+      });
+      return;
+    }
+
+    const updatedRow = updateBackendTableRow(db, tableName, primaryKeyValue, changes);
+    sendJson(res, 200, {
+      ok: true,
+      table: tableName,
+      row: {
+        ...updatedRow,
+        _editor: buildBackendRowMeta(tableName, updatedRow)
+      }
+    });
+    return;
+  }
+
   if (url.pathname === "/api/subjectspace/library") {
     if (req.method !== "GET") {
       res.writeHead(405, { Allow: "GET" });
@@ -1644,6 +2116,73 @@ async function handleApi(req, res) {
     sendJson(res, 200, {
       ok: true,
       ...getOpenAiAssistStatus()
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/subjectspace/subject-ideas") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const description = String(payload.description ?? payload.input ?? "").trim();
+    const requestedSubjectLabel = String(payload.subjectLabel ?? "").trim();
+
+    if (!description) {
+      sendJson(res, 400, { error: "description is required" });
+      return;
+    }
+
+    const config = getOpenAiAssistStatus();
+    if (!config.enabled) {
+      sendJson(res, 503, {
+        error: config.reason,
+        config
+      });
+      return;
+    }
+
+    let result;
+    try {
+      result = await runTimed("Subjectspace subject mapper", () => generateOpenAiSubjectSuggestions({
+        description,
+        requestedSubjectLabel
+      }), {
+        route: url.pathname,
+        subjectLabel: requestedSubjectLabel || "",
+        description: previewQuestionForLogs(description)
+      });
+    } catch (error) {
+      const normalizedError = buildApiErrorPayload(error, "Unable to generate suggested constructs for this subject.");
+      sendJson(res, normalizedError.statusCode, {
+        ...normalizedError.payload,
+        config
+      });
+      return;
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      source: "openai-subject-mapper",
+      config: {
+        ...config,
+        model: result.model ?? config.model
+      },
+      requestedSubjectLabel,
+      description,
+      suggestions: result.suggestions,
+      responseId: result.responseId,
+      usage: result.usage ?? null
     });
     return;
   }
@@ -2452,7 +2991,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   registerGracefulShutdown(server);
 
   server.listen(port, () => {
-    logEvent("info", "Strandspace Studio running", {
+    logEvent("info", "Strandspace backend running", {
       port,
       url: `http://localhost:${port}`
     });

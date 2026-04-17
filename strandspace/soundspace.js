@@ -270,6 +270,7 @@ export function upsertSoundConstruct(db, payload = {}) {
 
 const DEVICE_PATTERNS = [
   { brand: "Yamaha", model: "MG10XU", type: "mixer", terms: ["yamaha mg10xu", "mg10xu", "yamaha mixer"] },
+  { brand: "Yamaha", model: "MG12XU", type: "mixer", terms: ["yamaha mg12xu", "mg12xu"] },
   { brand: "Bose", model: "T8S", type: "mixer", terms: ["bose t8s", "t8s"] },
   { brand: "Bose", model: "L1 Pro8", type: "speaker_system", terms: ["bose l1 pro8", "bose l1 pro 8", "l1 pro8", "l1 pro 8", "pro8 column array", "pro 8 column array", "bose pro 8 column array", "bose pro8", "bose pro 8", "bose pro8s", "bose pro 8s", "bose pro 8 s", "pro8s", "pro 8s", "pro 8 s"] },
   { brand: "Bose", model: "L1 Pro16", type: "speaker_system", terms: ["bose l1 pro16", "bose l1 pro 16", "l1 pro16", "l1 pro 16", "pro16 column array", "pro 16 column array", "bose pro 16 column array", "bose pro16", "bose pro 16", "bose pro16s", "bose pro 16s", "bose pro 16 s", "pro16s", "pro 16s", "pro 16 s"] },
