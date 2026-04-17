@@ -272,6 +272,8 @@ await check("GET /api/backend/overview reports backend counts and tables", async
     const payload = await response.json();
     assert.equal(payload.ok, true);
     assert.ok(payload.database?.connected);
+    assert.ok(Number.isFinite(Number(payload.database?.sizeBytes ?? 0)));
+    assert.ok(Number(payload.database?.sizeBytes ?? 0) >= 0);
     assert.ok(Array.isArray(payload.tables));
     assert.ok(payload.tables.some((table) => table.name === "subject_constructs"));
     assert.ok(payload.tables.some((table) => table.name === "sound_constructs"));

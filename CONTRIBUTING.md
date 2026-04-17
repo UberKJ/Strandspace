@@ -79,6 +79,7 @@ The UI includes a `Reset with Examples` action that restores the bundled example
 ## Docs
 
 - Main overview: [README.md](./README.md)
+- Backend workspace guide: [docs/backend-workspace.md](./docs/backend-workspace.md)
 - White paper PDF: [strandspace-white-paper.pdf](./strandspace-white-paper.pdf)
 - White paper summary: [docs/white-paper-summary.md](./docs/white-paper-summary.md)
 

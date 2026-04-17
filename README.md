@@ -30,6 +30,8 @@ Open [http://localhost:3000](http://localhost:3000).
 - Backend workspace: `/`
 - Legacy `/studio` route now opens the backend workspace
 - Soundspace / Music Engineer: `/soundspace`
+- SQLite editor and DB size display live inside the backend data browser
+- Recall Lab in the backend now loads a cleaner construct-title search and fills the matched construct back into the editor
 
 If you do not set `OPENAI_API_KEY`, the app runs in local-only mode. Recall, library browsing, seed data, and construct editing still work; OpenAI assist and benchmark assist calls are simply disabled.
 
@@ -153,6 +155,14 @@ Use the `Reset with Examples` button in the UI to restore the demo library.
 - Legacy local databases can still be migrated into the preferred `strandspace.sqlite` path.
 - Request timeouts and graceful shutdown handling are built in for the server and OpenAI assist layer.
 - The current automated suite lives in `test/run-tests.mjs`.
+
+## Project Docs
+
+- Backend workspace guide: [docs/backend-workspace.md](./docs/backend-workspace.md)
+- White paper summary: [docs/white-paper-summary.md](./docs/white-paper-summary.md)
+- White paper PDF: [docs/strandspace-white-paper.pdf](./docs/strandspace-white-paper.pdf)
+
+The backend workspace guide covers the construct builder, AI subject mapper, Recall Lab, SQLite editor, and the live database size indicator shown in the data browser header.
 
 ## License Status
 

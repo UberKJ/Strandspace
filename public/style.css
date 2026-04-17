@@ -1559,6 +1559,10 @@ body.backend-page {
   justify-content: space-between;
 }
 
+.db-state-meta {
+  margin: 0;
+}
+
 .db-search {
   display: grid;
   gap: 8px;

@@ -45,6 +45,7 @@ const backendSubjectCountEl = document.getElementById("backend-subject-count");
 const backendConstructCountEl = document.getElementById("backend-construct-count");
 const backendSoundCountEl = document.getElementById("backend-sound-count");
 const backendDbPathEl = document.getElementById("backend-db-path");
+const backendDbSizeEl = document.getElementById("backend-db-size");
 const backendDbMetaEl = document.getElementById("backend-db-meta");
 const backendDbTableListEl = document.getElementById("backend-db-tables");
 const backendDbRowsEl = document.getElementById("backend-db-rows");
@@ -961,6 +962,12 @@ function renderBackendOverview() {
     const dbSize = formatBytes(overview.database?.sizeBytes ?? 0);
     backendDbPathEl.textContent = `${dbPath}${dbSize !== "n/a" ? ` · ${dbSize}` : ""}`;
   }
+  if (backendDbSizeEl) {
+    const dbSize = formatBytes(overview.database?.sizeBytes ?? 0);
+    backendDbSizeEl.textContent = dbSize === "n/a"
+      ? "Database size unavailable"
+      : `Database size: ${dbSize}`;
+  }
 
   if (!backendDbTableListEl) {
     return;
@@ -1137,6 +1144,9 @@ async function loadBackendOverview() {
       });
     }
   } catch (error) {
+    if (backendDbSizeEl) {
+      backendDbSizeEl.textContent = "Database size unavailable";
+    }
     if (backendDbMetaEl) {
       backendDbMetaEl.textContent = error instanceof Error ? error.message : "Unable to load backend overview.";
     }
