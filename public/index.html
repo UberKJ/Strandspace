@@ -3,52 +3,75 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Strandspace Studio</title>
-    <link rel="stylesheet" href="/style.css?v=2026-04-15-speed-compare-02" />
-    <script type="module" src="/app.js?v=2026-04-15-speed-compare-02" defer></script>
+    <title>Strandspace Construct Builder</title>
+    <link rel="stylesheet" href="/style.css?v=2026-04-16-construct-edit-04" />
+    <script type="module" src="/app.js?v=2026-04-16-construct-edit-04" defer></script>
   </head>
-  <body>
-    <main class="studio-shell">
-      <section class="hero">
-        <div class="hero-copy">
-          <p class="eyebrow">Strandspace Studio</p>
-          <h1>Teach a subject once. Recall it when the work gets noisy.</h1>
+  <body class="builder-page">
+    <header class="page-switch">
+      <a class="brand-mark" href="/">Strandspace</a>
+      <nav class="page-nav" aria-label="Workspace switcher">
+        <a class="switch-link is-active" href="/" aria-current="page">Construct Builder</a>
+        <a class="switch-link" href="/studio">Studio</a>
+        <a class="switch-link" href="/soundspace">Soundspace</a>
+      </nav>
+    </header>
+
+    <main class="studio-shell builder-shell">
+      <section class="hero builder-hero">
+        <div class="hero-copy builder-copy">
+          <p class="eyebrow">Construct Builder</p>
+          <h1>Turn rough notes into a reusable Strandspace construct.</h1>
           <p class="lede">
-            Music engineering is seeded as the first field. Add any new subject, store the reusable pieces,
-            and let Strandspace recall the construct instead of improvising from scratch every time.
+            Start with notes, a manual, a workflow, or a cue list. The builder checks related constructs first,
+            drafts a structured construct, and lets you extend or save it without dropping into the full studio view.
           </p>
 
           <div class="subject-bar">
             <label class="subject-picker">
-              <span>Active subject</span>
+              <span>Builder subject</span>
               <select id="subject-select" aria-label="Active subject"></select>
             </label>
-            <p id="subject-meta" class="meta">Loading Strandspace memory...</p>
+            <p id="subject-meta" class="meta">Loading construct fields...</p>
           </div>
 
-          <form id="recall-form" class="recall-form">
-            <label for="recall-question">Recall prompt</label>
-            <textarea
-              id="recall-question"
-              name="recall-question"
-              rows="4"
-              placeholder="What is my small-room lead vocal setup for a Yamaha MG10XU?"
-            ></textarea>
-            <div class="action-row">
-              <button type="submit">Recall construct</button>
-              <p id="recall-meta" class="meta">Trigger strands are idle.</p>
+          <section class="builder-card">
+            <div class="section-head builder-head">
+              <div>
+                <p class="eyebrow small">Draft</p>
+                <h3>Build from input</h3>
+              </div>
+              <p id="builder-meta" class="meta">Paste rough notes and draft a Strandspace construct before saving it.</p>
             </div>
-          </form>
 
-          <div id="example-row" class="example-row" aria-label="Example recall prompts"></div>
+            <form id="builder-form" class="builder-form">
+              <label for="builder-input">
+                <span>Builder input</span>
+                <textarea
+                  id="builder-input"
+                  name="builder-input"
+                  rows="8"
+                  placeholder="Subject: Portrait Lighting&#10;Target: Key light for a seated interview&#10;Objective: soft face lighting with gentle background separation&#10;Context:&#10;room: small gallery&#10;camera: medium close-up&#10;Steps:&#10;- Raise the key until the cheek has shape&#10;- Add negative fill only if the jaw disappears&#10;Notes: Use this when speed matters more than dramatic contrast.&#10;Tags: lighting, interview, softbox"
+                ></textarea>
+              </label>
+              <div class="action-row builder-actions">
+                <button type="submit" class="secondary-button">Build construct draft</button>
+                <p class="meta">Checks related constructs first, then uses OpenAI when available or local Strandspace parsing when it is not.</p>
+              </div>
+            </form>
+
+            <div id="builder-checks" class="builder-checks empty">
+              <p>Builder checks will appear here after you draft a construct.</p>
+            </div>
+          </section>
         </div>
 
         <div class="hero-stage">
-          <p class="signal-line">Trigger strands -> Anchor strands -> Composite constructs -> Expression field</p>
+          <p class="signal-line">Input notes -> Related constructs -> Drafted construct -> Expression field</p>
           <article id="answer-panel" class="answer-surface empty">
-            <p class="answer-kicker">Expression field</p>
-            <h2>Loading workspace...</h2>
-            <p>Strandspace is building the first memory field.</p>
+            <p class="answer-kicker">Construct preview</p>
+            <h2>Loading builder...</h2>
+            <p>Strandspace is preparing the first construct draft.</p>
           </article>
         </div>
       </section>
@@ -57,13 +80,17 @@
         <section class="panel learn-panel">
           <div class="section-head">
             <div>
-              <p class="eyebrow small">Teach</p>
-              <h2>Store a reusable construct</h2>
+              <p class="eyebrow small">Editor</p>
+              <h2>Review and store the construct</h2>
             </div>
             <p id="learn-meta" class="meta">New subjects appear the first time you save one.</p>
           </div>
 
           <form id="learn-form" class="learn-form">
+            <div class="editor-toolbar">
+              <p id="learn-mode-meta" class="meta">Create a new construct or load one from the library to edit it.</p>
+              <button id="learn-cancel-edit" type="button" class="secondary-button subtle-button" hidden>Stop editing</button>
+            </div>
             <label>
               <span>Subject</span>
               <input id="learn-subject" name="subject" type="text" placeholder="Music Engineering" />
@@ -111,22 +138,10 @@
               <span>Tags</span>
               <input id="learn-tags" name="tags" type="text" placeholder="live vocal, gain staging, small venue" />
             </label>
-            <button type="submit" class="primary-button">Store construct</button>
-          </form>
-        </section>
-
-        <section class="panel trace-panel">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow small">Trace</p>
-              <h2>Activation field</h2>
+            <div class="action-row learn-actions">
+              <button id="learn-submit-button" type="submit" class="primary-button">Store construct</button>
             </div>
-            <p id="trace-summary" class="meta">Query-triggered semantic expression, shaped by the stored subject field.</p>
-          </div>
-
-          <div id="trace-grid" class="trace-grid empty">
-            <p>Run a recall prompt or preview a stored construct to watch the trigger, anchor, composite, and memory layers stabilize.</p>
-          </div>
+          </form>
         </section>
 
         <section class="panel library-panel">
@@ -142,6 +157,46 @@
             <p>No constructs loaded yet.</p>
           </div>
         </section>
+
+        <section class="panel trace-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow small">Trace</p>
+              <h2>Activation field</h2>
+            </div>
+            <p id="trace-summary" class="meta">Query-triggered semantic expression, shaped by the stored subject field.</p>
+          </div>
+
+          <div id="trace-grid" class="trace-grid empty">
+            <p>Builder drafts and saved constructs show the strands that stabilized them.</p>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel recall-panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow small">Recall Lab</p>
+            <h2>Test the construct after it looks right</h2>
+          </div>
+          <p class="meta">Need the full knowledge workspace instead? Open the <a href="/studio">Studio page</a>.</p>
+        </div>
+
+        <form id="recall-form" class="recall-form">
+          <label for="recall-question">Recall prompt</label>
+          <textarea
+            id="recall-question"
+            name="recall-question"
+            rows="4"
+            placeholder="What is my small-room lead vocal setup for a Yamaha MG10XU?"
+          ></textarea>
+          <div class="action-row">
+            <button type="submit">Recall construct</button>
+            <p id="recall-meta" class="meta">Trigger strands are idle.</p>
+          </div>
+        </form>
+
+        <div id="example-row" class="example-row" aria-label="Example recall prompts"></div>
       </section>
 
       <section class="panel speed-panel">
@@ -161,29 +216,6 @@
         <div id="speed-report" class="speed-report empty">
           <p>Run a recall prompt first, then compare local Strandbase recall against the LLM assist round-trip.</p>
         </div>
-      </section>
-
-      <section class="architecture-band">
-        <article>
-          <p class="eyebrow small">1</p>
-          <h3>Trigger strands</h3>
-          <p>The prompt activates intent and subject cues instead of the whole memory field.</p>
-        </article>
-        <article>
-          <p class="eyebrow small">2</p>
-          <h3>Anchor strands</h3>
-          <p>Target, objective, and context keys narrow the domain before the answer forms.</p>
-        </article>
-        <article>
-          <p class="eyebrow small">3</p>
-          <h3>Composite construct</h3>
-          <p>The best learned scene binds together as a reusable working memory.</p>
-        </article>
-        <article>
-          <p class="eyebrow small">4</p>
-          <h3>Expression field</h3>
-          <p>Only the stabilized construct emits, which keeps recall specific and teachable.</p>
-        </article>
       </section>
     </main>
   </body>

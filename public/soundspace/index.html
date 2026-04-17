@@ -3,49 +3,111 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Soundspace</title>
-    <link rel="stylesheet" href="/soundspace/style.css?v=2026-04-14-02" />
-    <script type="module" src="/soundspace/app.js?v=2026-04-14-02" defer></script>
+    <title>Music Engineer</title>
+    <link rel="stylesheet" href="/soundspace/style.css?v=2026-04-16-04" />
+    <script type="module" src="/soundspace/app.js?v=2026-04-16-04" defer></script>
   </head>
   <body>
-    <main class="shell">
-      <section class="hero">
-        <p class="eyebrow">Strandspace Soundspace</p>
-        <h1>Recall-first live audio memory for mixers, venues, and event formats.</h1>
-        <p class="lede">
-          Ask for a setup using device, source, venue size, and event context like band, karaoke, or music bingo.
-          Soundspace recalls a stored construct first and only generates a new one when the context needs it.
+    <main class="app-shell">
+      <section class="masthead">
+        <div>
+          <p class="eyebrow">Strandspace Music Engineer</p>
+          <h1>Search the mixer memory like a working engineer, not a note dump.</h1>
+        </div>
+        <p class="masthead-copy">
+          Ask for one thing at a time like gain, EQ, a ToneMatch preset, or a specific mic profile. The result view
+          stays focused, and the full construct stays tucked away until you need it.
         </p>
-        <form id="soundspace-form" class="question-form">
-          <label class="sr-only" for="soundspace-question">Ask a sound setup question</label>
-          <input
-            id="soundspace-question"
-            name="soundspace-question"
-            type="search"
-            placeholder="What is a good karaoke mic setup for a Yamaha MG10XU in a large venue?"
-          />
-          <button type="submit">Build Or Recall</button>
-        </form>
       </section>
 
-      <section class="dashboard">
-        <section class="panel">
+      <section class="workspace">
+        <section class="query-stage">
           <div class="panel-head">
-            <h2>Answer</h2>
+            <div>
+              <p class="section-tag">Search</p>
+              <h2>Find The Exact Setting</h2>
+            </div>
             <span id="soundspace-meta" class="meta">Ready</span>
           </div>
-          <div id="soundspace-answer" class="answer-card empty">
-            <p>Ask a question to see whether Soundspace recalled or generated the setup.</p>
+
+          <div class="intent-row" aria-label="Suggested searches">
+            <button type="button" class="intent-chip" data-query="t8s shure mic setting">Mic Setting</button>
+            <button type="button" class="intent-chip" data-query="t8s acoustic guitar tonematch preset">Instrument Preset</button>
+            <button type="button" class="intent-chip" data-query="what are the settings for two bose l1 pro8 front of house speakers">FOH Speakers</button>
+            <button type="button" class="intent-chip" data-query="what tonematch presets does the t8s have">Preset List</button>
+            <button type="button" class="intent-chip" data-query="t8s eq for handheld vocal">Only EQ</button>
+          </div>
+
+          <form id="soundspace-form" class="question-form">
+            <label class="sr-only" for="soundspace-question">Ask a sound setup question</label>
+            <textarea
+              id="soundspace-question"
+              name="soundspace-question"
+              rows="4"
+              placeholder="Example: t8s SM58 vocal EQ for karaoke"
+            ></textarea>
+            <div class="question-actions">
+              <button type="submit" class="primary-action">Search Memory</button>
+              <button type="button" id="soundspace-clear" class="ghost-action">Clear</button>
+            </div>
+          </form>
+
+          <div class="query-notes">
+            <div>
+              <p class="mini-label">Good Query Shape</p>
+              <p>Mixer + source + what you want returned. Example: <span>`t8s SM57 guitar amp preset`</span></p>
+            </div>
+            <div>
+              <p class="mini-label">Good Partial Recall</p>
+              <p>Ask only for `gain`, `EQ`, `preset`, or `monitor` and the answer surface stays scoped.</p>
+            </div>
           </div>
         </section>
 
-        <section class="panel">
+        <aside class="search-guide">
+          <p class="section-tag">Behavior</p>
+          <h2>Focused Return</h2>
+          <ul class="guide-list">
+            <li>Mic questions can ask for the model before locking in the strand.</li>
+            <li>Instrument queries can land directly on built-in Bose ToneMatch defaults.</li>
+            <li>Preset list queries return the available preset memory instead of one full construct.</li>
+            <li>New LLM proposals stop at review so you can confirm or reject them before they enter Strandspace.</li>
+          </ul>
+        </aside>
+      </section>
+
+      <section class="results-grid">
+        <section class="result-surface">
           <div class="panel-head">
-            <h2>Stored Constructs</h2>
-            <span id="soundspace-library-meta" class="meta">Loading Soundspace memory...</span>
+            <div>
+              <p class="section-tag">Result</p>
+              <h2>Only What You Asked For</h2>
+            </div>
           </div>
+          <div id="soundspace-answer" class="answer-card empty">
+            <p>Ask a question to see a focused result instead of the whole memory construct.</p>
+          </div>
+        </section>
+
+        <section class="library-surface">
+          <div class="panel-head">
+            <div>
+              <p class="section-tag">Memory</p>
+              <h2>Stored Constructs</h2>
+            </div>
+            <span id="soundspace-library-meta" class="meta">Loading Music Engineering constructs...</span>
+          </div>
+          <label class="library-search">
+            <span class="sr-only">Search stored Music Engineering constructs</span>
+            <input
+              id="soundspace-library-search"
+              name="soundspace-library-search"
+              type="search"
+              placeholder="Search mixer, source, preset, event, or strand"
+            />
+          </label>
           <div id="soundspace-library" class="library empty">
-            <p>Loading Soundspace memory...</p>
+            <p>Loading Music Engineering constructs...</p>
           </div>
         </section>
       </section>

@@ -1,0 +1,16 @@
+*** Begin Patch
+*** Update File: README.md
+@@
+ # Strandspace
++
+## What Strandspace is
+
+Strandspace is a local-first memory and skill layer for agents that reduces repeated token usage by recalling reusable constructs from compact cues before escalating to an LLM.
+
+## What Strandspace is not
+
+Strandspace does not replace large language models or AI. It serves as a recall and composition layer to assist specialized agents in reducing repeated work.
+
+## Why test it inside agents
+
+Testing Strandspace within an agent framework (e.g., OpenClaw, LangGraph, or similar) helps measure how well it improves latency, reduces token usage, and facilitates agent skill composition during recurring tasks.

@@ -1,12 +1,69 @@
 import OpenAI from "openai";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const DEFAULT_MODEL = process.env.SUBJECTSPACE_OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-5.4-mini";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const projectRoot = join(__dirname, "..");
+const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 15000;
 
 let client = null;
 let mockAssistRunner = null;
 let resolvedApiKey = null;
 let resolvedApiKeyLoaded = false;
+
+function resolvePositiveInteger(value, fallback) {
+  const parsed = Number.parseInt(String(value ?? "").trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getOpenAiRequestTimeoutMs() {
+  return resolvePositiveInteger(
+    process.env.SUBJECTSPACE_OPENAI_TIMEOUT_MS ?? process.env.OPENAI_TIMEOUT_MS,
+    DEFAULT_OPENAI_REQUEST_TIMEOUT_MS
+  );
+}
+
+function buildOpenAiTimeoutError(timeoutMs) {
+  const error = new Error(`OpenAI request timed out after ${timeoutMs}ms.`);
+  error.code = "OPENAI_REQUEST_TIMEOUT";
+  return error;
+}
+
+async function runOpenAiRequest(executor) {
+  const timeoutMs = getOpenAiRequestTimeoutMs();
+  const controller = new AbortController();
+  let timeoutId = null;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      controller.abort();
+      reject(buildOpenAiTimeoutError(timeoutMs));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([
+      executor({
+        signal: controller.signal,
+        timeout: timeoutMs
+      }),
+      timeoutPromise
+    ]);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw buildOpenAiTimeoutError(timeoutMs);
+    }
+    throw error;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
 
 function normalizeArray(value, limit = 12) {
   if (!Array.isArray(value)) {
@@ -108,14 +165,56 @@ function readWindowsUserEnvironment(name) {
   }
 }
 
+function parseApiKeyAssignment(content = "") {
+  const text = String(content ?? "");
+  const envMatch = text.match(/^\s*OPENAI_API_KEY\s*=\s*["']?([^"'`\r\n]+)["']?/m);
+  if (envMatch?.[1]) {
+    return envMatch[1].trim();
+  }
+
+  const exportMatch = text.match(/^\s*export\s+OPENAI_API_KEY\s*=\s*["']?([^"'`\r\n]+)["']?/m);
+  if (exportMatch?.[1]) {
+    return exportMatch[1].trim();
+  }
+
+  const setxMatch = text.match(/^\s*setx\s+OPENAI_API_KEY\s+"([^"\r\n]+)"/mi);
+  if (setxMatch?.[1]) {
+    return setxMatch[1].trim();
+  }
+
+  return "";
+}
+
+function readProjectConfigApiKey() {
+  if (process.env.SUBJECTSPACE_DISABLE_USER_ENV_LOOKUP === "1") {
+    return "";
+  }
+
+  const candidates = [
+    ".env",
+    ".env.local",
+    ".zshrc",
+    ".zshrc.txt"
+  ];
+
+  for (const name of candidates) {
+    try {
+      const value = parseApiKeyAssignment(readFileSync(join(projectRoot, name), "utf8"));
+      if (value) {
+        return value;
+      }
+    } catch {
+      // Ignore missing or unreadable local config files.
+    }
+  }
+
+  return "";
+}
+
 function resolveOpenAiApiKey() {
   const processKey = String(process.env.OPENAI_API_KEY ?? "").trim();
   if (processKey) {
     return processKey;
-  }
-
-  if (!canUseWindowsEnvFallback()) {
-    return "";
   }
 
   if (resolvedApiKeyLoaded) {
@@ -123,7 +222,11 @@ function resolveOpenAiApiKey() {
   }
 
   resolvedApiKeyLoaded = true;
-  resolvedApiKey = readWindowsUserEnvironment("OPENAI_API_KEY");
+  resolvedApiKey = readProjectConfigApiKey();
+
+  if (!resolvedApiKey && canUseWindowsEnvFallback()) {
+    resolvedApiKey = readWindowsUserEnvironment("OPENAI_API_KEY");
+  }
 
   if (resolvedApiKey) {
     process.env.OPENAI_API_KEY = resolvedApiKey;
@@ -246,6 +349,182 @@ function buildInput({ question, subjectId, subjectLabel, recall }) {
   ].join("\n\n");
 }
 
+function buildBuilderInstructions() {
+  return [
+    "You convert freeform notes into a reusable Strandspace subject construct draft.",
+    "Return only JSON that matches the provided schema.",
+    "Prefer apiAction draft unless the input clearly describes an existing construct that only needs validation.",
+    "Use supplied checked references and manual documents when they are relevant.",
+    "Preserve concrete details from the source notes and keep them teachable back into Strandspace.",
+    "Keep context entries short, steps actionable, and notes concise.",
+    "If a checked manual reference contains a constraint or limitation, carry that forward into the draft notes."
+  ].join(" ");
+}
+
+function summarizeBuilderReferences(references = []) {
+  if (!Array.isArray(references) || !references.length) {
+    return [];
+  }
+
+  return references.slice(0, 4).map((reference) => ({
+    subjectLabel: reference.subjectLabel ?? "",
+    constructLabel: reference.constructLabel ?? "",
+    target: reference.target ?? "",
+    objective: reference.objective ?? "",
+    notes: reference.notes ?? "",
+    tags: Array.isArray(reference.tags) ? reference.tags.slice(0, 8) : [],
+    context: reference.context ?? {},
+    sources: Array.isArray(reference.sources)
+      ? reference.sources.map((source) => ({
+        label: source.label ?? "",
+        fileName: source.fileName ?? "",
+        url: source.url ?? ""
+      }))
+      : []
+  }));
+}
+
+function buildBuilderInput({
+  input = "",
+  subjectId = "",
+  subjectLabel = "General Recall",
+  seedDraft = {},
+  references = []
+} = {}) {
+  return [
+    `Subject id: ${subjectId || "new-subject"}`,
+    `Subject label: ${subjectLabel}`,
+    `Builder input: ${input}`,
+    `Heuristic draft: ${JSON.stringify({
+      constructLabel: seedDraft.constructLabel ?? "",
+      target: seedDraft.target ?? "",
+      objective: seedDraft.objective ?? "",
+      context: seedDraft.context ?? {},
+      steps: seedDraft.steps ?? [],
+      notes: seedDraft.notes ?? "",
+      tags: seedDraft.tags ?? []
+    }, null, 2)}`,
+    `Checked references: ${JSON.stringify(summarizeBuilderReferences(references), null, 2)}`,
+    "Produce the strongest reusable Strandspace construct draft you can derive from these notes."
+  ].join("\n\n");
+}
+
+function soundSetupObject(setup = {}) {
+  if (!setup || typeof setup !== "object") {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(setup)
+      .map(([key, value]) => [String(key ?? "").trim(), String(value ?? "").trim()])
+      .filter(([key, value]) => key && value)
+      .slice(0, 10)
+  );
+}
+
+function soundConstructSchema() {
+  return {
+    type: "object",
+    properties: {
+      name: { type: "string", minLength: 1 },
+      deviceBrand: { type: "string" },
+      deviceModel: { type: "string", minLength: 1 },
+      deviceType: { type: "string" },
+      sourceType: { type: "string", minLength: 1 },
+      sourceBrand: { type: "string" },
+      sourceModel: { type: "string" },
+      presetSystem: { type: "string" },
+      presetCategory: { type: "string" },
+      presetName: { type: "string" },
+      goal: { type: "string", minLength: 1 },
+      venueSize: { type: "string" },
+      eventType: { type: "string" },
+      speakerConfig: { type: "string" },
+      setup: {
+        type: "object",
+        properties: {
+          toneMatch: { type: "string" },
+          system: { type: "string" },
+          gain: { type: "string" },
+          eq: { type: "string" },
+          fx: { type: "string" },
+          monitor: { type: "string" },
+          placement: { type: "string" },
+          notes: { type: "string" }
+        },
+        additionalProperties: false
+      },
+      tags: {
+        type: "array",
+        maxItems: 16,
+        items: { type: "string", minLength: 1 }
+      },
+      strands: {
+        type: "array",
+        maxItems: 20,
+        items: { type: "string", minLength: 1 }
+      },
+      llmSummary: { type: "string" },
+      shouldLearn: { type: "boolean" }
+    },
+    required: [
+      "name",
+      "deviceModel",
+      "sourceType",
+      "goal",
+      "venueSize",
+      "eventType",
+      "speakerConfig",
+      "setup",
+      "tags",
+      "strands",
+      "llmSummary",
+      "shouldLearn"
+    ],
+    additionalProperties: false
+  };
+}
+
+function buildSoundBuilderInstructions() {
+  return [
+    "You refine reusable live-sound constructs for Strandspace Soundspace.",
+    "Return only JSON that matches the provided schema.",
+    "Preserve accurate mixer, source, and preset details from the seed construct unless the question clearly improves them.",
+    "When the question is about Bose T4S/T8S, keep Bose ToneMatch preset names explicit and stable.",
+    "Keep setup guidance concise, practical, and easy to learn back into local memory."
+  ].join(" ");
+}
+
+function buildSoundBuilderInput({ question = "", recall = {}, seedConstruct = {} } = {}) {
+  return [
+    `User question: ${question}`,
+    `Sound recall snapshot: ${JSON.stringify({
+      parsed: recall?.parsed ?? {},
+      recommendation: recall?.recommendation ?? "",
+      matched: recall?.matched
+        ? {
+          id: recall.matched.id,
+          name: recall.matched.name,
+          sourceType: recall.matched.sourceType,
+          sourceBrand: recall.matched.sourceBrand,
+          sourceModel: recall.matched.sourceModel,
+          presetSystem: recall.matched.presetSystem,
+          presetCategory: recall.matched.presetCategory,
+          presetName: recall.matched.presetName,
+          setup: soundSetupObject(recall.matched.setup)
+        }
+        : null
+    }, null, 2)}`,
+    `Seed construct: ${JSON.stringify({
+      ...seedConstruct,
+      setup: soundSetupObject(seedConstruct.setup),
+      tags: normalizeArray(seedConstruct.tags, 16),
+      strands: normalizeArray(seedConstruct.strands, 20)
+    }, null, 2)}`,
+    "Improve the seed construct only where the question adds useful new detail."
+  ].join("\n\n");
+}
+
 function normalizeAssistPayload(payload = {}, meta = {}) {
   const contextEntries = normalizeContextEntries(payload.contextEntries);
   const tags = normalizeArray(payload.tags, 8);
@@ -267,6 +546,46 @@ function normalizeAssistPayload(payload = {}, meta = {}) {
   };
 }
 
+function normalizeSoundConstructPayload(payload = {}, meta = {}) {
+  return {
+    name: String(payload.name ?? meta.name ?? "API-assisted sound construct").trim() || "API-assisted sound construct",
+    deviceBrand: String(payload.deviceBrand ?? meta.deviceBrand ?? "").trim() || null,
+    deviceModel: String(payload.deviceModel ?? meta.deviceModel ?? "").trim() || null,
+    deviceType: String(payload.deviceType ?? meta.deviceType ?? "mixer").trim() || "mixer",
+    sourceType: String(payload.sourceType ?? meta.sourceType ?? "microphone").trim() || "microphone",
+    sourceBrand: String(payload.sourceBrand ?? meta.sourceBrand ?? "").trim() || null,
+    sourceModel: String(payload.sourceModel ?? meta.sourceModel ?? "").trim() || null,
+    presetSystem: String(payload.presetSystem ?? meta.presetSystem ?? "").trim() || null,
+    presetCategory: String(payload.presetCategory ?? meta.presetCategory ?? "").trim() || null,
+    presetName: String(payload.presetName ?? meta.presetName ?? "").trim() || null,
+    goal: String(payload.goal ?? meta.goal ?? "general setup").trim() || "general setup",
+    venueSize: String(payload.venueSize ?? meta.venueSize ?? "small").trim() || "small",
+    eventType: String(payload.eventType ?? meta.eventType ?? "general").trim() || "general",
+    speakerConfig: String(payload.speakerConfig ?? meta.speakerConfig ?? "compact powered mains").trim() || "compact powered mains",
+    setup: soundSetupObject(payload.setup ?? meta.setup),
+    tags: normalizeArray(payload.tags ?? meta.tags, 16),
+    strands: normalizeArray(payload.strands ?? meta.strands, 20),
+    llmSummary: String(payload.llmSummary ?? meta.llmSummary ?? "").trim() || "OpenAI refined this sound construct for local learning.",
+    shouldLearn: Boolean(payload.shouldLearn ?? true)
+  };
+}
+
+function normalizeUsagePayload(usage = null) {
+  if (!usage || typeof usage !== "object") {
+    return null;
+  }
+
+  const inputTokens = Number(usage.input_tokens ?? usage.inputTokens);
+  const outputTokens = Number(usage.output_tokens ?? usage.outputTokens);
+  const totalTokens = Number(usage.total_tokens ?? usage.totalTokens);
+
+  return {
+    input_tokens: Number.isFinite(inputTokens) ? inputTokens : null,
+    output_tokens: Number.isFinite(outputTokens) ? outputTokens : null,
+    total_tokens: Number.isFinite(totalTokens) ? totalTokens : null
+  };
+}
+
 export function getOpenAiAssistStatus() {
   const enabled = Boolean(mockAssistRunner || resolveOpenAiApiKey());
 
@@ -276,7 +595,7 @@ export function getOpenAiAssistStatus() {
     model: DEFAULT_MODEL,
     reason: enabled
       ? `OpenAI assist is ready on ${DEFAULT_MODEL}.`
-      : "Set OPENAI_API_KEY to enable live API validation and expansion."
+      : "Set OPENAI_API_KEY to enable live API validation, expansion, and construct drafting."
   };
 }
 
@@ -287,34 +606,36 @@ export async function generateOpenAiSubjectAssist({
   recall = {}
 } = {}) {
   if (mockAssistRunner) {
-    return mockAssistRunner({
+    return runOpenAiRequest(() => mockAssistRunner({
       question,
       subjectId,
       subjectLabel,
       recall
-    });
+    }));
   }
 
   const openai = getClient();
-  const response = await openai.responses.create({
-    model: DEFAULT_MODEL,
-    store: false,
-    instructions: buildInstructions(),
-    input: buildInput({
-      question,
-      subjectId,
-      subjectLabel,
-      recall
-    }),
-    text: {
-      format: {
-        type: "json_schema",
-        name: "subjectspace_assist",
-        strict: true,
-        schema: assistSchema()
+  const response = await runOpenAiRequest((requestOptions) => (
+    openai.responses.create({
+      model: DEFAULT_MODEL,
+      store: false,
+      instructions: buildInstructions(),
+      input: buildInput({
+        question,
+        subjectId,
+        subjectLabel,
+        recall
+      }),
+      text: {
+        format: {
+          type: "json_schema",
+          name: "subjectspace_assist",
+          strict: true,
+          schema: assistSchema()
+        }
       }
-    }
-  });
+    }, requestOptions)
+  ));
 
   const parsed = JSON.parse(response.output_text);
   const matched = recall?.matched ?? null;
@@ -327,7 +648,120 @@ export async function generateOpenAiSubjectAssist({
   return {
     responseId: response.id,
     model: response.model ?? DEFAULT_MODEL,
+    usage: normalizeUsagePayload(response.usage),
     assist
+  };
+}
+
+export async function generateOpenAiSubjectConstructBuilder({
+  input = "",
+  subjectId = "",
+  subjectLabel = "General Recall",
+  seedDraft = {},
+  references = []
+} = {}) {
+  if (mockAssistRunner) {
+    return runOpenAiRequest(() => mockAssistRunner({
+      mode: "builder",
+      input,
+      question: input,
+      subjectId,
+      subjectLabel,
+      seedDraft,
+      references
+    }));
+  }
+
+  const openai = getClient();
+  const response = await runOpenAiRequest((requestOptions) => (
+    openai.responses.create({
+      model: DEFAULT_MODEL,
+      store: false,
+      instructions: buildBuilderInstructions(),
+      input: buildBuilderInput({
+        input,
+        subjectId,
+        subjectLabel,
+        seedDraft,
+        references
+      }),
+      text: {
+        format: {
+          type: "json_schema",
+          name: "subjectspace_construct_builder",
+          strict: true,
+          schema: assistSchema()
+        }
+      }
+    }, requestOptions)
+  ));
+
+  const parsed = JSON.parse(response.output_text);
+  const assist = normalizeAssistPayload(parsed, {
+    constructLabel: seedDraft.constructLabel,
+    target: seedDraft.target,
+    objective: seedDraft.objective
+  });
+
+  return {
+    responseId: response.id,
+    model: response.model ?? DEFAULT_MODEL,
+    usage: normalizeUsagePayload(response.usage),
+    assist
+  };
+}
+
+export async function generateOpenAiSoundConstructBuilder({
+  question = "",
+  recall = {},
+  seedConstruct = {}
+} = {}) {
+  if (mockAssistRunner) {
+    const mocked = await runOpenAiRequest(() => mockAssistRunner({
+      mode: "sound-builder",
+      domain: "soundspace",
+      question,
+      recall,
+      seedConstruct
+    }));
+
+    return {
+      responseId: mocked?.responseId ?? null,
+      model: mocked?.model ?? DEFAULT_MODEL,
+      usage: normalizeUsagePayload(mocked?.usage),
+      construct: normalizeSoundConstructPayload(mocked?.construct ?? mocked, seedConstruct)
+    };
+  }
+
+  const openai = getClient();
+  const response = await runOpenAiRequest((requestOptions) => (
+    openai.responses.create({
+      model: DEFAULT_MODEL,
+      store: false,
+      instructions: buildSoundBuilderInstructions(),
+      input: buildSoundBuilderInput({
+        question,
+        recall,
+        seedConstruct
+      }),
+      text: {
+        format: {
+          type: "json_schema",
+          name: "soundspace_construct_builder",
+          strict: true,
+          schema: soundConstructSchema()
+        }
+      }
+    }, requestOptions)
+  ));
+
+  const parsed = JSON.parse(response.output_text);
+
+  return {
+    responseId: response.id,
+    model: response.model ?? DEFAULT_MODEL,
+    usage: normalizeUsagePayload(response.usage),
+    construct: normalizeSoundConstructPayload(parsed, seedConstruct)
   };
 }
 

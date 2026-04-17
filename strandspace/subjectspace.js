@@ -52,6 +52,40 @@ const QUERY_STOPWORDS = new Set([
   "with"
 ]);
 
+const BUILDER_FIELD_ALIASES = new Map([
+  ["subject", "subjectLabel"],
+  ["subject label", "subjectLabel"],
+  ["subject name", "subjectLabel"],
+  ["construct", "constructLabel"],
+  ["construct label", "constructLabel"],
+  ["name", "constructLabel"],
+  ["title", "constructLabel"],
+  ["target", "target"],
+  ["focus", "target"],
+  ["device", "target"],
+  ["topic", "target"],
+  ["objective", "objective"],
+  ["goal", "objective"],
+  ["use case", "objective"],
+  ["notes", "notes"],
+  ["summary", "notes"],
+  ["tags", "tags"],
+  ["keywords", "tags"]
+]);
+
+const BUILDER_CONTEXT_SECTION_KEYS = new Set([
+  "context",
+  "environment",
+  "details"
+]);
+
+const BUILDER_STEPS_SECTION_KEYS = new Set([
+  "steps",
+  "checklist",
+  "procedure",
+  "process"
+]);
+
 function safeJsonParse(value, fallback) {
   if (!value) {
     return fallback;
@@ -90,6 +124,13 @@ function normalizeArray(value) {
   }
 
   return [];
+}
+
+function mergeUniqueArray(base = [], patch = [], limit = 12) {
+  return [...new Set([
+    ...normalizeArray(base),
+    ...normalizeArray(patch)
+  ])].slice(0, limit);
 }
 
 function normalizeSteps(value) {
@@ -134,6 +175,30 @@ function normalizeContext(value) {
   }
 
   return context;
+}
+
+function mergeNotes(base = "", patch = "") {
+  const baseText = String(base ?? "").trim();
+  const patchText = String(patch ?? "").trim();
+
+  if (!baseText) {
+    return patchText;
+  }
+  if (!patchText) {
+    return baseText;
+  }
+
+  const baseLower = baseText.toLowerCase();
+  const patchLower = patchText.toLowerCase();
+
+  if (baseLower.includes(patchLower)) {
+    return baseText;
+  }
+  if (patchLower.includes(baseLower)) {
+    return patchText;
+  }
+
+  return `${baseText}\n\n${patchText}`;
 }
 
 function deriveStrands({
@@ -210,6 +275,316 @@ function normalizeConstruct(payload = {}) {
       }),
     provenance
   };
+}
+
+function lineLooksLikeListItem(value = "") {
+  return /^\s*(?:[-*]|\d+\.)\s+/.test(String(value ?? ""));
+}
+
+function cleanListItem(value = "") {
+  return String(value ?? "").replace(/^\s*(?:[-*]|\d+\.)\s*/, "").trim();
+}
+
+function toTitleCase(value = "") {
+  return String(value ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => {
+      if (word === word.toUpperCase() && word.length <= 6) {
+        return word;
+      }
+
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(" ");
+}
+
+function splitSentences(value = "") {
+  return String(value ?? "")
+    .split(/(?<=[.!?])\s+|\r?\n+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function inferConstructLabel({ constructLabel = "", target = "", subjectLabel = "", notes = "", genericLines = [] } = {}) {
+  if (constructLabel) {
+    return constructLabel;
+  }
+
+  if (target) {
+    const normalizedTarget = String(target).trim().replace(/\bsetup\b/gi, "").replace(/\s+/g, " ").trim();
+    return `${normalizedTarget || target} recall`;
+  }
+
+  const candidate = splitSentences([notes, ...genericLines].join(" "))[0] ?? "";
+  if (candidate) {
+    const trimmed = candidate
+      .replace(/^(?:use|build|create|draft)\s+/i, "")
+      .split(/\s+/)
+      .slice(0, 8)
+      .join(" ");
+    return `${toTitleCase(trimmed)} recall`;
+  }
+
+  return `${subjectLabel || "General Recall"} construct`;
+}
+
+function inferTarget({ target = "", notes = "", genericLines = [] } = {}) {
+  if (target) {
+    return target;
+  }
+
+  const haystack = [notes, ...genericLines].join(" ").replace(/\s+/g, " ").trim();
+  if (!haystack) {
+    return "";
+  }
+
+  const patterns = [
+    /\b(?:for|target(?:ing)?|focus(?:ed)? on)\s+([^.;:]+)/i,
+    /\b(?:setup|scene|preset)\s+for\s+([^.;:]+)/i,
+    /\bon\s+([^.;:]+?)(?:\s+(?:in|with|under|during)\b|[.;:]|$)/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = haystack.match(pattern);
+    if (match?.[1]) {
+      return match[1].trim();
+    }
+  }
+
+  return "";
+}
+
+function inferObjective({ objective = "", notes = "", genericLines = [] } = {}) {
+  if (objective) {
+    return objective;
+  }
+
+  const haystack = [notes, ...genericLines].join(" ").replace(/\s+/g, " ").trim();
+  if (!haystack) {
+    return "";
+  }
+
+  const patterns = [
+    /\b(?:goal|objective|so that|to)\s+([^.;:]+)/i,
+    /\b(?:use this when|best for)\s+([^.;:]+)/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = haystack.match(pattern);
+    if (match?.[1]) {
+      return match[1].trim();
+    }
+  }
+
+  return "";
+}
+
+export function buildSubjectConstructDraftFromInput(input = "", options = {}) {
+  const raw = String(input ?? "").trim();
+  const subjectLabelOption = String(options.subjectLabel ?? options.subject ?? "").trim();
+  const subjectIdOption = String(options.subjectId ?? "").trim();
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const draft = {
+    subjectLabel: subjectLabelOption,
+    subjectId: subjectIdOption,
+    constructLabel: "",
+    target: "",
+    objective: "",
+    notes: "",
+    tags: [],
+    context: {},
+    steps: []
+  };
+  const genericLines = [];
+  let activeSection = "";
+
+  for (const line of lines) {
+    const pair = line.match(/^([^:]+):\s*(.*)$/);
+
+    if (pair) {
+      const rawKey = pair[1].trim();
+      const normalizedKey = normalizeText(rawKey);
+      const value = pair[2].trim();
+
+      if (BUILDER_CONTEXT_SECTION_KEYS.has(normalizedKey)) {
+        activeSection = "context";
+        if (value) {
+          draft.context = {
+            ...draft.context,
+            ...normalizeContext(value)
+          };
+        }
+        continue;
+      }
+
+      if (BUILDER_STEPS_SECTION_KEYS.has(normalizedKey)) {
+        activeSection = "steps";
+        if (value) {
+          draft.steps = [...draft.steps, ...normalizeSteps(value)];
+        }
+        continue;
+      }
+
+      activeSection = "";
+
+      const mappedField = BUILDER_FIELD_ALIASES.get(normalizedKey);
+      if (mappedField === "subjectLabel") {
+        draft.subjectLabel = value || draft.subjectLabel;
+        continue;
+      }
+      if (mappedField === "constructLabel") {
+        draft.constructLabel = value || draft.constructLabel;
+        continue;
+      }
+      if (mappedField === "target") {
+        draft.target = value || draft.target;
+        continue;
+      }
+      if (mappedField === "objective") {
+        draft.objective = value || draft.objective;
+        continue;
+      }
+      if (mappedField === "notes") {
+        draft.notes = [draft.notes, value].filter(Boolean).join(" ").trim();
+        continue;
+      }
+      if (mappedField === "tags") {
+        draft.tags = [...draft.tags, ...normalizeArray(value)];
+        continue;
+      }
+
+      draft.context[rawKey] = value;
+      continue;
+    }
+
+    if (activeSection === "steps" || lineLooksLikeListItem(line)) {
+      draft.steps.push(cleanListItem(line));
+      continue;
+    }
+
+    if (activeSection === "context") {
+      draft.context[`detail ${Object.keys(draft.context).length + 1}`] = line;
+      continue;
+    }
+
+    genericLines.push(line);
+  }
+
+  draft.subjectLabel = draft.subjectLabel || subjectLabelOption || "Custom Subject";
+  draft.target = inferTarget({
+    target: draft.target,
+    notes: draft.notes,
+    genericLines
+  });
+  draft.objective = inferObjective({
+    objective: draft.objective,
+    notes: draft.notes,
+    genericLines
+  });
+
+  if (!draft.notes && genericLines.length) {
+    draft.notes = genericLines.join(" ");
+  }
+
+  draft.constructLabel = inferConstructLabel({
+    constructLabel: draft.constructLabel,
+    target: draft.target,
+    subjectLabel: draft.subjectLabel,
+    notes: draft.notes,
+    genericLines
+  });
+
+  if (!draft.tags.length) {
+    draft.tags = tokenize([
+      draft.subjectLabel,
+      draft.constructLabel,
+      draft.target,
+      draft.objective
+    ].filter(Boolean).join(" "))
+      .filter((token) => token.length > 3)
+      .slice(0, 6);
+  }
+
+  return normalizeConstruct({
+    ...draft,
+    subjectId: draft.subjectId || undefined,
+    provenance: {
+      source: "builder-heuristic",
+      learnedFromQuestion: raw || null
+    }
+  });
+}
+
+export function mergeSubjectConstruct(basePayload = {}, patchPayload = {}, options = {}) {
+  const base = normalizeConstruct(basePayload);
+  const patchId = String(patchPayload.id ?? "").trim();
+  const patchSubjectId = String(patchPayload.subjectId ?? "").trim();
+  const patchSubjectLabel = String(
+    patchPayload.subjectLabel
+      ?? patchPayload.subject
+      ?? patchPayload.subjectName
+      ?? ""
+  ).trim();
+  const patchConstructLabel = String(
+    patchPayload.constructLabel
+      ?? patchPayload.name
+      ?? ""
+  ).trim();
+  const patchTarget = String(
+    patchPayload.target
+      ?? patchPayload.focus
+      ?? patchPayload.device
+      ?? patchPayload.topic
+      ?? ""
+  ).trim();
+  const patchObjective = String(
+    patchPayload.objective
+      ?? patchPayload.goal
+      ?? patchPayload.useCase
+      ?? ""
+  ).trim();
+  const patchContext = normalizeContext(patchPayload.context ?? patchPayload.contextText ?? patchPayload.environment ?? {});
+  const patchSteps = normalizeSteps(patchPayload.steps ?? patchPayload.setup ?? patchPayload.checklist ?? []);
+  const patchNotes = String(patchPayload.notes ?? patchPayload.summary ?? "").trim();
+  const patchTags = normalizeArray(patchPayload.tags ?? patchPayload.keywords);
+  const patchStrands = normalizeArray(patchPayload.strands);
+  const preserveId = options.preserveId !== false;
+  const baseProvenance = base.provenance && typeof base.provenance === "object" ? base.provenance : null;
+  const patchProvenance = patchPayload.provenance && typeof patchPayload.provenance === "object" ? patchPayload.provenance : null;
+
+  return normalizeConstruct({
+    ...base,
+    id: preserveId
+      ? (base.id || patchId || undefined)
+      : (patchId || base.id || undefined),
+    subjectId: patchSubjectId || base.subjectId,
+    subjectLabel: patchSubjectLabel || base.subjectLabel,
+    constructLabel: patchConstructLabel || base.constructLabel,
+    target: patchTarget || base.target,
+    objective: patchObjective || base.objective,
+    context: {
+      ...(base.context ?? {}),
+      ...patchContext
+    },
+    steps: mergeUniqueArray(base.steps, patchSteps, 12),
+    notes: mergeNotes(base.notes, patchNotes),
+    tags: mergeUniqueArray(base.tags, patchTags, 12),
+    strands: patchStrands.length
+      ? mergeUniqueArray(base.strands, patchStrands, 24)
+      : base.strands,
+    provenance: options.provenance
+      ?? (patchProvenance
+        ? {
+          ...(baseProvenance ?? {}),
+          ...patchProvenance
+        }
+        : baseProvenance)
+  });
 }
 
 function fromRow(row) {
@@ -457,6 +832,126 @@ function buildRecallAnswer(record) {
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+function stripTrailingRecall(label = "") {
+  const normalized = String(label ?? "").trim();
+  return normalized.replace(/\brecall\b\s*$/i, "").trim() || normalized;
+}
+
+function preferredContextValues(context = {}) {
+  const entries = Object.entries(context ?? {})
+    .map(([key, value]) => [String(key ?? "").trim().toLowerCase(), String(value ?? "").trim()])
+    .filter(([, value]) => value);
+  const ordered = [];
+  const seen = new Set();
+  const preferredKeys = [
+    "room",
+    "show type",
+    "environment",
+    "camera",
+    "console",
+    "source",
+    "key light",
+    "monitor"
+  ];
+
+  for (const key of preferredKeys) {
+    for (const [entryKey, value] of entries) {
+      if (entryKey !== key || seen.has(value)) {
+        continue;
+      }
+      ordered.push(value);
+      seen.add(value);
+    }
+  }
+
+  for (const [, value] of entries) {
+    if (seen.has(value)) {
+      continue;
+    }
+    ordered.push(value);
+    seen.add(value);
+  }
+
+  return ordered;
+}
+
+function uniqueQueryTokens(values = []) {
+  const tokens = [];
+  const seen = new Set();
+
+  for (const value of values) {
+    for (const token of tokenize(value)) {
+      if (seen.has(token)) {
+        continue;
+      }
+      seen.add(token);
+      tokens.push(token);
+    }
+  }
+
+  return tokens;
+}
+
+export function estimateTextTokens(value = "") {
+  const normalized = String(value ?? "").trim().replace(/\s+/g, " ");
+  if (!normalized) {
+    return 0;
+  }
+
+  return Math.max(1, Math.ceil(normalized.length / 4));
+}
+
+export function buildSubjectBenchmarkQuestionCandidates(record = {}, parsed = {}) {
+  const constructLabel = stripTrailingRecall(record.constructLabel);
+  const target = String(record.target ?? "").trim();
+  const objectiveTokens = tokenize(record.objective).slice(0, 2).join(" ");
+  const contextValues = preferredContextValues(record.context).slice(0, 2);
+  const parsedKeywords = Array.isArray(parsed?.keywords) ? parsed.keywords : [];
+  const alignedTokens = uniqueQueryTokens([
+    constructLabel,
+    target,
+    ...contextValues,
+    parsedKeywords.join(" ")
+  ]).slice(0, 6).join(" ");
+  const candidates = [];
+
+  function pushCandidate(question = "") {
+    const normalized = String(question ?? "").trim().replace(/\s+/g, " ");
+    if (!normalized || candidates.includes(normalized)) {
+      return;
+    }
+    candidates.push(normalized);
+  }
+
+  if (constructLabel) {
+    pushCandidate(`Recall ${constructLabel}.`);
+  }
+  if (alignedTokens) {
+    pushCandidate(`Recall ${alignedTokens}.`);
+  }
+  if (target) {
+    pushCandidate(`Recall ${target}.`);
+  }
+  if (constructLabel && target && normalizeText(constructLabel) !== normalizeText(target)) {
+    pushCandidate(`Recall ${constructLabel} for ${target}.`);
+  }
+  if (target && contextValues[0]) {
+    pushCandidate(`Recall ${target} in ${contextValues[0]}.`);
+  }
+  if (constructLabel && contextValues[0]) {
+    pushCandidate(`Recall ${constructLabel} in ${contextValues[0]}.`);
+  }
+  if (target && objectiveTokens) {
+    pushCandidate(`Recall ${target} for ${objectiveTokens}.`);
+  }
+
+  return candidates.sort((left, right) => (
+    estimateTextTokens(left) - estimateTextTokens(right)
+    || left.length - right.length
+    || left.localeCompare(right)
+  ));
 }
 
 function buildUnresolvedAnswer(parsed, candidates = []) {
