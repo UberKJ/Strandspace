@@ -10,6 +10,7 @@ const statusBadgeEl = document.getElementById("soundspace-status-badge");
 const statusLineEl = document.getElementById("soundspace-status-line");
 const themeToggleButton = document.getElementById("theme-toggle");
 const resetExamplesButton = document.getElementById("soundspace-reset-examples");
+const assistToggle = document.getElementById("soundspace-assist-toggle");
 const submitButton = form?.querySelector("button[type=\"submit\"]");
 const quickQueryButtons = Array.from(document.querySelectorAll("[data-query]"));
 const themeStorageKey = "strandspace:theme";
@@ -364,9 +365,9 @@ function renderReviewPanel(review = null) {
       <div class="review-head">
         <div>
           <span class="detail-label">${escapeHtml(review.sourceLabel ?? "Proposal")}</span>
-          <h3>${escapeHtml(review.canLearn ? "Commit To Construct" : (review.title ?? "Need More Information"))}</h3>
+          <h3>${escapeHtml(review.title ?? (review.canLearn ? "Commit To Construct" : "Need More Information"))}</h3>
         </div>
-        <span class="meta">${escapeHtml(review.canLearn ? "Commit to construct" : "Need more information")}</span>
+        <span class="meta">${escapeHtml(review.canLearn ? "Ready to review and add" : "Need more information")}</span>
       </div>
       <p class="answer-detail">${escapeHtml(review.nextAction ?? "")}</p>
       ${changeSummary.length ? `
@@ -502,6 +503,19 @@ function renderSearchGuidance(guidance = null) {
       ` : ""}
     </section>
   `;
+}
+
+function buildLocalOnlyPayload(recall = {}) {
+  return {
+    ok: true,
+    source: recall.ready ? "strandspace" : "search-guidance",
+    question: recall.question ?? "",
+    answer: recall.answer ?? (recall.ready ? "Local memory found a match." : "Local memory needs one more detail."),
+    construct: recall.matched ?? null,
+    recall,
+    linkedSubjectConstructs: recall.linkedSubjectConstructs ?? [],
+    libraryCount: recall.libraryCount ?? null
+  };
 }
 
 function renderAssistFollowUps(payload = null) {
@@ -706,13 +720,30 @@ async function loadLibrary() {
   }
 }
 
-async function fetchAnswer(question, { reviewBeforeStore = true } = {}) {
+async function fetchRecall(question) {
+  const url = new URL("/api/soundspace/recall", window.location.origin);
+  url.searchParams.set("q", question);
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(
+      [payload.error ?? `Soundspace recall failed with ${response.status}`, payload.detail ?? "", payload.code ? `Code: ${payload.code}` : ""]
+        .filter(Boolean)
+        .join(" ")
+    );
+  }
+
+  return response.json();
+}
+
+async function fetchAnswer(question, { reviewBeforeStore = true, preferApi = true, forceAssist = false } = {}) {
   const response = await fetch("/api/soundspace/answer", {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ question, reviewBeforeStore })
+    body: JSON.stringify({ question, reviewBeforeStore, preferApi, forceAssist })
   });
 
   if (!response.ok) {
@@ -725,6 +756,24 @@ async function fetchAnswer(question, { reviewBeforeStore = true } = {}) {
   }
 
   return response.json();
+}
+
+async function searchSoundspace(question, { reviewBeforeStore = true, useAssistSuggestions = false } = {}) {
+  if (useAssistSuggestions) {
+    return fetchAnswer(question, {
+      reviewBeforeStore,
+      preferApi: true,
+      forceAssist: true
+    });
+  }
+
+  const recall = await fetchRecall(question);
+
+  if (recall.ready && ["use_strandspace", "use_strandspace_combined"].includes(String(recall.recommendation ?? ""))) {
+    return buildLocalOnlyPayload(recall);
+  }
+
+  return buildLocalOnlyPayload(recall);
 }
 
 async function resetWithExamples() {
@@ -769,9 +818,13 @@ async function askQuestion(event) {
   metaEl.textContent = "Searching...";
   setButtonBusy(submitButton, true, "Searching...");
   try {
-    const payload = await fetchAnswer(question, { reviewBeforeStore: true });
+    const useAssistSuggestions = Boolean(assistToggle?.checked);
+    const payload = await searchSoundspace(question, {
+      reviewBeforeStore: true,
+      useAssistSuggestions
+    });
     metaEl.textContent = payload.source === "search-guidance"
-      ? "Need one more detail"
+      ? (useAssistSuggestions ? "Local memory needs one more detail" : "Local-only search needs one more detail")
       : payload.needsReview
       ? `${payload.review?.canLearn ? "Proposal ready" : "Need detail"} | ${payload.construct?.deviceModel ?? "Soundspace"}`
       : `${payload.source === "strandspace" ? "Recall hit" : "Learned result"} | ${payload.construct?.deviceModel ?? "Soundspace"}`;
@@ -905,8 +958,9 @@ answerEl?.addEventListener("click", async (event) => {
     await response.json();
     latestProposal = null;
     await loadLibrary();
-    const refreshed = await fetchAnswer(questionInput.value.trim() || proposal.question || "", {
-      reviewBeforeStore: true
+    const refreshed = await searchSoundspace(questionInput.value.trim() || proposal.question || "", {
+      reviewBeforeStore: true,
+      useAssistSuggestions: Boolean(assistToggle?.checked)
     });
     metaEl.textContent = "Stored in Strandspace and mirrored into Music Engineering";
     renderAnswer(refreshed);
@@ -922,5 +976,8 @@ resetExamplesButton?.addEventListener("click", () => {
 themeToggleButton?.addEventListener("click", toggleTheme);
 
 applyTheme(readStoredTheme() || "light");
+if (assistToggle) {
+  assistToggle.checked = false;
+}
 void loadSystemHealth();
 void loadLibrary();

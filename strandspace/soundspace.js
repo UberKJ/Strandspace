@@ -271,7 +271,10 @@ export function upsertSoundConstruct(db, payload = {}) {
 const DEVICE_PATTERNS = [
   { brand: "Yamaha", model: "MG10XU", type: "mixer", terms: ["yamaha mg10xu", "mg10xu", "yamaha mixer"] },
   { brand: "Bose", model: "T8S", type: "mixer", terms: ["bose t8s", "t8s"] },
-  { brand: "Bose", model: "L1 Pro8", type: "speaker_system", terms: ["bose l1 pro8", "bose l1 pro 8", "l1 pro8", "l1 pro 8", "pro8 column array", "pro 8 column array", "bose pro 8 column array"] },
+  { brand: "Bose", model: "L1 Pro8", type: "speaker_system", terms: ["bose l1 pro8", "bose l1 pro 8", "l1 pro8", "l1 pro 8", "pro8 column array", "pro 8 column array", "bose pro 8 column array", "bose pro8", "bose pro 8", "bose pro8s", "bose pro 8s", "bose pro 8 s", "pro8s", "pro 8s", "pro 8 s"] },
+  { brand: "Bose", model: "L1 Pro16", type: "speaker_system", terms: ["bose l1 pro16", "bose l1 pro 16", "l1 pro16", "l1 pro 16", "pro16 column array", "pro 16 column array", "bose pro 16 column array", "bose pro16", "bose pro 16", "bose pro16s", "bose pro 16s", "bose pro 16 s", "pro16s", "pro 16s", "pro 16 s"] },
+  { brand: "Bose", model: "L1 Pro32", type: "speaker_system", terms: ["bose l1 pro32", "bose l1 pro 32", "l1 pro32", "l1 pro 32", "pro32 column array", "pro 32 column array", "bose pro 32 column array", "bose pro32", "bose pro 32", "bose pro32s", "bose pro 32s", "bose pro 32 s", "pro32s", "pro 32s", "pro 32 s"] },
+  { brand: "Bose", model: "Sub2", type: "subwoofer", terms: ["bose sub2", "bose sub 2", "sub2", "sub 2"] },
   { brand: "Innopaw", model: "WM333", type: "wireless_receiver", terms: ["innopaw wm333", "wm333", "innopaw receiver", "innopaw receivers"] },
   { brand: "Behringer", model: "Composer Pro-XL MDX-2600", type: "dynamics_processor", terms: ["behringer composer pro xl mdx 2600", "composer pro xl", "composer pro-xl", "mdx-2600", "mdx 2600"] },
   { brand: "EV", model: "ZLX-8P-G2", type: "monitor_speaker", terms: ["ev zlx-8p-g2", "zlx-8p-g2", "zlx 8p g2", "ev zlx 8p g2"] }
@@ -285,8 +288,9 @@ const DEVICE_TYPE_PRIORITY = {
   processor: 1,
   wireless_receiver: 2,
   speaker_system: 3,
-  monitor_speaker: 4,
-  venue_preset: 5
+  subwoofer: 4,
+  monitor_speaker: 5,
+  venue_preset: 6
 };
 
 const SOURCE_PATTERNS = [
@@ -352,9 +356,9 @@ const EVENT_PATTERNS = [
 ];
 
 const VENUE_PATTERNS = [
-  { size: "small", terms: ["small room", "small venue", "coffee shop", "bar"] },
-  { size: "medium", terms: ["medium room", "medium venue", "hall"] },
-  { size: "large", terms: ["large room", "large venue", "outdoor", "festival"] }
+  { size: "small", terms: ["small room", "small venue", "small event", "coffee shop", "bar"] },
+  { size: "medium", terms: ["medium room", "medium venue", "medium event", "hall"] },
+  { size: "large", terms: ["large room", "large venue", "large event", "outdoor", "festival"] }
 ];
 
 function titleCase(value = "") {
@@ -462,11 +466,13 @@ function buildSearchGuidance(parsed, ranked = []) {
     .filter((record) => normalizeText(record.deviceModel) === "venue preset" || (record.tags ?? []).some((tag) => normalizeText(tag) === "venue preset"))
     .slice(0, 4);
   const nearby = (venuePresetCandidates.length ? venuePresetCandidates : topCandidates).map(buildCandidateHint);
-  const queryMentionsVenuePreset = /\bvenue preset\b|\bgeneric venue preset\b/.test(parsed.normalized)
-    || venuePresetCandidates.length > 0;
+  const queryMentionsVenuePreset = /\bvenue preset\b|\bgeneric venue preset\b/.test(parsed.normalized);
   const followUpQuestions = [];
   const editSuggestions = [];
   const suggestionQueries = [];
+  const hasExactStoredDevice = parsed.deviceModel
+    ? topCandidates.some((candidate) => normalizeText(candidate.deviceModel) === normalizeText(parsed.deviceModel))
+    : false;
 
   if (!parsed.deviceModel) {
     followUpQuestions.push(queryMentionsVenuePreset
@@ -483,6 +489,13 @@ function buildSearchGuidance(parsed, ranked = []) {
   if (parsed.sourceType === "microphone" && !parsed.sourceBrand && !parsed.sourceModel) {
     followUpQuestions.push("Is this for a handheld vocal mic, a headworn mic, or a host microphone path?");
     editSuggestions.push("Add the microphone type or model if you know it.");
+  }
+
+  if (parsed.deviceModel && !hasExactStoredDevice) {
+    followUpQuestions.push(`Do you want Soundspace to draft and review a new ${[parsed.deviceBrand, parsed.deviceModel].filter(Boolean).join(" ")} construct before adding it?`);
+    editSuggestions.push(`Keep the exact ${parsed.deviceModel} model in the search if you want Strandspace to propose it as a new construct.`);
+    suggestionQueries.push(`What are the settings for two ${[parsed.deviceBrand, parsed.deviceModel].filter(Boolean).join(" ")} front of house speakers?`);
+    suggestionQueries.push(`Build a new ${[parsed.deviceBrand, parsed.deviceModel].filter(Boolean).join(" ")} front of house construct for review.`);
   }
 
   editSuggestions.push("Ask for one section like gain, EQ, monitor, placement, or notes if you only need part of the answer.");
@@ -502,15 +515,26 @@ function buildSearchGuidance(parsed, ranked = []) {
     suggestionQueries.push("karaoke bar rotation venue preset microphone");
   }
 
-  const uniqueQueries = Array.from(new Set(suggestionQueries.filter(Boolean))).slice(0, 6);
+  const normalizedQuestion = normalizeText(parsed.raw ?? "");
+  const uniqueQueries = Array.from(new Set(
+    suggestionQueries
+      .filter(Boolean)
+      .filter((query) => normalizeText(query) !== normalizedQuestion)
+  )).slice(0, 6);
   const nearbyNames = nearby.slice(0, 3).map((candidate) => candidate.name);
   const nearbyList = nearbyNames.length ? nearbyNames.join("; ") : "one of the stored constructs";
   const prompt = queryMentionsVenuePreset
     ? `I found nearby venue memory, but “Generic Venue Preset” is still too broad to lock onto one stored construct. Try naming the preset or adding the mixer or speaker system. Nearby matches: ${nearbyList}.`
-    : `I found nearby stored memory, but this search still needs one more detail before Strandspace can lock onto the right construct. Add the device model or a more specific source clue.`;
+    : parsed.deviceModel && !hasExactStoredDevice
+      ? `I found nearby speaker-system memory, but ${[parsed.deviceBrand, parsed.deviceModel].filter(Boolean).join(" ")} is not stored in Soundspace yet. I can use the nearest construct as a base and stop at review so you can decide whether to add it.`
+      : `I found nearby stored memory, but this search still needs one more detail before Strandspace can lock onto the right construct. Add the device model or a more specific source clue.`;
 
   return {
-    title: queryMentionsVenuePreset ? "Refine The Venue Search" : "Refine The Search",
+    title: queryMentionsVenuePreset
+      ? "Refine The Venue Search"
+      : parsed.deviceModel && !hasExactStoredDevice
+        ? "Review A New Device Construct"
+        : "Refine The Search",
     prompt: String(prompt).replaceAll("â€œ", "\"").replaceAll("â€", "\""),
     followUpQuestions,
     editSuggestions,
@@ -592,7 +616,7 @@ function pickSetupSections(setup, parsed) {
     { key: "eq", terms: ["eq", "equalizer", "tone", "high", "low", "mid"] },
     { key: "fx", terms: ["fx", "effect", "reverb", "delay"] },
     { key: "monitor", terms: ["monitor", "feedback", "wedge", "speaker"] },
-    { key: "placement", terms: ["placement", "position", "coverage", "angle", "array"] },
+    { key: "placement", terms: ["placement", "position", "coverage", "angle", "array", "spacing", "spread", "distance", "apart", "far apart"] },
     { key: "notes", terms: ["note", "tips", "general", "setting", "settings"] }
   ];
 
@@ -771,6 +795,14 @@ function buildPresetCatalogAnswer(records = [], parsed = {}) {
   return `Stored ${parsed.presetSystem ?? "preset"} options for ${[parsed.deviceBrand, parsed.deviceModel].filter(Boolean).join(" ") || "this mixer"}: ${items.join("; ")}.`;
 }
 
+function matchesRequestedPrimaryDevice(record, parsed) {
+  if (!parsed?.deviceModel) {
+    return true;
+  }
+
+  return normalizeText(record?.deviceModel) === normalizeText(parsed.deviceModel);
+}
+
 function needsSpecificConstruct(record, parsed) {
   if (!record || !parsed.sourceModel) {
     return false;
@@ -811,7 +843,7 @@ export function recallSoundspace(db, question = "") {
     ? true
     : parsed.intent === "list_presets"
     ? Boolean((presetMatches.length || ranked.length) && parsed.deviceModel)
-    : Boolean(winner && winner.score >= 55);
+    : Boolean(winner && winner.score >= 55 && matchesRequestedPrimaryDevice(winner, parsed));
   const clarification = ready && winner ? buildClarification(winner, parsed) : null;
   const searchGuidance = !ready ? buildSearchGuidance(parsed, ranked) : null;
   const focusedSetup = combined?.matches?.length

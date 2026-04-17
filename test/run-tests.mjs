@@ -1021,6 +1021,106 @@ await check("soundspace returns search guidance for a vague generic venue preset
   });
 });
 
+await check("soundspace recognizes Bose L1 Pro16 as a specific speaker-system query", async () => {
+  const parsed = parseSoundQuestion("what are the settings for two bose l1 pro16 front of house speakers");
+
+  assert.equal(parsed.deviceBrand, "Bose");
+  assert.equal(parsed.deviceModel, "L1 Pro16");
+  assert.equal(parsed.deviceType, "speaker_system");
+  assert.equal(parsed.sourceType, "speaker system");
+});
+
+await check("soundspace answers Bose Pro 8 spacing questions locally and returns placement only", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/api/soundspace?q=${encodeURIComponent("how far apart should bose Pro 8's be set for a small event?")}`
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ready, true);
+    assert.equal(payload.matched?.deviceModel, "L1 Pro8");
+    assert.deepEqual(payload.focusKeys, ["placement"]);
+    assert.deepEqual(Object.keys(payload.focusedSetup ?? {}), ["placement"]);
+    assert.match(String(payload.answer), /12 to 18 feet apart/i);
+    assert.doesNotMatch(String(payload.answer), /needs one more detail|which mixer or speaker system is this for/i);
+  });
+});
+
+await check("soundspace does not suggest rerunning the exact same new-device search", async () => {
+  await withServer(async (address) => {
+    const question = "what are the settings for two bose l1 pro16 front of house speakers";
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/soundspace/recall?q=${encodeURIComponent(question)}`);
+    assert.equal(response.status, 200);
+    const recall = await response.json();
+
+    assert.equal(recall.ready, false);
+    assert.ok(Array.isArray(recall.searchGuidance?.suggestionQueries));
+    assert.ok(recall.searchGuidance.suggestionQueries.length >= 1);
+  assert.ok(!recall.searchGuidance.suggestionQueries.some((item) => String(item).trim().toLowerCase() === question));
+  });
+});
+
+await check("soundspace recognizes Bose L1 Pro32 and Sub2 as a new speaker-system rig", async () => {
+  const parsed = parseSoundQuestion("what are the settings for one bose l1 pro 32 and a sub 2 front of house speakers");
+
+  assert.equal(parsed.deviceBrand, "Bose");
+  assert.equal(parsed.deviceModel, "L1 Pro32");
+  assert.equal(parsed.deviceType, "speaker_system");
+  assert.equal(parsed.sourceType, "speaker system");
+  assert.ok(Array.isArray(parsed.deviceMatches));
+  assert.ok(parsed.deviceMatches.some((item) => item.model === "L1 Pro32"));
+  assert.ok(parsed.deviceMatches.some((item) => item.model === "Sub2"));
+});
+
+await check("soundspace proposes a reviewable Bose L1 Pro32 and Sub2 construct when local memory lacks it", async () => {
+  await withServer(async (address) => {
+    const response = await postJson(`http://127.0.0.1:${address.port}/api/soundspace/answer`, {
+      question: "what are the settings for one bose l1 pro 32 and a sub 2 front of house speakers",
+      reviewBeforeStore: true,
+      preferApi: false
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.needsReview, true);
+    assert.equal(payload.source, "generated-proposal");
+    assert.equal(payload.construct?.deviceBrand, "Bose");
+    assert.equal(payload.construct?.deviceModel, "L1 Pro32");
+    assert.equal(payload.construct?.deviceType, "speaker_system");
+    assert.equal(payload.construct?.speakerConfig, "single Bose L1 Pro32 main with one Bose Sub2");
+    assert.equal(payload.review?.canLearn, true);
+    assert.match(String(payload.review?.title), /add this to strandspace|commit to construct/i);
+    assert.ok(Array.isArray(payload.review?.changeSummary));
+    assert.ok(payload.review.changeSummary.some((item) => /L1 Pro32 is not stored in Soundspace yet|new construct/i.test(String(item))));
+    assert.equal(payload.recall?.readiness?.requiresReview, true);
+  });
+});
+
+await check("soundspace proposes a reviewable new construct for Bose L1 Pro16 instead of venue guidance", async () => {
+  await withServer(async (address) => {
+    const response = await postJson(`http://127.0.0.1:${address.port}/api/soundspace/answer`, {
+      question: "what are the settings for two bose l1 pro16 front of house speakers",
+      reviewBeforeStore: true,
+      preferApi: false
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.needsReview, true);
+    assert.equal(payload.source, "generated-proposal");
+    assert.equal(payload.construct?.deviceBrand, "Bose");
+    assert.equal(payload.construct?.deviceModel, "L1 Pro16");
+    assert.equal(payload.construct?.deviceType, "speaker_system");
+    assert.equal(payload.construct?.speakerConfig, "two Bose L1 Pro16 mains");
+    assert.equal(payload.review?.canLearn, true);
+    assert.match(String(payload.review?.title), /add this to strandspace|commit to construct/i);
+    assert.ok(Array.isArray(payload.review?.changeSummary));
+    assert.ok(payload.review.changeSummary.some((item) => /L1 Pro16 is not stored in Soundspace yet|new construct/i.test(String(item))));
+    assert.equal(payload.recall?.readiness?.requiresReview, true);
+  });
+});
+
 await check("soundspace parses a full karaoke reset query as a multi-device assist-worthy request", async () => {
   const parsed = parseSoundQuestion(
     "I want to do a complete karaoke gain-staging reset from the mic capsules to the speakers. My gear includes 2 Innopaw WM333 receivers, 2 Behringer Composer Pro-XL MDX-2600's, Bose T8S mixer, 2 Bose L1 Pro 8's, and 2 EV ZLX-8P-G2's monitors."
@@ -1133,6 +1233,53 @@ await check("POST /api/soundspace/answer can refine a construct through the mock
   });
 
   __setOpenAiAssistMock(null);
+});
+
+await check("POST /api/soundspace/answer can force AI assist even when local recall is already ready", async () => {
+  __setOpenAiAssistMock(async ({ mode, question, seedConstruct }) => {
+    if (mode !== "sound-builder") {
+      throw new Error(`Unexpected mode: ${mode}`);
+    }
+
+    assert.match(String(question), /t8s shure mic setting/i);
+
+    return {
+      responseId: "resp_force_assist_soundspace",
+      model: "gpt-5.4-mini",
+      usage: {
+        input_tokens: 18,
+        output_tokens: 34,
+        total_tokens: 52
+      },
+      construct: {
+        ...seedConstruct,
+        setup: {
+          ...(seedConstruct.setup ?? {}),
+          notes: "Forced AI suggestion path: ask which Shure model if the singer has not specified one."
+        },
+        shouldLearn: true
+      }
+    };
+  });
+
+  try {
+    await withServer(async (address) => {
+      const response = await postJson(`http://127.0.0.1:${address.port}/api/soundspace/answer`, {
+        question: "t8s shure mic setting",
+        reviewBeforeStore: true,
+        forceAssist: true
+      });
+
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.needsReview, true);
+      assert.equal(payload.source, "openai-proposal");
+      assert.equal(payload.construct?.deviceModel, "T8S");
+      assert.match(String(payload.construct?.setup?.notes), /Forced AI suggestion path/i);
+    });
+  } finally {
+    __setOpenAiAssistMock(null);
+  }
 });
 
 await check("POST /api/soundspace/answer falls back quickly when OpenAI refinement stalls", async () => {

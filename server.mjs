@@ -1470,6 +1470,11 @@ function buildSoundProposalReview(question, construct, recall = {}, source = "ge
   const changeSummary = [];
   const closestStoredConstruct = baseConstruct ?? recall.matched ?? null;
   const diff = buildSoundProposalDiff(closestStoredConstruct, construct);
+  const constructLabel = [construct?.deviceBrand, construct?.deviceModel].filter(Boolean).join(" ");
+  const isNewDeviceProposal = Boolean(
+    construct?.deviceModel
+    && (!closestStoredConstruct?.deviceModel || construct.deviceModel !== closestStoredConstruct.deviceModel)
+  );
 
   if (!parsed.deviceModel) {
     missingInformation.push("Exact device model is still missing.");
@@ -1488,8 +1493,14 @@ function buildSoundProposalReview(question, construct, recall = {}, source = "ge
   }
   if (closestStoredConstruct?.id) {
     changeSummary.push(`This proposal builds on the closest stored construct: ${closestStoredConstruct.name}.`);
+    if (construct?.deviceModel && closestStoredConstruct?.deviceModel && construct.deviceModel !== closestStoredConstruct.deviceModel) {
+      changeSummary.push(`${constructLabel || construct.deviceModel} is not stored in Soundspace yet, so this review would add it as a new construct while borrowing the nearest ${closestStoredConstruct.deviceModel} speaker memory as a base.`);
+    }
   } else {
     changeSummary.push("This proposal would create a new sound construct in Strandspace.");
+    if (construct?.deviceModel) {
+      changeSummary.push(`${constructLabel || construct.deviceModel} is not stored in Soundspace yet, so this review would add it as a new construct if you commit it.`);
+    }
   }
   if (construct.sourceModel && construct.sourceModel !== closestStoredConstruct?.sourceModel) {
     changeSummary.push(`It adds source-specific detail for ${[construct.sourceBrand, construct.sourceModel].filter(Boolean).join(" ")}.`);
@@ -1504,19 +1515,29 @@ function buildSoundProposalReview(question, construct, recall = {}, source = "ge
     && !preview.clarification
     && construct?.shouldLearn !== false;
   const summary = canLearn
-    ? "Research proposal is ready for review. Add it only if the assumptions look right."
+    ? isNewDeviceProposal
+      ? `${constructLabel || "This device"} is not stored yet. Review these starting settings, then add the construct only if they match the rig you meant.`
+      : "This proposal is ready for review. Add it only if the assumptions look right."
     : "Strandspace needs one more detail before this can be trusted enough to store.";
+  const title = canLearn
+    ? isNewDeviceProposal
+      ? `Add this to Strandspace? ${constructLabel || "This device"} settings are ready for review.`
+      : "Would you like to add this to Strandspace?"
+    : "Need more information before storing";
+  const nextAction = canLearn
+    ? isNewDeviceProposal
+      ? `Review the ${constructLabel || "device"} settings, then commit the construct if this is the speaker rig you want Strandspace to learn.`
+      : "Review the proposal, then add it if it matches the rig you meant."
+    : "Refine the question with the missing details, then ask again.";
 
   return {
     canLearn,
     summary,
-    title: canLearn ? "Would you like to add this to Strandspace?" : "Need more information before storing",
+    title,
     changeSummary,
     assumptions,
     missingInformation,
-    nextAction: canLearn
-      ? "Review the proposal, then add it if it matches the rig you meant."
-      : "Refine the question with the missing details, then ask again.",
+    nextAction,
     sourceLabel: source.includes("openai") ? "OpenAI proposal" : "Local proposal",
     focusKeys: preview.focusKeys ?? [],
     focusedSetup: preview.focusedSetup ?? {},
@@ -2164,11 +2185,13 @@ async function handleApi(req, res) {
       return;
     }
     const reviewBeforeStore = payload.reviewBeforeStore === true;
+    const forceAssist = payload.forceAssist === true;
 
     const recallRun = measureSync(() => recallSoundspace(db, question));
     const recalled = recallRun.result;
     const preferAssistForQuery = Boolean(recalled.readiness?.prefersAssist && payload.preferApi !== false);
     const shouldUseStoredConstruct = !payload.forceGenerate
+      && !forceAssist
       && recalled.ready
       && recalled.matched
       && !preferAssistForQuery
@@ -2193,7 +2216,9 @@ async function handleApi(req, res) {
       generated = buildSoundConstructFromQuestion(question, {
         provider: payload.provider ?? "heuristic-llm",
         model: payload.model ?? "soundspace-template-v1",
-        baseConstruct: recalled.ready ? selectSoundspaceBaseConstruct(recalled) : null
+        baseConstruct: (recalled.ready || (recalled.parsed?.deviceModel && recalled.matched))
+          ? selectSoundspaceBaseConstruct(recalled)
+          : null
       });
     } catch (error) {
       if (recalled.searchGuidance || recalled.answer) {

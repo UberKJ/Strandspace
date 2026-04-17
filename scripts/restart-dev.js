@@ -15,12 +15,12 @@ function runNodeScript(scriptName) {
 
 runNodeScript("kill-dev.js");
 
-const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
-const child = spawn(npmCommand, ["run", "dev"], {
+const child = spawn(process.execPath, [join(rootDir, "server.mjs")], {
   cwd: rootDir,
-  stdio: "inherit"
+  detached: true,
+  stdio: "ignore",
+  windowsHide: true
 });
 
-child.on("exit", (code) => {
-  process.exit(code ?? 0);
-});
+child.unref();
+console.log("Strandspace dev server restarted in the background.");

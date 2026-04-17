@@ -401,6 +401,39 @@ h3 {
   margin-top: 14px;
 }
 
+.assist-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(18, 107, 115, 0.14);
+  background: rgba(255, 255, 255, 0.68);
+  cursor: pointer;
+}
+
+.assist-toggle input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.assist-toggle strong {
+  display: block;
+  color: var(--ink);
+  font: 700 0.9rem/1.3 var(--font-ui);
+}
+
+.assist-toggle small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font: 600 0.84rem/1.5 var(--font-ui);
+}
+
 .primary-action {
   padding: 0 20px;
   border: none;
@@ -433,6 +466,7 @@ h3 {
 :root[data-theme="dark"] .switch-link,
 :root[data-theme="dark"] .intent-chip,
 :root[data-theme="dark"] .ghost-action,
+:root[data-theme="dark"] .assist-toggle,
 :root[data-theme="dark"] .workflow-panel,
 :root[data-theme="dark"] .workflow-card,
 :root[data-theme="dark"] .result-guide-card,
@@ -455,6 +489,7 @@ h3 {
 
 :root[data-theme="dark"] .query-notes p,
 :root[data-theme="dark"] .workflow-card p,
+:root[data-theme="dark"] .assist-toggle small,
 :root[data-theme="dark"] .result-guide-card p,
 :root[data-theme="dark"] .guide-list,
 :root[data-theme="dark"] .focused-flow-list p,
@@ -475,6 +510,7 @@ h3 {
 }
 
 :root[data-theme="dark"] .guide-list li,
+:root[data-theme="dark"] .assist-toggle strong,
 :root[data-theme="dark"] .review-list.warning ul,
 :root[data-theme="dark"] .result-guide-card strong,
 :root[data-theme="dark"] .focused-flow-list strong,
@@ -744,6 +780,11 @@ h3 {
 .review-head h3,
 .review-list strong {
   font-family: var(--font-ui);
+}
+
+.review-head h3 {
+  line-height: 1.28;
+  max-width: 28ch;
 }
 
 .review-list {
@@ -1080,6 +1121,10 @@ h3 {
 
   .question-actions {
     flex-direction: column;
+  }
+
+  .assist-toggle {
+    grid-template-columns: auto minmax(0, 1fr);
   }
 
   .status-badge {

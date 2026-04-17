@@ -123,8 +123,8 @@
       "gain": "Bring the system up until speech and music cover the room cleanly without leaning on the limiters.",
       "eq": "Start flat, trim harsh upper mids only if the room gets edgy, and avoid heavy low boosts until boundary buildup is checked.",
       "monitor": "If performers need more level, use a dedicated monitor path instead of pushing the front of house columns harder.",
-      "placement": "Place the columns slightly ahead of the microphones, keep them wide enough for even coverage, and aim for coverage before loudness.",
-      "notes": "Useful starting point when the L1 Pro8 pair is carrying the room and the mixer needs to feed a clean, even front-of-house image."
+      "placement": "For a small event, start the two L1 Pro8 columns about 12 to 18 feet apart, keep them slightly ahead of the microphones, and adjust inward only enough to close the center gap without spraying the side walls.",
+      "notes": "Useful starting point when the L1 Pro8 pair is carrying the room and the mixer needs to feed a clean, even front-of-house image. Recheck spacing from the center of the audience area before adding more level."
     },
     "strands": [
       "device:bose_l1_pro8",
@@ -135,7 +135,9 @@
       "event:general",
       "system:front_of_house",
       "setup:coverage",
-      "setup:placement"
+      "setup:placement",
+      "setup:spacing",
+      "placement:12_to_18_feet_apart"
     ],
     "llmSummary": "Front-of-house speaker-system starting construct for a Bose L1 Pro8 pair in a compact room."
   },

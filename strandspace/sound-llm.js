@@ -43,10 +43,46 @@ function inferGoal(parsed) {
 }
 
 function inferSpeakerConfig(parsed) {
+  if (parsed.deviceModel === "L1 Pro32" && parsed.sourceType === "speaker system") {
+    if (Array.isArray(parsed.deviceMatches) && parsed.deviceMatches.some((entry) => entry.model === "Sub2")) {
+      return /\b(two|pair|stereo)\b/.test(String(parsed.raw ?? "").toLowerCase())
+        ? "two Bose L1 Pro32 mains with two Bose Sub2 subs"
+        : "single Bose L1 Pro32 main with one Bose Sub2";
+    }
+
+    return /\b(two|pair|stereo)\b/.test(String(parsed.raw ?? "").toLowerCase())
+      ? "two Bose L1 Pro32 mains"
+      : "single Bose L1 Pro32 main";
+  }
+  if (parsed.deviceModel === "L1 Pro16" && parsed.sourceType === "speaker system") {
+    return /\b(two|pair|stereo)\b/.test(String(parsed.raw ?? "").toLowerCase())
+      ? "two Bose L1 Pro16 mains"
+      : "single Bose L1 Pro16 main";
+  }
+  if (parsed.deviceModel === "L1 Pro8" && parsed.sourceType === "speaker system") {
+    return /\b(two|pair|stereo)\b/.test(String(parsed.raw ?? "").toLowerCase())
+      ? "two Bose L1 Pro8 mains"
+      : "single Bose L1 Pro8 main";
+  }
+
   if (Array.isArray(parsed.deviceMatches) && parsed.deviceMatches.length >= 2) {
     const models = parsed.deviceMatches.map((entry) => entry.model);
+    if (models.includes("L1 Pro32") && models.includes("Sub2")) {
+      return /\b(two|pair|stereo)\b/.test(String(parsed.raw ?? "").toLowerCase())
+        ? "two Bose L1 Pro32 mains with two Bose Sub2 subs"
+        : "single Bose L1 Pro32 main with one Bose Sub2";
+    }
     if (models.includes("L1 Pro8") && models.includes("ZLX-8P-G2")) {
       return "two Bose L1 Pro8 mains with two EV ZLX-8P-G2 stage monitors";
+    }
+    if (models.includes("L1 Pro16") && models.includes("ZLX-8P-G2")) {
+      return "two Bose L1 Pro16 mains with two EV ZLX-8P-G2 stage monitors";
+    }
+    if (models.includes("L1 Pro32")) {
+      return "two Bose L1 Pro32 mains";
+    }
+    if (models.includes("L1 Pro16")) {
+      return "two Bose L1 Pro16 mains";
     }
     if (models.includes("L1 Pro8")) {
       return "two Bose L1 Pro8 mains";
@@ -336,7 +372,13 @@ export function buildSoundConstructFromQuestion(question = "", options = {}) {
   const goal = inferGoal(resolved);
   const eventType = resolved.eventType ?? "general";
   const venueSize = resolved.venueSize ?? "small";
-  const speakerConfig = baseConstruct?.speakerConfig ?? inferSpeakerConfig(resolved);
+  const shouldReuseBaseSpeakerConfig = Boolean(
+    baseConstruct?.speakerConfig
+    && (!parsed.deviceModel || parsed.deviceModel === baseConstruct?.deviceModel)
+  );
+  const speakerConfig = shouldReuseBaseSpeakerConfig
+    ? baseConstruct.speakerConfig
+    : inferSpeakerConfig(resolved);
   const sourceType = resolved.sourceType ?? "microphone";
   const sourceDescriptor = [resolved.sourceBrand, resolved.sourceModel, sourceType].filter(Boolean).join(" ");
   const presetDescriptor = [resolved.presetCategory, resolved.presetName].filter(Boolean).join(" ");
