@@ -128,8 +128,9 @@ await check("GET /soundspace serves the standalone Soundspace app", async () => 
     const response = await fetch(`http://127.0.0.1:${address.port}/soundspace`);
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.match(html, /Strandspace Soundspace/);
-    assert.match(html, /Build Or Recall/);
+    assert.match(html, /Strandspace Music Engineer/);
+    assert.match(html, /Search the mixer memory like a working engineer, not a note dump/i);
+    assert.match(html, /Search Memory/);
   });
 });
 
@@ -272,6 +273,50 @@ await check("legacy database migration creates a clean strandspace database", as
     assert.equal(migratedSubjects.length, 1);
   } finally {
     preferredDb.close();
+  }
+});
+
+await check("ensureSoundspaceTables upgrades older soundspace tables before creating new indexes", async () => {
+  const legacyPath = await registerTempDatabasePath(join(tempDir, `soundspace-legacy-columns-${Date.now()}.sqlite`));
+  const legacyDb = new DatabaseSync(legacyPath);
+
+  try {
+    legacyDb.exec(`
+      CREATE TABLE sound_constructs (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        deviceBrand TEXT,
+        deviceModel TEXT,
+        deviceType TEXT,
+        sourceType TEXT,
+        goal TEXT,
+        venueSize TEXT,
+        eventType TEXT,
+        speakerConfig TEXT,
+        setupJson TEXT NOT NULL,
+        tagsJson TEXT NOT NULL,
+        strandsJson TEXT NOT NULL,
+        llmSummary TEXT,
+        provenanceJson TEXT,
+        learnedCount INTEGER NOT NULL DEFAULT 1,
+        updatedAt TEXT NOT NULL
+      );
+    `);
+
+    ensureSoundspaceTables(legacyDb);
+
+    const columns = legacyDb.prepare("PRAGMA table_info(sound_constructs)").all();
+    assert.ok(columns.some((column) => column.name === "sourceBrand"));
+    assert.ok(columns.some((column) => column.name === "sourceModel"));
+    assert.ok(columns.some((column) => column.name === "presetSystem"));
+    assert.ok(columns.some((column) => column.name === "presetCategory"));
+    assert.ok(columns.some((column) => column.name === "presetName"));
+
+    const indexes = legacyDb.prepare("PRAGMA index_list(sound_constructs)").all();
+    assert.ok(indexes.some((index) => index.name === "idx_sound_constructs_source_model"));
+    assert.ok(indexes.some((index) => index.name === "idx_sound_constructs_preset"));
+  } finally {
+    legacyDb.close();
   }
 });
 
@@ -683,6 +728,34 @@ await check("POST /api/subjectspace/assist returns an OpenAI-backed draft and ca
   __setOpenAiAssistMock(null);
 });
 
+await check("POST /api/subjectspace/assist times out instead of hanging when OpenAI stalls", async () => {
+  const originalTimeout = process.env.SUBJECTSPACE_OPENAI_TIMEOUT_MS;
+  process.env.SUBJECTSPACE_OPENAI_TIMEOUT_MS = "25";
+  __setOpenAiAssistMock(async () => await new Promise(() => {}));
+
+  try {
+    await withServer(async (address) => {
+      const started = Date.now();
+      const response = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/assist`, {
+        subjectId: "music-engineering",
+        question: "What is my gallery interview tungsten setup?"
+      });
+
+      assert.equal(response.status, 502);
+      const payload = await response.json();
+      assert.match(String(payload.error), /timed out/i);
+      assert.ok(Date.now() - started < 1000);
+    });
+  } finally {
+    __setOpenAiAssistMock(null);
+    if (originalTimeout === undefined) {
+      delete process.env.SUBJECTSPACE_OPENAI_TIMEOUT_MS;
+    } else {
+      process.env.SUBJECTSPACE_OPENAI_TIMEOUT_MS = originalTimeout;
+    }
+  }
+});
+
 await check("GET /api/soundspace recalls a seeded mixer setup", async () => {
   await withServer(async (address) => {
     const response = await fetch(
@@ -758,6 +831,303 @@ await check("POST /api/soundspace/answer generates and stores a missing construc
     assert.equal(payload.construct.venueSize, "large");
     assert.equal(payload.recall.ready, true);
     assert.match(payload.answer, /Gain:/);
+  });
+});
+
+await check("soundspace seeds are mirrored into the Music Engineering construct field", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/subjectspace/library?subjectId=music-engineering`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.ok(payload.constructs.some((construct) => construct.id === "sound-bose-t8s-solo-vocal-karaoke"));
+    assert.ok(payload.constructs.some((construct) => construct.id === "sound-bose-l1-pro8-front-of-house-small-room"));
+  });
+});
+
+await check("POST /api/soundspace/answer can stop at review before storing a new construct", async () => {
+  await withServer(async (address) => {
+    const beforeLibrary = await fetch(`http://127.0.0.1:${address.port}/api/soundspace/library`);
+    assert.equal(beforeLibrary.status, 200);
+    const beforePayload = await beforeLibrary.json();
+
+    const response = await postJson(`http://127.0.0.1:${address.port}/api/soundspace/answer`, {
+      question: "What is a good t8s beta 58a mic setting for karaoke?",
+      reviewBeforeStore: true,
+      preferApi: false
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.needsReview, true);
+    assert.equal(payload.source, "generated-proposal");
+    assert.equal(payload.construct?.deviceModel, "T8S");
+    assert.equal(payload.construct?.sourceModel, "Beta 58A");
+    assert.equal(payload.review?.canLearn, true);
+    assert.ok(Array.isArray(payload.review?.assumptions));
+    assert.ok(payload.review.assumptions.some((item) => /small-room starting point|Show type was not specified|Coverage size was not specified/i.test(item)));
+    assert.ok(Array.isArray(payload.recall?.focusKeys));
+    assert.ok(payload.recall.focusKeys.length >= 1);
+
+    const afterLibrary = await fetch(`http://127.0.0.1:${address.port}/api/soundspace/library`);
+    assert.equal(afterLibrary.status, 200);
+    const afterPayload = await afterLibrary.json();
+    assert.equal(afterPayload.count, beforePayload.count);
+  });
+});
+
+await check("GET /api/soundspace can list stored Bose ToneMatch presets", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/api/soundspace?q=what%20tonematch%20presets%20does%20the%20t8s%20have`
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ready, true);
+    assert.equal(payload.parsed.intent, "list_presets");
+    assert.match(String(payload.answer), /Vocal Mics > Handheld Mics/i);
+    assert.match(String(payload.answer), /Acoustic Guitars > Steel String w\/ piezo/i);
+    assert.match(String(payload.answer), /DJ\/Playback > Flat, zEQ Controls/i);
+  });
+});
+
+await check("soundspace can strand together Bose T8S mixer recall with Bose L1 Pro8 speaker recall", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/api/soundspace?q=what%20is%20a%20good%20bose%20t8s%20setup%20into%20two%20bose%20l1%20pro8%20front%20of%20house%20speakers`
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ready, true);
+    assert.equal(payload.recommendation, "use_strandspace_combined");
+    assert.ok(payload.combined);
+    assert.equal(payload.combined.matches.length, 2);
+    assert.ok(payload.combined.matches.some((match) => match.deviceModel === "T8S"));
+    assert.ok(payload.combined.matches.some((match) => match.deviceModel === "L1 Pro8"));
+    assert.ok(Array.isArray(payload.linkedSubjectConstructs));
+    assert.ok(payload.linkedSubjectConstructs.some((construct) => /Bose T8S/i.test(String(construct.constructLabel))));
+    assert.ok(payload.linkedSubjectConstructs.some((construct) => /Bose L1 Pro8/i.test(String(construct.constructLabel))));
+    assert.match(String(payload.answer), /For Bose T8S and Bose L1 Pro8/i);
+  });
+});
+
+await check("soundspace recalls built-in acoustic guitar ToneMatch settings", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/api/soundspace?q=t8s%20acoustic%20guitar%20tonematch%20preset`
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ready, true);
+    assert.equal(payload.matched?.presetCategory, "Acoustic Guitars");
+    assert.equal(payload.matched?.presetName, "Steel String w/ piezo");
+    assert.ok(payload.focusKeys.includes("toneMatch"));
+    assert.match(String(payload.answer), /Acoustic Guitars > Steel String w\/ piezo/i);
+  });
+});
+
+await check("soundspace asks for Shure mic model and returns focused mic settings", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/api/soundspace?q=t8s%20shure%20mic%20setting`
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ready, true);
+    assert.equal(payload.matched?.deviceModel, "T8S");
+    assert.equal(payload.parsed.sourceBrand, "Shure");
+    assert.equal(payload.parsed.sourceModel, null);
+    assert.deepEqual(payload.focusKeys, ["notes"]);
+    assert.deepEqual(Object.keys(payload.focusedSetup ?? {}), ["notes"]);
+    assert.match(String(payload.answer), /What Shure mic model are you using/i);
+    assert.doesNotMatch(String(payload.answer), /Monitor:/i);
+  });
+});
+
+await check("POST /api/soundspace/answer can refine a construct through the mocked OpenAI builder", async () => {
+  __setOpenAiAssistMock(async ({ mode, seedConstruct }) => {
+    if (mode !== "sound-builder") {
+      throw new Error(`Unexpected mode: ${mode}`);
+    }
+
+    return {
+      responseId: "resp_mock_soundspace",
+      model: "gpt-5.4-mini",
+      usage: {
+        input_tokens: 24,
+        output_tokens: 66,
+        total_tokens: 90
+      },
+      construct: {
+        ...seedConstruct,
+        setup: {
+          ...(seedConstruct.setup ?? {}),
+          notes: "OpenAI refinement: add a narrow presence lift only if the singer sounds buried."
+        },
+        tags: [...(seedConstruct.tags ?? []), "openai-refined"],
+        llmSummary: "Mocked OpenAI refinement for soundspace learning.",
+        shouldLearn: true
+      }
+    };
+  });
+
+  await withServer(async (address) => {
+    const response = await postJson(`http://127.0.0.1:${address.port}/api/soundspace/answer`, {
+      question: "What is a good t8s beta 58a mic setting for karaoke?"
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.source, "openai-generated-and-stored");
+    assert.match(String(payload.construct?.setup?.notes), /OpenAI refinement/i);
+    assert.ok(payload.construct?.tags?.includes("openai-refined"));
+  });
+
+  __setOpenAiAssistMock(null);
+});
+
+await check("POST /api/soundspace/answer falls back quickly when OpenAI refinement stalls", async () => {
+  const originalTimeout = process.env.SUBJECTSPACE_OPENAI_TIMEOUT_MS;
+  process.env.SUBJECTSPACE_OPENAI_TIMEOUT_MS = "25";
+  __setOpenAiAssistMock(async ({ mode }) => {
+    if (mode !== "sound-builder") {
+      throw new Error(`Unexpected mode: ${mode}`);
+    }
+
+    return await new Promise(() => {});
+  });
+
+  try {
+    await withServer(async (address) => {
+      const started = Date.now();
+      const response = await postJson(`http://127.0.0.1:${address.port}/api/soundspace/answer`, {
+        question: "What is a good t8s beta 58a mic setting for karaoke?",
+        forceGenerate: true
+      });
+
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.source, "generated-and-stored");
+      assert.equal(payload.construct?.deviceModel, "T8S");
+      assert.ok(Date.now() - started < 1000);
+    });
+  } finally {
+    __setOpenAiAssistMock(null);
+    if (originalTimeout === undefined) {
+      delete process.env.SUBJECTSPACE_OPENAI_TIMEOUT_MS;
+    } else {
+      process.env.SUBJECTSPACE_OPENAI_TIMEOUT_MS = originalTimeout;
+    }
+  }
+});
+
+await check("soundspace recall returns only the requested setup section in focusedSetup", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/api/soundspace?q=t8s%20eq`
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ready, true);
+    assert.deepEqual(payload.focusKeys, ["eq"]);
+    assert.deepEqual(Object.keys(payload.focusedSetup ?? {}), ["eq"]);
+    assert.match(String(payload.answer), /EQ:/i);
+    assert.doesNotMatch(String(payload.answer), /Gain:/i);
+  });
+});
+
+await check("POST /api/soundspace/answer learns a model-specific construct from a generic mixer recall", async () => {
+  await withServer(async (address) => {
+    const response = await postJson(`http://127.0.0.1:${address.port}/api/soundspace/answer`, {
+      question: "What is a good t8s sm58 mic setting for karaoke?"
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.source, "generated-and-stored");
+    assert.equal(payload.construct?.deviceModel, "T8S");
+    assert.equal(payload.construct?.sourceBrand, "Shure");
+    assert.equal(payload.construct?.sourceModel, "SM58");
+    assert.ok(Array.isArray(payload.construct?.strands));
+    assert.ok(payload.construct.strands.includes("mic:shure-sm58"));
+    assert.equal(payload.recall?.matched?.sourceModel, "SM58");
+    assert.match(String(payload.answer), /Mic profile: Shure SM58/i);
+
+    const recallResponse = await fetch(
+      `http://127.0.0.1:${address.port}/api/soundspace?q=t8s%20sm58%20mic%20setting%20for%20karaoke`
+    );
+    assert.equal(recallResponse.status, 200);
+    const recalled = await recallResponse.json();
+    assert.equal(recalled.matched?.sourceModel, "SM58");
+    assert.equal(recalled.recommendation, "use_strandspace");
+  });
+});
+
+await check("POST /api/soundspace/learn merges new strands onto an existing mixer construct", async () => {
+  await withServer(async (address) => {
+    const learnResponse = await postJson(`http://127.0.0.1:${address.port}/api/soundspace/learn`, {
+      id: "bose-t8s-solo-vocal-karaoke",
+      sourceBrand: "Shure",
+      sourceModel: "SM58",
+      strands: ["mic:shure_sm58", "style:general_mic_setting"]
+    });
+
+    assert.equal(learnResponse.status, 200);
+    const learned = await learnResponse.json();
+    assert.equal(learned.construct.sourceModel, "SM58");
+    assert.ok(learned.construct.strands.includes("mic:shure_sm58"));
+    assert.ok(learned.construct.strands.includes("setup:feedback_control"));
+
+    const recallResponse = await fetch(
+      `http://127.0.0.1:${address.port}/api/soundspace?q=t8s%20sm58%20mic%20setting`
+    );
+    assert.equal(recallResponse.status, 200);
+    const recalled = await recallResponse.json();
+    assert.equal(recalled.ready, true);
+    assert.equal(recalled.parsed.sourceModel, "SM58");
+    assert.match(String(recalled.answer), /Mic profile: Shure SM58/i);
+  });
+});
+
+await check("POST /api/soundspace/learn mirrors reviewed sound constructs into Music Engineering", async () => {
+  await withServer(async (address) => {
+    const soundId = `bose-l1-pro8-foh-${Date.now()}`;
+    const learnResponse = await postJson(`http://127.0.0.1:${address.port}/api/soundspace/learn`, {
+      id: soundId,
+      name: "Bose L1 Pro8 FOH starting point",
+      deviceBrand: "Bose",
+      deviceModel: "L1 Pro8",
+      deviceType: "speaker_system",
+      sourceType: "speaker system",
+      goal: "front of house coverage",
+      venueSize: "medium",
+      eventType: "general",
+      speakerConfig: "two column arrays as front of house",
+      setup: {
+        system: "Run the pair as the main front of house system.",
+        gain: "Bring the system up until coverage is even without limiter hit.",
+        eq: "Start flat and trim harsh upper mids only if the room gets edgy.",
+        placement: "Keep the columns just ahead of the microphones for clean coverage.",
+        notes: "Reviewed speaker-system starting point."
+      },
+      tags: ["speaker system", "foh"],
+      strands: ["system:front_of_house"]
+    });
+
+    assert.equal(learnResponse.status, 200);
+    const learned = await learnResponse.json();
+    assert.equal(learned.construct.deviceModel, "L1 Pro8");
+    assert.equal(learned.linkedSubjectConstruct?.subjectId, "music-engineering");
+    assert.match(String(learned.linkedSubjectConstruct?.constructLabel), /Bose L1 Pro8 FOH starting point/i);
+
+    const subjectResponse = await fetch(`http://127.0.0.1:${address.port}/api/subjectspace/library?subjectId=music-engineering`);
+    assert.equal(subjectResponse.status, 200);
+    const subjectPayload = await subjectResponse.json();
+    assert.ok(subjectPayload.constructs.some((construct) => construct.id === `sound-${soundId}`));
   });
 });
 

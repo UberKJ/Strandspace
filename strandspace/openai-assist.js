@@ -8,11 +8,62 @@ const DEFAULT_MODEL = process.env.SUBJECTSPACE_OPENAI_MODEL || process.env.OPENA
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const projectRoot = join(__dirname, "..");
+const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 15000;
 
 let client = null;
 let mockAssistRunner = null;
 let resolvedApiKey = null;
 let resolvedApiKeyLoaded = false;
+
+function resolvePositiveInteger(value, fallback) {
+  const parsed = Number.parseInt(String(value ?? "").trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getOpenAiRequestTimeoutMs() {
+  return resolvePositiveInteger(
+    process.env.SUBJECTSPACE_OPENAI_TIMEOUT_MS ?? process.env.OPENAI_TIMEOUT_MS,
+    DEFAULT_OPENAI_REQUEST_TIMEOUT_MS
+  );
+}
+
+function buildOpenAiTimeoutError(timeoutMs) {
+  const error = new Error(`OpenAI request timed out after ${timeoutMs}ms.`);
+  error.code = "OPENAI_REQUEST_TIMEOUT";
+  return error;
+}
+
+async function runOpenAiRequest(executor) {
+  const timeoutMs = getOpenAiRequestTimeoutMs();
+  const controller = new AbortController();
+  let timeoutId = null;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      controller.abort();
+      reject(buildOpenAiTimeoutError(timeoutMs));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([
+      executor({
+        signal: controller.signal,
+        timeout: timeoutMs
+      }),
+      timeoutPromise
+    ]);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw buildOpenAiTimeoutError(timeoutMs);
+    }
+    throw error;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
 
 function normalizeArray(value, limit = 12) {
   if (!Array.isArray(value)) {
@@ -358,6 +409,122 @@ function buildBuilderInput({
   ].join("\n\n");
 }
 
+function soundSetupObject(setup = {}) {
+  if (!setup || typeof setup !== "object") {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(setup)
+      .map(([key, value]) => [String(key ?? "").trim(), String(value ?? "").trim()])
+      .filter(([key, value]) => key && value)
+      .slice(0, 10)
+  );
+}
+
+function soundConstructSchema() {
+  return {
+    type: "object",
+    properties: {
+      name: { type: "string", minLength: 1 },
+      deviceBrand: { type: "string" },
+      deviceModel: { type: "string", minLength: 1 },
+      deviceType: { type: "string" },
+      sourceType: { type: "string", minLength: 1 },
+      sourceBrand: { type: "string" },
+      sourceModel: { type: "string" },
+      presetSystem: { type: "string" },
+      presetCategory: { type: "string" },
+      presetName: { type: "string" },
+      goal: { type: "string", minLength: 1 },
+      venueSize: { type: "string" },
+      eventType: { type: "string" },
+      speakerConfig: { type: "string" },
+      setup: {
+        type: "object",
+        properties: {
+          toneMatch: { type: "string" },
+          system: { type: "string" },
+          gain: { type: "string" },
+          eq: { type: "string" },
+          fx: { type: "string" },
+          monitor: { type: "string" },
+          placement: { type: "string" },
+          notes: { type: "string" }
+        },
+        additionalProperties: false
+      },
+      tags: {
+        type: "array",
+        maxItems: 16,
+        items: { type: "string", minLength: 1 }
+      },
+      strands: {
+        type: "array",
+        maxItems: 20,
+        items: { type: "string", minLength: 1 }
+      },
+      llmSummary: { type: "string" },
+      shouldLearn: { type: "boolean" }
+    },
+    required: [
+      "name",
+      "deviceModel",
+      "sourceType",
+      "goal",
+      "venueSize",
+      "eventType",
+      "speakerConfig",
+      "setup",
+      "tags",
+      "strands",
+      "llmSummary",
+      "shouldLearn"
+    ],
+    additionalProperties: false
+  };
+}
+
+function buildSoundBuilderInstructions() {
+  return [
+    "You refine reusable live-sound constructs for Strandspace Soundspace.",
+    "Return only JSON that matches the provided schema.",
+    "Preserve accurate mixer, source, and preset details from the seed construct unless the question clearly improves them.",
+    "When the question is about Bose T4S/T8S, keep Bose ToneMatch preset names explicit and stable.",
+    "Keep setup guidance concise, practical, and easy to learn back into local memory."
+  ].join(" ");
+}
+
+function buildSoundBuilderInput({ question = "", recall = {}, seedConstruct = {} } = {}) {
+  return [
+    `User question: ${question}`,
+    `Sound recall snapshot: ${JSON.stringify({
+      parsed: recall?.parsed ?? {},
+      recommendation: recall?.recommendation ?? "",
+      matched: recall?.matched
+        ? {
+          id: recall.matched.id,
+          name: recall.matched.name,
+          sourceType: recall.matched.sourceType,
+          sourceBrand: recall.matched.sourceBrand,
+          sourceModel: recall.matched.sourceModel,
+          presetSystem: recall.matched.presetSystem,
+          presetCategory: recall.matched.presetCategory,
+          presetName: recall.matched.presetName,
+          setup: soundSetupObject(recall.matched.setup)
+        }
+        : null
+    }, null, 2)}`,
+    `Seed construct: ${JSON.stringify({
+      ...seedConstruct,
+      setup: soundSetupObject(seedConstruct.setup),
+      tags: normalizeArray(seedConstruct.tags, 16),
+      strands: normalizeArray(seedConstruct.strands, 20)
+    }, null, 2)}`,
+    "Improve the seed construct only where the question adds useful new detail."
+  ].join("\n\n");
+}
+
 function normalizeAssistPayload(payload = {}, meta = {}) {
   const contextEntries = normalizeContextEntries(payload.contextEntries);
   const tags = normalizeArray(payload.tags, 8);
@@ -375,6 +542,30 @@ function normalizeAssistPayload(payload = {}, meta = {}) {
     tags,
     validationFocus,
     rationale: String(payload.rationale ?? "").trim(),
+    shouldLearn: Boolean(payload.shouldLearn ?? true)
+  };
+}
+
+function normalizeSoundConstructPayload(payload = {}, meta = {}) {
+  return {
+    name: String(payload.name ?? meta.name ?? "API-assisted sound construct").trim() || "API-assisted sound construct",
+    deviceBrand: String(payload.deviceBrand ?? meta.deviceBrand ?? "").trim() || null,
+    deviceModel: String(payload.deviceModel ?? meta.deviceModel ?? "").trim() || null,
+    deviceType: String(payload.deviceType ?? meta.deviceType ?? "mixer").trim() || "mixer",
+    sourceType: String(payload.sourceType ?? meta.sourceType ?? "microphone").trim() || "microphone",
+    sourceBrand: String(payload.sourceBrand ?? meta.sourceBrand ?? "").trim() || null,
+    sourceModel: String(payload.sourceModel ?? meta.sourceModel ?? "").trim() || null,
+    presetSystem: String(payload.presetSystem ?? meta.presetSystem ?? "").trim() || null,
+    presetCategory: String(payload.presetCategory ?? meta.presetCategory ?? "").trim() || null,
+    presetName: String(payload.presetName ?? meta.presetName ?? "").trim() || null,
+    goal: String(payload.goal ?? meta.goal ?? "general setup").trim() || "general setup",
+    venueSize: String(payload.venueSize ?? meta.venueSize ?? "small").trim() || "small",
+    eventType: String(payload.eventType ?? meta.eventType ?? "general").trim() || "general",
+    speakerConfig: String(payload.speakerConfig ?? meta.speakerConfig ?? "compact powered mains").trim() || "compact powered mains",
+    setup: soundSetupObject(payload.setup ?? meta.setup),
+    tags: normalizeArray(payload.tags ?? meta.tags, 16),
+    strands: normalizeArray(payload.strands ?? meta.strands, 20),
+    llmSummary: String(payload.llmSummary ?? meta.llmSummary ?? "").trim() || "OpenAI refined this sound construct for local learning.",
     shouldLearn: Boolean(payload.shouldLearn ?? true)
   };
 }
@@ -415,34 +606,36 @@ export async function generateOpenAiSubjectAssist({
   recall = {}
 } = {}) {
   if (mockAssistRunner) {
-    return mockAssistRunner({
+    return runOpenAiRequest(() => mockAssistRunner({
       question,
       subjectId,
       subjectLabel,
       recall
-    });
+    }));
   }
 
   const openai = getClient();
-  const response = await openai.responses.create({
-    model: DEFAULT_MODEL,
-    store: false,
-    instructions: buildInstructions(),
-    input: buildInput({
-      question,
-      subjectId,
-      subjectLabel,
-      recall
-    }),
-    text: {
-      format: {
-        type: "json_schema",
-        name: "subjectspace_assist",
-        strict: true,
-        schema: assistSchema()
+  const response = await runOpenAiRequest((requestOptions) => (
+    openai.responses.create({
+      model: DEFAULT_MODEL,
+      store: false,
+      instructions: buildInstructions(),
+      input: buildInput({
+        question,
+        subjectId,
+        subjectLabel,
+        recall
+      }),
+      text: {
+        format: {
+          type: "json_schema",
+          name: "subjectspace_assist",
+          strict: true,
+          schema: assistSchema()
+        }
       }
-    }
-  });
+    }, requestOptions)
+  ));
 
   const parsed = JSON.parse(response.output_text);
   const matched = recall?.matched ?? null;
@@ -468,7 +661,7 @@ export async function generateOpenAiSubjectConstructBuilder({
   references = []
 } = {}) {
   if (mockAssistRunner) {
-    return mockAssistRunner({
+    return runOpenAiRequest(() => mockAssistRunner({
       mode: "builder",
       input,
       question: input,
@@ -476,30 +669,32 @@ export async function generateOpenAiSubjectConstructBuilder({
       subjectLabel,
       seedDraft,
       references
-    });
+    }));
   }
 
   const openai = getClient();
-  const response = await openai.responses.create({
-    model: DEFAULT_MODEL,
-    store: false,
-    instructions: buildBuilderInstructions(),
-    input: buildBuilderInput({
-      input,
-      subjectId,
-      subjectLabel,
-      seedDraft,
-      references
-    }),
-    text: {
-      format: {
-        type: "json_schema",
-        name: "subjectspace_construct_builder",
-        strict: true,
-        schema: assistSchema()
+  const response = await runOpenAiRequest((requestOptions) => (
+    openai.responses.create({
+      model: DEFAULT_MODEL,
+      store: false,
+      instructions: buildBuilderInstructions(),
+      input: buildBuilderInput({
+        input,
+        subjectId,
+        subjectLabel,
+        seedDraft,
+        references
+      }),
+      text: {
+        format: {
+          type: "json_schema",
+          name: "subjectspace_construct_builder",
+          strict: true,
+          schema: assistSchema()
+        }
       }
-    }
-  });
+    }, requestOptions)
+  ));
 
   const parsed = JSON.parse(response.output_text);
   const assist = normalizeAssistPayload(parsed, {
@@ -513,6 +708,60 @@ export async function generateOpenAiSubjectConstructBuilder({
     model: response.model ?? DEFAULT_MODEL,
     usage: normalizeUsagePayload(response.usage),
     assist
+  };
+}
+
+export async function generateOpenAiSoundConstructBuilder({
+  question = "",
+  recall = {},
+  seedConstruct = {}
+} = {}) {
+  if (mockAssistRunner) {
+    const mocked = await runOpenAiRequest(() => mockAssistRunner({
+      mode: "sound-builder",
+      domain: "soundspace",
+      question,
+      recall,
+      seedConstruct
+    }));
+
+    return {
+      responseId: mocked?.responseId ?? null,
+      model: mocked?.model ?? DEFAULT_MODEL,
+      usage: normalizeUsagePayload(mocked?.usage),
+      construct: normalizeSoundConstructPayload(mocked?.construct ?? mocked, seedConstruct)
+    };
+  }
+
+  const openai = getClient();
+  const response = await runOpenAiRequest((requestOptions) => (
+    openai.responses.create({
+      model: DEFAULT_MODEL,
+      store: false,
+      instructions: buildSoundBuilderInstructions(),
+      input: buildSoundBuilderInput({
+        question,
+        recall,
+        seedConstruct
+      }),
+      text: {
+        format: {
+          type: "json_schema",
+          name: "soundspace_construct_builder",
+          strict: true,
+          schema: soundConstructSchema()
+        }
+      }
+    }, requestOptions)
+  ));
+
+  const parsed = JSON.parse(response.output_text);
+
+  return {
+    responseId: response.id,
+    model: response.model ?? DEFAULT_MODEL,
+    usage: normalizeUsagePayload(response.usage),
+    construct: normalizeSoundConstructPayload(parsed, seedConstruct)
   };
 }
 

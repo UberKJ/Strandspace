@@ -10,6 +10,7 @@ import {
   listSoundConstructs,
   recallSoundspace,
   seedSoundspace,
+  summarizeSoundConstruct,
   upsertSoundConstruct
 } from "./strandspace/soundspace.js";
 import { buildSoundConstructFromQuestion } from "./strandspace/sound-llm.js";
@@ -28,6 +29,7 @@ import {
 } from "./strandspace/subjectspace.js";
 import {
   buildSuggestedConstructFromAssist,
+  generateOpenAiSoundConstructBuilder,
   generateOpenAiSubjectConstructBuilder,
   generateOpenAiSubjectAssist,
   getOpenAiAssistStatus
@@ -147,17 +149,22 @@ function upsertMigratedSoundConstruct(targetDb, construct = {}) {
 
   targetDb.prepare(`
     INSERT INTO sound_constructs (
-      id, name, deviceBrand, deviceModel, deviceType, sourceType, goal, venueSize,
+      id, name, deviceBrand, deviceModel, deviceType, sourceType, sourceBrand, sourceModel, presetSystem, presetCategory, presetName, goal, venueSize,
       eventType, speakerConfig, setupJson, tagsJson, strandsJson, llmSummary,
       provenanceJson, learnedCount, updatedAt
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       deviceBrand = excluded.deviceBrand,
       deviceModel = excluded.deviceModel,
       deviceType = excluded.deviceType,
       sourceType = excluded.sourceType,
+      sourceBrand = excluded.sourceBrand,
+      sourceModel = excluded.sourceModel,
+      presetSystem = excluded.presetSystem,
+      presetCategory = excluded.presetCategory,
+      presetName = excluded.presetName,
       goal = excluded.goal,
       venueSize = excluded.venueSize,
       eventType = excluded.eventType,
@@ -176,6 +183,11 @@ function upsertMigratedSoundConstruct(targetDb, construct = {}) {
     construct.deviceModel ? String(construct.deviceModel) : null,
     construct.deviceType ? String(construct.deviceType) : null,
     construct.sourceType ? String(construct.sourceType) : null,
+    construct.sourceBrand ? String(construct.sourceBrand) : null,
+    construct.sourceModel ? String(construct.sourceModel) : null,
+    construct.presetSystem ? String(construct.presetSystem) : null,
+    construct.presetCategory ? String(construct.presetCategory) : null,
+    construct.presetName ? String(construct.presetName) : null,
     construct.goal ? String(construct.goal) : null,
     construct.venueSize ? String(construct.venueSize) : null,
     construct.eventType ? String(construct.eventType) : null,
@@ -954,6 +966,7 @@ function openMemoryDatabase() {
   seedSoundspace(database);
   ensureSubjectspaceTables(database);
   seedSubjectspace(database);
+  syncSoundConstructsToSubjectspace(database);
   return database;
 }
 
@@ -992,6 +1005,174 @@ function soundConstructAnswerPayload(source, question, construct, recall) {
     answer: recall.answer,
     construct,
     recall
+  };
+}
+
+function buildSoundSubjectConstruct(soundConstruct = {}) {
+  const setup = soundConstruct.setup ?? {};
+  const context = Object.fromEntries([
+    ["device", [soundConstruct.deviceBrand, soundConstruct.deviceModel].filter(Boolean).join(" ")],
+    ["device type", soundConstruct.deviceType ?? ""],
+    ["source", [soundConstruct.sourceBrand, soundConstruct.sourceModel, soundConstruct.sourceType].filter(Boolean).join(" ")],
+    ["preset", [soundConstruct.presetSystem, soundConstruct.presetCategory, soundConstruct.presetName].filter(Boolean).join(" > ")],
+    ["event", soundConstruct.eventType ?? ""],
+    ["venue", soundConstruct.venueSize ?? ""],
+    ["speaker config", soundConstruct.speakerConfig ?? ""]
+  ].filter(([, value]) => String(value ?? "").trim()));
+  const steps = [
+    setup.toneMatch ? `ToneMatch: ${setup.toneMatch}` : null,
+    setup.system ? `System: ${setup.system}` : null,
+    setup.gain ? `Gain: ${setup.gain}` : null,
+    setup.eq ? `EQ: ${setup.eq}` : null,
+    setup.fx ? `FX: ${setup.fx}` : null,
+    setup.monitor ? `Monitor: ${setup.monitor}` : null,
+    setup.placement ? `Placement: ${setup.placement}` : null
+  ].filter(Boolean);
+
+  return {
+    id: `sound-${soundConstruct.id}`,
+    subjectId: "music-engineering",
+    subjectLabel: "Music Engineering",
+    constructLabel: soundConstruct.name || "Sound construct",
+    target: [soundConstruct.deviceBrand, soundConstruct.deviceModel, soundConstruct.sourceType].filter(Boolean).join(" "),
+    objective: soundConstruct.goal || "Reusable sound setup",
+    context,
+    steps,
+    notes: [setup.notes, soundConstruct.llmSummary].filter(Boolean).join("\n\n"),
+    tags: Array.from(new Set([
+      "soundspace",
+      "music engineering",
+      ...(soundConstruct.tags ?? [])
+    ])),
+    strands: Array.from(new Set([
+      "subject:music_engineering",
+      `sound:${String(soundConstruct.id ?? "").trim()}`,
+      ...(soundConstruct.strands ?? [])
+    ])),
+    provenance: {
+      source: soundConstruct.provenance?.source ?? "soundspace",
+      learnedFromQuestion: soundConstruct.provenance?.learnedFromQuestion ?? null,
+      linkedSoundConstructId: soundConstruct.id ?? null
+    }
+  };
+}
+
+function persistSoundConstruct(db, payload = {}) {
+  const soundConstruct = upsertSoundConstruct(db, payload);
+  const linkedSubjectConstruct = upsertSubjectConstruct(db, buildSoundSubjectConstruct(soundConstruct));
+
+  return {
+    soundConstruct,
+    linkedSubjectConstruct
+  };
+}
+
+function syncSoundConstructsToSubjectspace(db) {
+  const soundConstructs = listSoundConstructs(db);
+  for (const construct of soundConstructs) {
+    const mirrored = buildSoundSubjectConstruct(construct);
+    const existing = getSubjectConstruct(db, mirrored.id);
+    const unchanged = existing
+      && existing.subjectId === mirrored.subjectId
+      && existing.subjectLabel === mirrored.subjectLabel
+      && existing.constructLabel === mirrored.constructLabel
+      && existing.target === mirrored.target
+      && existing.objective === mirrored.objective
+      && JSON.stringify(existing.context ?? {}) === JSON.stringify(mirrored.context ?? {})
+      && JSON.stringify(existing.steps ?? []) === JSON.stringify(mirrored.steps ?? [])
+      && String(existing.notes ?? "") === String(mirrored.notes ?? "")
+      && JSON.stringify(existing.tags ?? []) === JSON.stringify(mirrored.tags ?? [])
+      && JSON.stringify(existing.strands ?? []) === JSON.stringify(mirrored.strands ?? []);
+
+    if (!unchanged) {
+      upsertSubjectConstruct(db, mirrored);
+    }
+  }
+}
+
+function buildMusicEngineeringContext(db, question = "", recall = {}) {
+  const soundIds = [
+    recall.matched?.id,
+    ...(recall.combined?.matches ?? []).map((match) => match.id)
+  ].filter(Boolean);
+  const linkedSubjectConstructs = Array.from(new Set(soundIds))
+    .map((id) => getSubjectConstruct(db, `sound-${id}`))
+    .filter(Boolean)
+    .map((construct) => hydrateConstructForClient(construct));
+  const subjectRecall = recallSubjectSpace(db, {
+    question,
+    subjectId: "music-engineering"
+  });
+
+  return {
+    linkedSubjectConstructs,
+    subjectRecall: {
+      ...subjectRecall,
+      matched: hydrateConstructForClient(subjectRecall.matched)
+    }
+  };
+}
+
+function buildSoundProposalReview(question, construct, recall = {}, source = "generated-proposal") {
+  const preview = summarizeSoundConstruct(question, construct, {
+    clarification: recall.clarification ?? null
+  });
+  const parsed = preview.parsed ?? {};
+  const missingInformation = [];
+  const assumptions = [];
+  const changeSummary = [];
+
+  if (!parsed.deviceModel) {
+    missingInformation.push("Exact device model is still missing.");
+  }
+  if (preview.clarification?.prompt) {
+    missingInformation.push(preview.clarification.prompt);
+  }
+  if (!parsed.sourceType) {
+    missingInformation.push("Strandspace still needs to know whether this is for microphones, instruments, playback, or speakers.");
+  }
+  if (!parsed.eventType) {
+    assumptions.push("Show type was not specified, so this proposal is using a general live-sound starting point.");
+  }
+  if (!parsed.venueSize) {
+    assumptions.push("Coverage size was not specified, so this proposal is using a small-room starting point.");
+  }
+  if (recall.ready && recall.matched?.id) {
+    changeSummary.push(`This proposal builds on the closest stored construct: ${recall.matched.name}.`);
+  } else {
+    changeSummary.push("This proposal would create a new sound construct in Strandspace.");
+  }
+  if (construct.sourceModel && construct.sourceModel !== recall.matched?.sourceModel) {
+    changeSummary.push(`It adds source-specific detail for ${[construct.sourceBrand, construct.sourceModel].filter(Boolean).join(" ")}.`);
+  }
+  if (construct.sourceType === "speaker system") {
+    changeSummary.push("It treats the question as a front-of-house speaker-system construct instead of a mixer channel strip.");
+  }
+  changeSummary.push("Saving it will also mirror the result into the shared Music Engineering construct field.");
+
+  const canLearn = Boolean(construct?.deviceModel)
+    && Boolean(construct?.sourceType)
+    && !preview.clarification
+    && construct?.shouldLearn !== false;
+  const summary = canLearn
+    ? "Research proposal is ready for review. Add it only if the assumptions look right."
+    : "Strandspace needs one more detail before this can be trusted enough to store.";
+
+  return {
+    canLearn,
+    summary,
+    title: canLearn ? "Would you like to add this to Strandspace?" : "Need more information before storing",
+    changeSummary,
+    assumptions,
+    missingInformation,
+    nextAction: canLearn
+      ? "Review the proposal, then add it if it matches the rig you meant."
+      : "Refine the question with the missing details, then ask again.",
+    sourceLabel: source.includes("openai") ? "OpenAI proposal" : "Local proposal",
+    focusKeys: preview.focusKeys ?? [],
+    focusedSetup: preview.focusedSetup ?? {},
+    answerPreview: preview.answer ?? null,
+    parsed
   };
 }
 
@@ -1470,10 +1651,12 @@ async function handleApi(req, res) {
 
     const question = String(url.searchParams.get("q") ?? "").trim();
     const recall = recallSoundspace(db, question);
+    const musicEngineering = buildMusicEngineeringContext(db, question, recall);
 
     sendJson(res, 200, {
       ok: true,
       ...recall,
+      ...musicEngineering,
       libraryCount: listSoundConstructs(db).length
     });
     return;
@@ -1510,17 +1693,20 @@ async function handleApi(req, res) {
       return;
     }
 
-    const saved = upsertSoundConstruct(db, {
+    const persisted = persistSoundConstruct(db, {
       ...payload,
       provenance: {
         source: payload.provenance?.source ?? "manual-or-llm",
         learnedFromQuestion: payload.provenance?.learnedFromQuestion ?? payload.question ?? null
       }
     });
+    const preview = summarizeSoundConstruct(String(payload.question ?? "").trim(), persisted.soundConstruct);
 
     sendJson(res, 200, {
       ok: true,
-      construct: saved,
+      construct: persisted.soundConstruct,
+      linkedSubjectConstruct: hydrateConstructForClient(persisted.linkedSubjectConstruct),
+      preview,
       count: listSoundConstructs(db).length
     });
     return;
@@ -1546,10 +1732,19 @@ async function handleApi(req, res) {
       sendJson(res, 400, { error: "question is required" });
       return;
     }
+    const reviewBeforeStore = payload.reviewBeforeStore === true;
 
     const recalled = recallSoundspace(db, question);
-    if (!payload.forceGenerate && recalled.ready && recalled.matched) {
-      sendJson(res, 200, soundConstructAnswerPayload("strandspace", question, recalled.matched, recalled));
+    const shouldUseStoredConstruct = !payload.forceGenerate
+      && recalled.ready
+      && recalled.matched
+      && ["use_strandspace", "use_strandspace_combined"].includes(recalled.recommendation);
+
+    if (shouldUseStoredConstruct) {
+      sendJson(res, 200, {
+        ...soundConstructAnswerPayload("strandspace", question, recalled.matched, recalled),
+        ...buildMusicEngineeringContext(db, question, recalled)
+      });
       return;
     }
 
@@ -1557,7 +1752,8 @@ async function handleApi(req, res) {
     try {
       generated = buildSoundConstructFromQuestion(question, {
         provider: payload.provider ?? "heuristic-llm",
-        model: payload.model ?? "soundspace-template-v1"
+        model: payload.model ?? "soundspace-template-v1",
+        baseConstruct: recalled.ready ? recalled.matched : null
       });
     } catch (error) {
       sendJson(res, 422, {
@@ -1567,9 +1763,73 @@ async function handleApi(req, res) {
       return;
     }
 
-    const saved = upsertSoundConstruct(db, generated);
+    let source = "generated-and-stored";
+    const config = getOpenAiAssistStatus();
+    if (payload.preferApi !== false && config.enabled) {
+      try {
+        const assisted = await generateOpenAiSoundConstructBuilder({
+          question,
+          recall: recalled,
+          seedConstruct: generated
+        });
+
+        generated = {
+          ...generated,
+          ...assisted.construct,
+          provenance: {
+            source: "openai-responses",
+            model: assisted.model ?? config.model,
+            learnedFromQuestion: question,
+            derivedFromConstructId: generated?.provenance?.derivedFromConstructId ?? recalled.matched?.id ?? null
+          }
+        };
+        source = "openai-generated-and-stored";
+      } catch {
+        // Fall back to the local heuristic construct when API refinement is unavailable.
+      }
+    }
+
+    if (reviewBeforeStore) {
+      const reviewSource = source === "openai-generated-and-stored" ? "openai-proposal" : "generated-proposal";
+      const review = buildSoundProposalReview(question, generated, recalled, reviewSource);
+      const proposalRecall = {
+        question,
+        parsed: review.parsed,
+        ready: review.canLearn,
+        matched: generated,
+        candidates: recalled.candidates,
+        clarification: recalled.clarification ?? null,
+        focusedSetup: review.focusedSetup,
+        focusKeys: review.focusKeys,
+        answer: review.answerPreview,
+        recommendation: review.canLearn ? "review_before_store" : "needs_more_information",
+        readiness: {
+          ...recalled.readiness,
+          requiresReview: true,
+          missingInformationCount: review.missingInformation.length
+        }
+      };
+
+      sendJson(res, 200, {
+        ok: true,
+        needsReview: true,
+        review,
+        source: reviewSource,
+        question,
+        answer: review.summary,
+        construct: generated,
+        recall: proposalRecall
+      });
+      return;
+    }
+
+    const persisted = persistSoundConstruct(db, generated);
     const refreshed = recallSoundspace(db, question);
-    sendJson(res, 200, soundConstructAnswerPayload("generated-and-stored", question, saved, refreshed));
+    sendJson(res, 200, {
+      ...soundConstructAnswerPayload(source, question, persisted.soundConstruct, refreshed),
+      linkedSubjectConstruct: hydrateConstructForClient(persisted.linkedSubjectConstruct),
+      ...buildMusicEngineeringContext(db, question, refreshed)
+    });
     return;
   }
 
