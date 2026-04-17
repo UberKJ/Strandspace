@@ -178,6 +178,15 @@ function buildFocusedParagraph(focusedSetup = {}) {
   return sections.join(" ");
 }
 
+function buildFocusedFlowItems(focusedSetup = {}) {
+  return Object.entries(focusedSetup)
+    .filter(([, value]) => value)
+    .map(([label, value]) => ({
+      label: focusLabel(label),
+      value: String(value)
+    }));
+}
+
 function isAssistPayload(payload = null) {
   return Boolean(payload && String(payload.source ?? "").includes("openai"));
 }
@@ -536,6 +545,29 @@ function renderAssistFollowUps(payload = null) {
   `;
 }
 
+function renderFocusedFlow(focusedItems = []) {
+  if (!focusedItems.length) {
+    return "";
+  }
+
+  return `
+    <section class="focused-flow-panel">
+      <div class="focus-head">
+        <strong>Asked Return</strong>
+        <span class="focus-subtitle">Only the sections requested from memory</span>
+      </div>
+      <ul class="focused-flow-list">
+        ${focusedItems.map((item) => `
+          <li>
+            <strong>${escapeHtml(item.label)}</strong>
+            <p>${escapeHtml(item.value)}</p>
+          </li>
+        `).join("")}
+      </ul>
+    </section>
+  `;
+}
+
 function renderAnswer(payload = null) {
   if (!payload) {
     latestProposal = null;
@@ -554,8 +586,10 @@ function renderAnswer(payload = null) {
     ? recall.focusedSetup
     : {};
   const focusedParagraph = buildFocusedParagraph(focusedSetup);
+  const focusedItems = buildFocusedFlowItems(focusedSetup);
   const askedForTags = buildAskedForTags(recall);
   const assistUsed = isAssistPayload(payload);
+  const shouldUseFocusedFlowAsPrimaryOutput = Boolean(focusedItems.length && !review && !searchGuidance);
   const sourceLabel = payload.source === "strandspace"
     ? "Recalled from Strandspace"
     : payload.source === "search-guidance"
@@ -579,14 +613,14 @@ function renderAnswer(payload = null) {
       <span class="meta">${escapeHtml(construct?.name ?? "Focused result")}</span>
     </div>
     ${renderMemoryDrawer(payload.linkedSubjectConstructs ?? [], construct, recall)}
-    <p class="answer-summary">${escapeHtml(payload.answer ?? "No answer returned.")}</p>
+    ${shouldUseFocusedFlowAsPrimaryOutput ? "" : `<p class="answer-summary">${escapeHtml(payload.answer ?? "No answer returned.")}</p>`}
     ${askedForTags.length ? `
       <div class="asked-for">
         ${askedForTags.map((tag) => `<span class="asked-tag">${escapeHtml(tag)}</span>`).join("")}
       </div>
     ` : ""}
     ${clarification?.prompt ? `<p class="answer-callout"><strong>Need detail:</strong> ${escapeHtml(clarification.prompt)}</p>` : ""}
-    ${focusedParagraph ? `<p class="answer-detail"><strong>Asked return:</strong> ${escapeHtml(focusedParagraph)}</p>` : ""}
+    ${focusedItems.length ? renderFocusedFlow(focusedItems) : (focusedParagraph ? `<p class="answer-detail"><strong>Asked return:</strong> ${escapeHtml(focusedParagraph)}</p>` : "")}
     ${renderSearchGuidance(searchGuidance)}
     ${renderReviewPanel(review)}
     ${renderReviewDiffPanel(review)}

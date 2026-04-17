@@ -425,6 +425,7 @@ h3 {
 :root[data-theme="dark"] .query-notes p,
 :root[data-theme="dark"] .workflow-card p,
 :root[data-theme="dark"] .guide-list,
+:root[data-theme="dark"] .focused-flow-list p,
 :root[data-theme="dark"] .answer-detail,
 :root[data-theme="dark"] .answer-callout,
 :root[data-theme="dark"] .answer-summary,
@@ -443,6 +444,7 @@ h3 {
 
 :root[data-theme="dark"] .guide-list li,
 :root[data-theme="dark"] .review-list.warning ul,
+:root[data-theme="dark"] .focused-flow-list strong,
 :root[data-theme="dark"] .setup-grid p,
 :root[data-theme="dark"] .answer-badge,
 :root[data-theme="dark"] .answer-meta dd,
@@ -568,6 +570,36 @@ h3 {
   background: rgba(182, 120, 63, 0.1);
   border-color: rgba(182, 120, 63, 0.16);
   color: #8f5a28;
+}
+
+.focused-flow-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.focused-flow-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.focused-flow-list li {
+  padding-left: 4px;
+}
+
+.focused-flow-list strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--accent-deep);
+  font: 700 0.84rem/1.3 var(--font-ui);
+  letter-spacing: 0.04em;
+}
+
+.focused-flow-list p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
 }
 
 .answer-summary {
