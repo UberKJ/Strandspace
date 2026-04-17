@@ -187,14 +187,14 @@ function createWeightedRecallFixtureDb() {
   return db;
 }
 
-await check("GET / serves the backend construct workspace", async () => {
+await check("GET / serves the public Strandspace landing page", async () => {
   await withServer(async (address) => {
     const response = await fetch(`http://127.0.0.1:${address.port}/`);
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.match(html, /Strandspace Backend/);
-    assert.match(html, /Run Strandspace like an editable memory system/i);
-    assert.match(html, /SQLite Editor/i);
+    assert.match(html, /<title>Strandspace<\/title>/);
+    assert.match(html, /Build a construct, pick a topic, then work the memory like a live field/i);
+    assert.match(html, /Open A Local Strandspace Topic/i);
   });
 });
 
@@ -226,6 +226,17 @@ await check("GET /soundspace serves the standalone Soundspace app", async () => 
     assert.match(html, /Strandspace Music Engineer/);
     assert.match(html, /Search the mixer memory like a working engineer, not a note dump/i);
     assert.match(html, /Search Memory/);
+  });
+});
+
+await check("GET /subject serves the generic subject recall app", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(`http://127.0.0.1:${address.port}/subject`);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /Strandspace Topic View/);
+    assert.match(html, /Ask The Stored Topic/i);
+    assert.match(html, /Stored Constructs/i);
   });
 });
 

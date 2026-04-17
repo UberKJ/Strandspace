@@ -60,6 +60,7 @@ const backendDbEditorMetaEl = document.getElementById("backend-db-editor-meta");
 const isBuilderPage = document.body?.classList.contains("builder-page");
 const subjectStorageKey = "strandspace:last-subject-id";
 const themeStorageKey = "strandspace:theme";
+const pendingDraftStorageKey = "strandspace:pending-draft";
 const fallbackSuggestedPrompts = [
   "How do I set gain staging for a full band before soundcheck?",
   "Recall my conference room speech coverage preset.",
@@ -136,6 +137,23 @@ function storeSubjectId(subjectId = "") {
     window.localStorage.setItem(subjectStorageKey, value);
   } catch {
     // Ignore localStorage failures.
+  }
+}
+
+function readPendingDraft() {
+  try {
+    const raw = window.sessionStorage.getItem(pendingDraftStorageKey);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingDraft() {
+  try {
+    window.sessionStorage.removeItem(pendingDraftStorageKey);
+  } catch {
+    // Ignore sessionStorage failures.
   }
 }
 
@@ -401,6 +419,33 @@ function syncEditorToRecalledConstruct(payload = null, { focus = false } = {}) {
   learnMetaEl.textContent = `Recalled "${recalledConstruct.constructLabel}" and loaded it into the editor.`;
   builderMetaEl.textContent = "Local recall loaded the matched construct into the backend editor so you can inspect it, refine it, or extend it.";
   return true;
+}
+
+async function loadPendingDraftIfPresent() {
+  const draft = readPendingDraft();
+  if (!draft || typeof draft !== "object") {
+    return;
+  }
+
+  const targetSubjectId = String(draft.subjectId ?? "").trim();
+  if (targetSubjectId && subjects.some((subject) => subject.subjectId === targetSubjectId) && targetSubjectId !== currentSubjectId) {
+    currentSubjectId = targetSubjectId;
+    storeSubjectId(currentSubjectId);
+    renderSubjectPicker();
+    await loadLibrary();
+  }
+
+  resetTransientState();
+  applyConstructDraftToLearnForm(draft);
+  setEditorState("draft", draft);
+  renderBuilderChecks();
+  renderAnswer(draftPayload(draft, {
+    source: String(draft.provenance?.source ?? "").includes("openai") ? "openai" : "heuristic",
+    input: draft.provenance?.learnedFromQuestion ?? ""
+  }));
+  builderMetaEl.textContent = "Pending draft loaded from the landing page. Review it, refine it, then save it into Strandspace.";
+  learnMetaEl.textContent = `Loaded "${draft.constructLabel ?? "pending draft"}" into the backend editor.`;
+  clearPendingDraft();
 }
 
 function renderSuggestedPrompts() {
@@ -2539,15 +2584,17 @@ renderBuilderChecks();
 renderSuggestedPrompts();
 renderSubjectIdeas();
 
-Promise.all([loadAssistStatus(), loadSubjects(), loadBackendOverview()]).catch((error) => {
-  subjectMetaEl.textContent = error instanceof Error ? error.message : "Unable to load the Strandspace backend.";
-  recallMetaEl.textContent = "Startup failed.";
-  renderAnswer({
-    answer: error instanceof Error ? error.message : "Unable to load the workspace.",
-    recall: {
-      trace: null,
-      candidates: []
-    }
+Promise.all([loadAssistStatus(), loadSubjects(), loadBackendOverview()])
+  .then(() => loadPendingDraftIfPresent())
+  .catch((error) => {
+    subjectMetaEl.textContent = error instanceof Error ? error.message : "Unable to load the Strandspace backend.";
+    recallMetaEl.textContent = "Startup failed.";
+    renderAnswer({
+      answer: error instanceof Error ? error.message : "Unable to load the workspace.",
+      recall: {
+        trace: null,
+        candidates: []
+      }
+    });
   });
-});
 void loadSystemHealth();

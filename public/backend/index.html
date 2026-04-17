@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Strandspace Backend</title>
+    <link rel="stylesheet" href="/style.css?v=2026-04-17-landing-01" />
+    <script type="module" src="/app.js?v=2026-04-17-landing-01" defer></script>
+  </head>
+  <body class="builder-page backend-page">
+    <header class="page-switch backend-topbar">
+      <a class="brand-mark" href="/">Strandspace</a>
+      <div class="page-switch-controls">
+        <nav class="page-nav" aria-label="Workspace switcher">
+          <a class="switch-link" href="/">Home</a>
+          <a class="switch-link is-active" href="/backend" aria-current="page">Backend</a>
+          <a class="switch-link" href="/soundspace">Soundspace</a>
+        </nav>
+        <span id="system-status-badge" class="status-badge">Loading status...</span>
+        <button id="theme-toggle" type="button" class="secondary-button theme-toggle">Dark Mode</button>
+      </div>
+    </header>
+
+    <main class="backend-shell">
+      <aside class="backend-sidebar">
+        <section class="panel admin-panel admin-intro">
+          <p class="eyebrow">Backend</p>
+          <h1>Run Strandspace like an editable memory system.</h1>
+          <p class="lede">
+            The construct builder, recall flow, benchmark view, and SQLite editor now live in one backend workspace so
+            you can manage memory the way a CMS admin would manage content.
+          </p>
+          <div class="chip-row">
+            <a class="source-link" href="#builder-workspace">Builder</a>
+            <a class="source-link" href="#recall-workspace">Recall Lab</a>
+            <a class="source-link" href="#library-workspace">Constructs</a>
+            <a class="source-link" href="#db-workspace">SQLite Editor</a>
+          </div>
+        </section>
+
+        <section class="panel admin-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow small">Active Subject</p>
+              <h2>Memory Field</h2>
+            </div>
+          </div>
+          <label class="subject-picker">
+            <span>Builder subject</span>
+            <select id="subject-select" aria-label="Active subject"></select>
+          </label>
+          <p id="subject-meta" class="meta">Loading construct fields...</p>
+        </section>
+
+        <section class="panel admin-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow small">Overview</p>
+              <h2>Backend Summary</h2>
+            </div>
+          </div>
+          <div class="admin-summary-grid">
+            <article class="admin-summary-card">
+              <span class="detail-label">Mode</span>
+              <strong id="backend-mode-label">Loading...</strong>
+              <p id="backend-mode-detail" class="meta">Checking runtime health.</p>
+            </article>
+            <article class="admin-summary-card">
+              <span class="detail-label">Subjects</span>
+              <strong id="backend-subject-count">0</strong>
+              <p class="meta">Shared construct spaces</p>
+            </article>
+            <article class="admin-summary-card">
+              <span class="detail-label">Subject Rows</span>
+              <strong id="backend-construct-count">0</strong>
+              <p class="meta">Rows in subjectspace</p>
+            </article>
+            <article class="admin-summary-card">
+              <span class="detail-label">Sound Rows</span>
+              <strong id="backend-sound-count">0</strong>
+              <p class="meta">Rows in soundspace</p>
+            </article>
+          </div>
+          <div class="admin-db-path">
+            <span class="detail-label">SQLite path</span>
+            <code id="backend-db-path">Loading database path...</code>
+          </div>
+        </section>
+      </aside>
+
+      <section class="backend-main">
+        <section class="panel backend-banner">
+          <div>
+            <p class="eyebrow">Admin Flow</p>
+            <h2>Build, review, benchmark, and edit data without leaving the backend.</h2>
+          </div>
+          <p class="meta">
+            Use the builder to draft structured constructs, review the activation field in the answer panel, and drop
+            into the SQLite editor when you need row-level control.
+          </p>
+        </section>
+
+        <section class="panel subject-ideas-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow small">AI Subject Mapper</p>
+              <h2>Describe A Subject And Get Suggested Constructs</h2>
+            </div>
+            <p id="subject-ideas-meta" class="meta">Describe a field of knowledge and let AI suggest the first reusable constructs to teach into Strandspace.</p>
+          </div>
+          <form id="subject-ideas-form" class="subject-ideas-form">
+            <label>
+              <span>Subject label</span>
+              <input id="subject-ideas-label" name="subject-ideas-label" type="text" placeholder="Example: Portrait Lighting or Music Engineering" />
+            </label>
+            <label>
+              <span>Subject description</span>
+              <textarea
+                id="subject-ideas-input"
+                name="subject-ideas-input"
+                rows="5"
+                placeholder="Describe the subject, the kind of work it covers, the situations it needs to recall, and the first kinds of constructs you want Strandspace to learn."
+              ></textarea>
+            </label>
+            <div class="action-row">
+              <button id="subject-ideas-submit" type="submit" class="secondary-button">Suggest constructs with AI</button>
+              <p class="meta">This stays in review mode. Pick a suggestion to load it into the builder before anything is stored.</p>
+            </div>
+          </form>
+          <div id="subject-ideas-results" class="subject-ideas-results empty">
+            <p>Suggested constructs will appear here after you describe a subject.</p>
+          </div>
+        </section>
+
+        <section id="builder-workspace" class="backend-grid">
+          <section class="panel learn-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow small">Builder</p>
+                <h2>Construct Builder</h2>
+              </div>
+              <p id="builder-meta" class="meta">Paste rough notes and draft a Strandspace construct before saving it.</p>
+            </div>
+
+            <section class="builder-card">
+              <form id="builder-form" class="builder-form">
+                <label for="builder-input">
+                  <span>Builder input</span>
+                  <textarea
+                    id="builder-input"
+                    name="builder-input"
+                    rows="8"
+                    placeholder="Subject: Music Engineering&#10;Construct Label: Karaoke vocal reset chain&#10;Target: Yamaha MG12XU with WM333 wireless mics&#10;Objective: clean vocals with stable gain before feedback&#10;Context:&#10;room: karaoke bar&#10;wireless: Innopaw WM333&#10;Steps:&#10;- Set receiver output before mixer trim&#10;- Confirm monitor path before EQ&#10;Notes: Save this as a reusable backend-approved starting point.&#10;Tags: karaoke, gain staging, wireless"
+                  ></textarea>
+                </label>
+                <div class="action-row builder-actions">
+                  <button type="submit" class="secondary-button">Build construct draft</button>
+                  <p class="meta">Checks related constructs first, then uses OpenAI when available or local Strandspace parsing when it is not.</p>
+                </div>
+              </form>
+
+              <div id="builder-checks" class="builder-checks empty">
+                <p>Builder checks will appear here after you draft a construct.</p>
+              </div>
+            </section>
+
+            <div class="section-head">
+              <div>
+                <p class="eyebrow small">Editor</p>
+                <h3>Review and store the construct</h3>
+              </div>
+              <p id="learn-meta" class="meta">New subjects appear the first time you save one.</p>
+            </div>
+
+            <form id="learn-form" class="learn-form">
+              <div class="editor-toolbar">
+                <p id="learn-mode-meta" class="meta">Create a new construct or load one from the library to edit it.</p>
+                <button id="learn-cancel-edit" type="button" class="secondary-button subtle-button" hidden>Stop editing</button>
+              </div>
+              <label>
+                <span>Subject</span>
+                <input id="learn-subject" name="subject" type="text" placeholder="Music Engineering" />
+              </label>
+              <label>
+                <span>Construct label</span>
+                <input id="learn-construct" name="construct" type="text" placeholder="Small-room lead vocal recall" />
+              </label>
+              <label>
+                <span>Target or focus</span>
+                <input id="learn-target" name="target" type="text" placeholder="Lead vocal on Yamaha MG10XU" />
+              </label>
+              <label>
+                <span>Objective</span>
+                <input id="learn-objective" name="objective" type="text" placeholder="Clear lead vocal with safe feedback margin" />
+              </label>
+              <label>
+                <span>Context</span>
+                <textarea
+                  id="learn-context"
+                  name="context"
+                  rows="5"
+                  placeholder="console: Yamaha MG10XU&#10;room: small club&#10;source: wired vocal mic"
+                ></textarea>
+              </label>
+              <label>
+                <span>Steps</span>
+                <textarea
+                  id="learn-steps"
+                  name="steps"
+                  rows="6"
+                  placeholder="Set preamp for clean peaks&#10;Trim rumble before boosting presence&#10;Keep reverb subtle"
+                ></textarea>
+              </label>
+              <label>
+                <span>Notes</span>
+                <textarea
+                  id="learn-notes"
+                  name="notes"
+                  rows="3"
+                  placeholder="What makes this construct reliable once the room fills up?"
+                ></textarea>
+              </label>
+              <label>
+                <span>Tags</span>
+                <input id="learn-tags" name="tags" type="text" placeholder="live vocal, gain staging, small venue" />
+              </label>
+              <div class="action-row learn-actions">
+                <button id="learn-submit-button" type="submit" class="primary-button">Store construct</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="backend-stack">
+            <section class="panel answer-panel-shell">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow small">Preview</p>
+                  <h2>Activation Field</h2>
+                </div>
+                <p class="meta">Preview the selected construct or watch a live recall stabilize.</p>
+              </div>
+              <article id="answer-panel" class="answer-surface empty">
+                <p class="answer-kicker">Construct preview</p>
+                <h2>Loading backend...</h2>
+                <p>Strandspace is preparing the first construct draft.</p>
+              </article>
+            </section>
+
+            <section class="panel trace-panel">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow small">Trace</p>
+                  <h2>Why the construct matched</h2>
+                </div>
+                <p id="trace-summary" class="meta">Query-triggered semantic expression, shaped by the stored subject field.</p>
+              </div>
+              <div id="trace-grid" class="trace-grid empty">
+                <p>Builder drafts and saved constructs show the strands that stabilized them.</p>
+              </div>
+            </section>
+          </section>
+        </section>
+
+        <section id="recall-workspace" class="backend-grid">
+          <section class="panel recall-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow small">Recall Lab</p>
+                <h2>Test the construct after it looks right</h2>
+              </div>
+              <p class="meta">Use the paged quick-recall lists below to load prompts without flooding the workspace.</p>
+            </div>
+
+            <form id="recall-form" class="recall-form">
+              <label for="recall-question">Recall prompt</label>
+              <textarea
+                id="recall-question"
+                name="recall-question"
+                rows="4"
+                placeholder="What is my small-room lead vocal setup for a Yamaha MG10XU?"
+              ></textarea>
+              <div class="action-row">
+                <button type="submit">Recall construct</button>
+                <p id="recall-meta" class="meta">Trigger strands are idle.</p>
+              </div>
+            </form>
+
+            <div id="suggested-row" class="example-row" aria-label="Suggested recall prompts"></div>
+            <div id="example-row" class="example-row" aria-label="Example recall prompts"></div>
+          </section>
+
+          <section class="panel speed-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow small">Benchmark</p>
+                <h2>Strandbase vs LLM speed</h2>
+              </div>
+              <p id="speed-meta" class="meta">Benchmark the last live recall prompt against the local field and the LLM path.</p>
+            </div>
+            <div class="speed-actions">
+              <button id="speed-compare-button" type="button" class="secondary-button">Compare local vs LLM</button>
+              <p class="meta">Uses the most recent recall prompt so the timing stays grounded in the same subject and cue set.</p>
+            </div>
+            <div id="speed-report" class="speed-report empty">
+              <p>Run a recall prompt first, then compare local Strandbase recall against the LLM assist round-trip.</p>
+            </div>
+          </section>
+        </section>
+
+        <section id="library-workspace" class="backend-grid">
+          <section class="panel library-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow small">Library</p>
+                <h2>Stored constructs</h2>
+              </div>
+              <div class="section-actions">
+                <p id="library-meta" class="meta">Loading constructs...</p>
+                <button id="reset-examples-button" type="button" class="secondary-button subtle-button">Reset with Examples</button>
+              </div>
+            </div>
+            <div id="library-list" class="library-list empty">
+              <p>No constructs loaded yet.</p>
+            </div>
+          </section>
+        </section>
+
+        <section id="db-workspace" class="backend-grid">
+          <section class="panel db-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow small">SQLite Editor</p>
+                <h2>Backend Data Browser</h2>
+              </div>
+              <p id="backend-db-size" class="meta">Database size: loading...</p>
+            </div>
+
+            <div class="db-toolbar">
+              <label class="db-search">
+                <span>Search table</span>
+                <input id="backend-db-search" type="search" placeholder="Search labels, notes, models, tags..." />
+              </label>
+              <div class="action-row">
+                <p id="backend-db-meta" class="meta db-state-meta">Loading Strandspace tables...</p>
+                <button id="backend-db-refresh" type="button" class="secondary-button">Refresh table</button>
+              </div>
+            </div>
+
+            <div class="db-workspace-grid">
+              <section class="db-card">
+                <div class="section-head compact">
+                  <div>
+                    <p class="eyebrow small">Tables</p>
+                    <h3>Available rows</h3>
+                  </div>
+                </div>
+                <div id="backend-db-tables" class="db-table-list empty">
+                  <p>Loading tables...</p>
+                </div>
+              </section>
+
+              <section class="db-card">
+                <div class="section-head compact">
+                  <div>
+                    <p class="eyebrow small">Rows</p>
+                    <h3>Selected table</h3>
+                  </div>
+                  <div class="db-pagination">
+                    <button id="backend-db-prev" type="button" class="secondary-button subtle-button">Previous</button>
+                    <button id="backend-db-next" type="button" class="secondary-button subtle-button">Next</button>
+                  </div>
+                </div>
+                <div id="backend-db-rows" class="db-rows empty">
+                  <p>Select a table to inspect rows.</p>
+                </div>
+              </section>
+
+              <section class="db-card">
+                <div class="section-head compact">
+                  <div>
+                    <p class="eyebrow small">Schema</p>
+                    <h3>Column map</h3>
+                  </div>
+                </div>
+                <div id="backend-db-schema" class="db-schema empty">
+                  <p>Column details will appear here when a table is loaded.</p>
+                </div>
+              </section>
+            </div>
+
+            <section class="db-editor-shell">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow small">Row Editor</p>
+                  <h3>Safe row update</h3>
+                </div>
+                <p id="backend-db-editor-meta" class="meta">Select a row to edit it.</p>
+              </div>
+              <form id="backend-db-editor-form" class="db-editor-form">
+                <div id="backend-db-editor-fields" class="db-editor-fields empty">
+                  <p>Select a row from the table browser to edit Strandspace data.</p>
+                </div>
+                <div class="action-row">
+                  <button type="submit" class="primary-button">Save row changes</button>
+                </div>
+              </form>
+            </section>
+          </section>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>

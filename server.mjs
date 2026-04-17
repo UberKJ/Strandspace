@@ -1491,12 +1491,20 @@ async function resolveDatabasePath() {
 }
 
 function resolvePublicPath(pathname = "") {
-  if (pathname === "/" || pathname === "/builder" || pathname === "/builder/" || pathname === "/backend" || pathname === "/backend/") {
+  if (pathname === "/" || pathname === "/landing" || pathname === "/landing/") {
     return "/index.html";
   }
 
+  if (pathname === "/builder" || pathname === "/builder/" || pathname === "/backend" || pathname === "/backend/") {
+    return "/backend/index.html";
+  }
+
   if (pathname === "/studio" || pathname === "/studio/") {
-    return "/index.html";
+    return "/backend/index.html";
+  }
+
+  if (pathname === "/subject" || pathname === "/subject/") {
+    return "/subject/index.html";
   }
 
   if (pathname === "/soundspace" || pathname === "/soundspace/") {

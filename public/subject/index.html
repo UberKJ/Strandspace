@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Strandspace Topic View</title>
+    <link rel="stylesheet" href="/soundspace/style.css?v=2026-04-17-subject-01" />
+    <script type="module" src="/subject/app.js?v=2026-04-17-subject-01" defer></script>
+  </head>
+  <body>
+    <header class="page-switch">
+      <a class="brand-mark" href="/">Strandspace</a>
+      <div class="page-switch-controls">
+        <nav class="page-nav" aria-label="Workspace switcher">
+          <a class="switch-link" href="/">Home</a>
+          <a class="switch-link is-active" href="/subject" aria-current="page">Topic View</a>
+          <a class="switch-link" href="/soundspace">Soundspace</a>
+          <a class="switch-link" href="/backend">Backend</a>
+        </nav>
+        <span id="subject-status-badge" class="status-badge">Loading status...</span>
+        <button id="theme-toggle" type="button" class="ghost-action theme-toggle">Dark Mode</button>
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <section class="masthead">
+        <div>
+          <p class="eyebrow">Strandspace Topic View</p>
+          <h1 id="subject-title">Loading subject...</h1>
+        </div>
+        <p id="subject-masthead-copy" class="masthead-copy">
+          Strandspace is loading the local constructs for this subject and preparing a Soundspace-style recall page.
+        </p>
+      </section>
+
+      <section class="workspace">
+        <section class="query-stage">
+          <div class="panel-head">
+            <div>
+              <p class="section-tag">Subject Search</p>
+              <h2>Ask The Stored Topic</h2>
+            </div>
+            <span id="subject-meta" class="meta">Loading subject memory...</span>
+          </div>
+          <p id="subject-status-line" class="meta status-line">Checking local subject memory...</p>
+
+          <label class="subject-inline-picker" for="subject-picker">
+            <span class="mini-label">Current topic</span>
+            <select id="subject-picker" name="subject-picker" aria-label="Choose subject"></select>
+          </label>
+
+          <div id="subject-prompt-row" class="intent-row" aria-label="Suggested searches"></div>
+
+          <form id="subject-form" class="question-form">
+            <label class="sr-only" for="subject-question">Ask a subject question</label>
+            <textarea
+              id="subject-question"
+              name="subject-question"
+              rows="4"
+              placeholder="Ask for the exact construct, target, objective, context, steps, or notes from this subject."
+            ></textarea>
+            <label id="subject-assist-toggle-wrap" class="assist-toggle" for="subject-assist-toggle">
+              <input id="subject-assist-toggle" name="subject-assist-toggle" type="checkbox" />
+              <span>
+                <strong id="subject-assist-title">AI assistant for suggestions</strong>
+                <small id="subject-assist-help">Off by default. Turn this on when you want an AI construct proposal for this subject.</small>
+                <em id="subject-assist-state" class="assist-toggle-state">Local-first search</em>
+              </span>
+            </label>
+            <div class="question-actions">
+              <button type="submit" class="primary-action">Search Subject</button>
+              <button type="button" id="subject-clear" class="ghost-action">Clear</button>
+            </div>
+          </form>
+
+          <div class="query-notes">
+            <div>
+              <p class="mini-label">Good Query Shape</p>
+              <p>Ask for a reusable slice like target, objective, steps, context, notes, or a specific construct label.</p>
+            </div>
+            <div>
+              <p class="mini-label">AI Suggestion Path</p>
+              <p>Turn on AI when you want a proposed construct update or a new construct for this subject before saving.</p>
+            </div>
+          </div>
+        </section>
+
+        <aside class="search-guide">
+          <p class="section-tag">Subject Memory</p>
+          <h2 id="subject-side-title">Preparing the local field...</h2>
+          <ul id="subject-guide-list" class="guide-list">
+            <li>Loading subject guidance...</li>
+          </ul>
+          <div id="subject-links" class="chip-row"></div>
+        </aside>
+      </section>
+
+      <section class="results-grid">
+        <section class="result-surface">
+          <div class="panel-head">
+            <div>
+              <p class="section-tag">Result</p>
+              <h2>Construct Return</h2>
+            </div>
+          </div>
+          <div id="subject-answer" class="answer-card empty">
+            <p>Pick a subject and run a question to see the matched construct and why it won.</p>
+          </div>
+        </section>
+
+        <section class="library-surface">
+          <div class="panel-head">
+            <div>
+              <p class="section-tag">Local Library</p>
+              <h2>Stored Constructs</h2>
+            </div>
+            <div class="section-actions">
+              <span id="subject-library-meta" class="meta">Loading constructs...</span>
+              <button type="button" id="subject-open-backend" class="ghost-action">Open backend</button>
+            </div>
+          </div>
+          <label class="library-search">
+            <span class="sr-only">Search stored constructs</span>
+            <input
+              id="subject-library-search"
+              name="subject-library-search"
+              type="search"
+              placeholder="Search construct label, target, objective, note, tag, or strand"
+            />
+          </label>
+          <div id="subject-library" class="library empty">
+            <p>Loading subject constructs...</p>
+          </div>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>
