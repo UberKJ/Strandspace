@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Music Engineer</title>
-    <link rel="stylesheet" href="/soundspace/style.css?v=2026-04-16-04" />
-    <script type="module" src="/soundspace/app.js?v=2026-04-16-04" defer></script>
+    <link rel="stylesheet" href="/soundspace/style.css?v=2026-04-16-05" />
+    <script type="module" src="/soundspace/app.js?v=2026-04-16-05" defer></script>
   </head>
   <body>
     <header class="page-switch">
@@ -50,6 +50,45 @@
             <button type="button" class="intent-chip" data-query="what tonematch presets does the t8s have">Preset List</button>
             <button type="button" class="intent-chip" data-query="t8s eq for handheld vocal">Only EQ</button>
           </div>
+
+          <section class="workflow-panel" aria-label="Structured karaoke workflows">
+            <div class="focus-head">
+              <strong>Structured Karaoke Workflows</strong>
+              <span class="focus-subtitle">One click loads and runs the full query</span>
+            </div>
+            <div class="workflow-grid">
+              <article class="workflow-card">
+                <strong>Full Gain-Staging Reset</strong>
+                <p>Reset the whole karaoke chain from the wireless mics through the mains and monitors.</p>
+                <button
+                  type="button"
+                  class="ghost-action"
+                  data-query="I want to do a complete karaoke gain-staging reset from the mic capsules to the speakers. I want every setting covered step-by-step with exact clock positions or values. My gear includes 2 Innopaw WM333 receivers and 4 wireless mics, 2 Behringer Composer Pro-XL MDX-2600 units, Bose T8S mixer, 2 Bose L1 Pro 8 mains, and 2 EV ZLX-8P-G2 monitors. Goal: maximum gain before feedback with clean vocals and no edge-of-feedback feeling."
+                  data-run-query="true"
+                >Use this exact query</button>
+              </article>
+              <article class="workflow-card">
+                <strong>Ring Out Monitors</strong>
+                <p>Ask for a monitor-only feedback-control pass after the main gain staging is already stable.</p>
+                <button
+                  type="button"
+                  class="ghost-action"
+                  data-query="Walk me through ringing out 2 EV ZLX-8P-G2 monitors from a Bose T8S for karaoke after the main gain staging is done. I want the exact mute order, aux send starting point, EQ moves, and speaker level starting points for maximum gain before feedback."
+                  data-run-query="true"
+                >Use this exact query</button>
+              </article>
+              <article class="workflow-card">
+                <strong>Wireless Mic Cleanup</strong>
+                <p>Focus on the receivers, capsule gain, mute order, and mixer input handoff before compression.</p>
+                <button
+                  type="button"
+                  class="ghost-action"
+                  data-query="Clean up the wireless mic gain staging for 2 Innopaw WM333 receivers feeding a Bose T8S and 2 Behringer Composer Pro-XL MDX-2600 units for karaoke. Give me exact receiver output, mixer trim, compressor starting values, and step-by-step channel-check order."
+                  data-run-query="true"
+                >Use this exact query</button>
+              </article>
+            </div>
+          </section>
 
           <form id="soundspace-form" class="question-form">
             <label class="sr-only" for="soundspace-question">Ask a sound setup question</label>

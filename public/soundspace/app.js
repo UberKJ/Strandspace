@@ -178,6 +178,67 @@ function buildFocusedParagraph(focusedSetup = {}) {
   return sections.join(" ");
 }
 
+function isAssistPayload(payload = null) {
+  return Boolean(payload && String(payload.source ?? "").includes("openai"));
+}
+
+function buildFollowUpQueries(payload = null) {
+  if (!payload) {
+    return [];
+  }
+
+  const review = payload.review ?? {};
+  const parsed = review.parsed ?? payload.recall?.parsed ?? {};
+  const construct = payload.construct ?? {};
+  const recognizedGear = Array.isArray(parsed.recognizedGear) ? parsed.recognizedGear : [];
+  const mixerLabel = [construct.deviceBrand, construct.deviceModel].filter(Boolean).join(" ") || parsed.deviceModel || "this mixer";
+  const showType = parsed.eventType ? titleCase(parsed.eventType) : "live show";
+  const queries = [];
+  const seen = new Set();
+
+  const addQuery = (label, query) => {
+    const normalized = String(query ?? "").trim();
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+
+    seen.add(normalized);
+    queries.push({ label, query: normalized });
+  };
+
+  addQuery(
+    "Channel-by-channel reset",
+    `Break the ${mixerLabel} ${showType} reset into a strict channel-by-channel checklist with mute order, gain order, and final verification steps.`
+  );
+
+  for (const item of recognizedGear) {
+    const label = [item.brand, item.model].filter(Boolean).join(" ") || item.model || item.type || "device";
+    if (item.type === "wireless_receiver") {
+      addQuery(
+        `${label} receiver levels`,
+        `For the ${label}, what exact output level, mute order, and handoff into the ${mixerLabel} should I use before compression for this karaoke rig?`
+      );
+    } else if (item.type === "dynamics_processor") {
+      addQuery(
+        `${label} compressor settings`,
+        `For the ${label}, give me exact threshold, ratio, attack, release, gate, and output starting points for clean karaoke vocals in this reset.`
+      );
+    } else if (item.type === "monitor_speaker") {
+      addQuery(
+        `${label} monitor ring-out`,
+        `How should I ring out the ${label} monitors after the main karaoke reset so I get maximum gain before feedback without harsh vocal tone?`
+      );
+    } else if (item.type === "speaker_system") {
+      addQuery(
+        `${label} main output level`,
+        `After the mixer reset, what exact master level starting point and placement checks should I use on the ${label} mains for clean karaoke vocals?`
+      );
+    }
+  }
+
+  return queries.slice(0, 4);
+}
+
 function renderMemoryDrawer(linkedConstructs = [], construct = null, recall = {}) {
   if (!construct && !linkedConstructs.length) {
     return "";
@@ -331,6 +392,50 @@ function renderReviewPanel(review = null) {
   `;
 }
 
+function renderReviewDiffPanel(review = null) {
+  const diff = review?.diff ?? null;
+  const entries = Array.isArray(diff?.entries) ? diff.entries : [];
+  if (!diff) {
+    return "";
+  }
+
+  return `
+    <section class="diff-panel ${diff.hasBase ? "" : "new-memory"}">
+      <div class="review-head">
+        <div>
+          <span class="detail-label">${escapeHtml(diff.hasBase ? "Review diff" : "New memory preview")}</span>
+          <h3>${escapeHtml(diff.hasBase ? "Stored Memory Vs Proposal" : "What This Proposal Would Add")}</h3>
+        </div>
+        <span class="meta">${escapeHtml(diff.hasBase ? `${entries.length} key differences` : "No stored base")}</span>
+      </div>
+      <p class="answer-detail">${escapeHtml(diff.summary ?? "")}</p>
+      <div class="chip-row">
+        <span class="chip">${escapeHtml(`Stored: ${diff.baseLabel ?? "Closest stored memory"}`)}</span>
+        <span class="chip">${escapeHtml(`Proposal: ${diff.proposalLabel ?? "Proposal"}`)}</span>
+      </div>
+      ${entries.length ? `
+        <div class="diff-grid">
+          ${entries.map((entry) => `
+            <article class="diff-card">
+              <strong>${escapeHtml(entry.label ?? "Changed field")}</strong>
+              <div class="diff-value">
+                <span class="detail-label">Stored</span>
+                <p>${escapeHtml(entry.baseValue ?? "Not stored yet")}</p>
+              </div>
+              <div class="diff-value proposal">
+                <span class="detail-label">Proposal</span>
+                <p>${escapeHtml(entry.proposalValue ?? "Not set in proposal")}</p>
+              </div>
+            </article>
+          `).join("")}
+        </div>
+      ` : `
+        <p class="answer-callout"><strong>No major field changes:</strong> The proposal lines up with the closest stored memory on the compared fields.</p>
+      `}
+    </section>
+  `;
+}
+
 function renderSearchGuidance(guidance = null) {
   if (!guidance) {
     return "";
@@ -390,6 +495,47 @@ function renderSearchGuidance(guidance = null) {
   `;
 }
 
+function renderAssistFollowUps(payload = null) {
+  const review = payload?.review ?? null;
+  const construct = payload?.construct ?? null;
+  const followUps = buildFollowUpQueries(payload);
+  const showSavePrompt = Boolean(payload?.needsReview && review?.canLearn && construct?.deviceModel);
+
+  if (!isAssistPayload(payload) && !showSavePrompt) {
+    return "";
+  }
+
+  return `
+    <section class="assist-followup-panel">
+      <div class="review-head">
+        <div>
+          <span class="detail-label">${escapeHtml(isAssistPayload(payload) ? "AI assist follow-up" : "Next step")}</span>
+          <h3>${escapeHtml(showSavePrompt ? "Keep, Save, Or Refine This Result" : "Good Next Questions To Ask")}</h3>
+        </div>
+        <span class="meta">${escapeHtml(showSavePrompt ? "Review before storing" : "Suggested follow-up")}</span>
+      </div>
+      ${showSavePrompt ? `
+        <p class="answer-detail">${escapeHtml(`Do you want this saved as a reusable ${construct.deviceModel} scene for future searches?`)}</p>
+        <div class="review-actions">
+          <button type="button" class="primary-action review-action" data-review-action="store">${escapeHtml(`Save as reusable ${construct.deviceModel} scene`)}</button>
+          <button type="button" class="ghost-action review-action" data-review-action="refine">Refine before saving</button>
+        </div>
+      ` : ""}
+      ${followUps.length ? `
+        <div class="focus-panel">
+          <div class="focus-head">
+            <strong>Per-device follow-up prompts</strong>
+            <span class="focus-subtitle">Click one to replace the search with a tighter follow-up</span>
+          </div>
+          <div class="chip-row">
+            ${followUps.map((item) => `<button type="button" class="ghost-action search-suggestion" data-suggested-query="${escapeAttribute(item.query)}">${escapeHtml(item.label)}</button>`).join("")}
+          </div>
+        </div>
+      ` : ""}
+    </section>
+  `;
+}
+
 function renderAnswer(payload = null) {
   if (!payload) {
     latestProposal = null;
@@ -409,6 +555,7 @@ function renderAnswer(payload = null) {
     : {};
   const focusedParagraph = buildFocusedParagraph(focusedSetup);
   const askedForTags = buildAskedForTags(recall);
+  const assistUsed = isAssistPayload(payload);
   const sourceLabel = payload.source === "strandspace"
     ? "Recalled from Strandspace"
     : payload.source === "search-guidance"
@@ -424,7 +571,11 @@ function renderAnswer(payload = null) {
   answerEl.className = "answer-card";
   answerEl.innerHTML = `
     <div class="answer-topline">
-      <span class="answer-source">${escapeHtml(sourceLabel)}</span>
+      <div class="answer-badges">
+        <span class="answer-source">${escapeHtml(sourceLabel)}</span>
+        ${assistUsed ? '<span class="answer-badge assist-used">AI Assist used</span>' : ""}
+        ${payload.needsReview ? '<span class="answer-badge review-state">Review mode</span>' : ""}
+      </div>
       <span class="meta">${escapeHtml(construct?.name ?? "Focused result")}</span>
     </div>
     <p class="answer-summary">${escapeHtml(payload.answer ?? "No answer returned.")}</p>
@@ -437,6 +588,8 @@ function renderAnswer(payload = null) {
     ${focusedParagraph ? `<p class="answer-detail"><strong>Asked return:</strong> ${escapeHtml(focusedParagraph)}</p>` : ""}
     ${renderSearchGuidance(searchGuidance)}
     ${renderReviewPanel(review)}
+    ${renderReviewDiffPanel(review)}
+    ${renderAssistFollowUps(payload)}
     <dl class="answer-meta">
       <div><dt>Device</dt><dd>${escapeHtml([construct?.deviceBrand, construct?.deviceModel].filter(Boolean).join(" ") || "n/a")}</dd></div>
       <div><dt>Source</dt><dd>${escapeHtml([construct?.sourceBrand, construct?.sourceModel, construct?.sourceType].filter(Boolean).join(" ") || "n/a")}</dd></div>
@@ -617,9 +770,12 @@ async function askQuestion(event) {
   }
 }
 
-function seedQuery(value = "") {
+function seedQuery(value = "", { runSearch = false } = {}) {
   questionInput.value = value;
   questionInput.focus();
+  if (runSearch) {
+    void askQuestion();
+  }
 }
 
 form?.addEventListener("submit", askQuestion);
@@ -634,7 +790,9 @@ clearButton?.addEventListener("click", () => {
 
 quickQueryButtons.forEach((button) => {
   button.addEventListener("click", () => {
-    seedQuery(button.getAttribute("data-query") ?? "");
+    seedQuery(button.getAttribute("data-query") ?? "", {
+      runSearch: button.getAttribute("data-run-query") === "true"
+    });
   });
 });
 

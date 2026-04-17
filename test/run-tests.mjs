@@ -914,6 +914,10 @@ await check("POST /api/soundspace/answer can stop at review before storing a new
     assert.equal(payload.review?.canLearn, true);
     assert.ok(Array.isArray(payload.review?.assumptions));
     assert.ok(payload.review.assumptions.some((item) => /small-room starting point|Show type was not specified|Coverage size was not specified/i.test(item)));
+    assert.equal(payload.review?.baseConstruct?.deviceModel, "T8S");
+    assert.equal(payload.review?.diff?.hasBase, true);
+    assert.ok(Array.isArray(payload.review?.diff?.entries));
+    assert.ok(payload.review.diff.entries.some((item) => /Source|Setup/i.test(String(item.label ?? ""))));
     assert.ok(Array.isArray(payload.recall?.focusKeys));
     assert.ok(payload.recall.focusKeys.length >= 1);
 
@@ -1078,6 +1082,10 @@ await check("soundspace uses OpenAI assist for a whole-rig karaoke reset query i
       assert.equal(payload.construct?.deviceModel, "T8S");
       assert.match(String(payload.construct?.setup?.gain), /noon|10 o'clock/i);
       assert.match(String(payload.construct?.setup?.notes), /receivers|compressors|monitors/i);
+      assert.equal(payload.review?.baseConstruct?.deviceModel, "T8S");
+      assert.equal(payload.review?.diff?.hasBase, true);
+      assert.ok(Array.isArray(payload.review?.diff?.entries));
+      assert.ok(payload.review.diff.entries.some((item) => /Setup - Gain|Setup - Notes|Speaker config/i.test(String(item.label ?? ""))));
       assert.equal(payload.recall?.readiness?.requiresReview, true);
     });
   } finally {

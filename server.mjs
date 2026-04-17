@@ -1361,7 +1361,106 @@ function buildMusicEngineeringContext(db, question = "", recall = {}) {
   };
 }
 
-function buildSoundProposalReview(question, construct, recall = {}, source = "generated-proposal") {
+function formatSoundReviewValue(value) {
+  if (Array.isArray(value)) {
+    return value.filter(Boolean).join(", ").trim();
+  }
+
+  return String(value ?? "").trim();
+}
+
+function trimSoundConstructForReview(construct = null) {
+  if (!construct) {
+    return null;
+  }
+
+  return {
+    id: construct.id,
+    name: construct.name,
+    deviceBrand: construct.deviceBrand,
+    deviceModel: construct.deviceModel,
+    sourceBrand: construct.sourceBrand,
+    sourceModel: construct.sourceModel,
+    sourceType: construct.sourceType,
+    goal: construct.goal,
+    eventType: construct.eventType,
+    venueSize: construct.venueSize,
+    speakerConfig: construct.speakerConfig,
+    presetCategory: construct.presetCategory,
+    presetName: construct.presetName,
+    setup: Object.fromEntries(Object.entries(construct.setup ?? {}).filter(([, value]) => value)),
+    tags: Array.isArray(construct.tags) ? construct.tags.slice(0, 10) : [],
+    strands: Array.isArray(construct.strands) ? construct.strands.slice(0, 10) : []
+  };
+}
+
+function buildSoundProposalDiff(baseConstruct = null, proposalConstruct = null) {
+  const base = baseConstruct ?? null;
+  const proposal = proposalConstruct ?? null;
+  const entries = [];
+  const setupLabels = {
+    toneMatch: "Setup - ToneMatch",
+    system: "Setup - System",
+    gain: "Setup - Gain",
+    eq: "Setup - EQ",
+    fx: "Setup - FX",
+    monitor: "Setup - Monitor",
+    placement: "Setup - Placement",
+    notes: "Setup - Notes"
+  };
+  const fieldEntries = [
+    ["Source", [base?.sourceBrand, base?.sourceModel, base?.sourceType].filter(Boolean).join(" "), [proposal?.sourceBrand, proposal?.sourceModel, proposal?.sourceType].filter(Boolean).join(" ")],
+    ["Goal", base?.goal, proposal?.goal],
+    ["Event", base?.eventType, proposal?.eventType],
+    ["Venue", base?.venueSize, proposal?.venueSize],
+    ["Speaker config", base?.speakerConfig, proposal?.speakerConfig],
+    ["Preset", [base?.presetCategory, base?.presetName].filter(Boolean).join(" > "), [proposal?.presetCategory, proposal?.presetName].filter(Boolean).join(" > ")]
+  ];
+
+  const addEntry = (label, previousValue, nextValue) => {
+    const baseValue = formatSoundReviewValue(previousValue);
+    const proposalValue = formatSoundReviewValue(nextValue);
+    if (!baseValue && !proposalValue) {
+      return;
+    }
+    if (baseValue === proposalValue) {
+      return;
+    }
+
+    entries.push({
+      label,
+      baseValue: baseValue || "Not stored yet",
+      proposalValue: proposalValue || "Not set in proposal"
+    });
+  };
+
+  for (const [label, previousValue, nextValue] of fieldEntries) {
+    addEntry(label, previousValue, nextValue);
+  }
+
+  const setupKeys = Array.from(new Set([
+    ...Object.keys(base?.setup ?? {}),
+    ...Object.keys(proposal?.setup ?? {})
+  ]));
+
+  for (const key of setupKeys) {
+    addEntry(setupLabels[key] ?? `Setup - ${key}`, base?.setup?.[key], proposal?.setup?.[key]);
+  }
+
+  return {
+    hasBase: Boolean(base),
+    baseLabel: base?.name ?? "Closest stored memory",
+    proposalLabel: proposal?.name ?? "Proposal",
+    summary: base
+      ? (entries.length
+          ? `Showing the main differences between the closest stored memory and this proposal.`
+          : "This proposal matches the closest stored memory at the compared fields.")
+      : "No close stored construct was selected as a base, so this proposal would create a fresh memory.",
+    entries: entries.slice(0, 16)
+  };
+}
+
+function buildSoundProposalReview(question, construct, recall = {}, source = "generated-proposal", baseConstruct = null) {
   const preview = summarizeSoundConstruct(question, construct, {
     clarification: recall.clarification ?? null
   });
@@ -1369,6 +1468,8 @@ function buildSoundProposalReview(question, construct, recall = {}, source = "ge
   const missingInformation = [];
   const assumptions = [];
   const changeSummary = [];
+  const closestStoredConstruct = baseConstruct ?? recall.matched ?? null;
+  const diff = buildSoundProposalDiff(closestStoredConstruct, construct);
 
   if (!parsed.deviceModel) {
     missingInformation.push("Exact device model is still missing.");
@@ -1385,12 +1486,12 @@ function buildSoundProposalReview(question, construct, recall = {}, source = "ge
   if (!parsed.venueSize) {
     assumptions.push("Coverage size was not specified, so this proposal is using a small-room starting point.");
   }
-  if (recall.ready && recall.matched?.id) {
-    changeSummary.push(`This proposal builds on the closest stored construct: ${recall.matched.name}.`);
+  if (closestStoredConstruct?.id) {
+    changeSummary.push(`This proposal builds on the closest stored construct: ${closestStoredConstruct.name}.`);
   } else {
     changeSummary.push("This proposal would create a new sound construct in Strandspace.");
   }
-  if (construct.sourceModel && construct.sourceModel !== recall.matched?.sourceModel) {
+  if (construct.sourceModel && construct.sourceModel !== closestStoredConstruct?.sourceModel) {
     changeSummary.push(`It adds source-specific detail for ${[construct.sourceBrand, construct.sourceModel].filter(Boolean).join(" ")}.`);
   }
   if (construct.sourceType === "speaker system") {
@@ -1420,6 +1521,8 @@ function buildSoundProposalReview(question, construct, recall = {}, source = "ge
     focusKeys: preview.focusKeys ?? [],
     focusedSetup: preview.focusedSetup ?? {},
     answerPreview: preview.answer ?? null,
+    baseConstruct: trimSoundConstructForReview(closestStoredConstruct),
+    diff,
     parsed
   };
 }
@@ -2145,7 +2248,13 @@ async function handleApi(req, res) {
 
     if (reviewBeforeStore) {
       const reviewSource = source === "openai-generated-and-stored" ? "openai-proposal" : "generated-proposal";
-      const review = buildSoundProposalReview(question, generated, recalled, reviewSource);
+      const review = buildSoundProposalReview(
+        question,
+        generated,
+        recalled,
+        reviewSource,
+        selectSoundspaceBaseConstruct(recalled) ?? recalled.matched ?? null
+      );
       const proposalRecall = {
         question,
         parsed: review.parsed,
