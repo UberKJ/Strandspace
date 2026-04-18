@@ -174,6 +174,15 @@ function normalizeArray(value) {
   return [];
 }
 
+function normalizeRelatedConstructIds(value, ownId = "") {
+  const normalizedOwnId = String(ownId ?? "").trim();
+  return [...new Set(
+    normalizeArray(value)
+      .map((item) => String(item ?? "").trim())
+      .filter((item) => item && item !== normalizedOwnId)
+  )].slice(0, 24);
+}
+
 function mergeUniqueArray(base = [], patch = [], limit = 12) {
   return [...new Set([
     ...normalizeArray(base),
@@ -299,6 +308,7 @@ function normalizeConstruct(payload = {}) {
   const strands = normalizeArray(payload.strands);
   const id = String(payload.id ?? `${subjectId}-${slugify(constructLabel)}`).trim();
   const provenance = payload.provenance && typeof payload.provenance === "object" ? payload.provenance : null;
+  const relatedConstructIds = normalizeRelatedConstructIds(payload.relatedConstructIds, id);
 
   return {
     id,
@@ -321,6 +331,7 @@ function normalizeConstruct(payload = {}) {
         context,
         tags
       }),
+    relatedConstructIds,
     provenance
   };
 }
@@ -601,6 +612,10 @@ export function mergeSubjectConstruct(basePayload = {}, patchPayload = {}, optio
   const patchNotes = String(patchPayload.notes ?? patchPayload.summary ?? "").trim();
   const patchTags = normalizeArray(patchPayload.tags ?? patchPayload.keywords);
   const patchStrands = normalizeArray(patchPayload.strands);
+  const patchRelatedConstructIds = normalizeRelatedConstructIds(
+    patchPayload.relatedConstructIds,
+    String(base.id ?? patchPayload.id ?? "").trim()
+  );
   const preserveId = options.preserveId !== false;
   const baseProvenance = base.provenance && typeof base.provenance === "object" ? base.provenance : null;
   const patchProvenance = patchPayload.provenance && typeof patchPayload.provenance === "object" ? patchPayload.provenance : null;
@@ -625,6 +640,9 @@ export function mergeSubjectConstruct(basePayload = {}, patchPayload = {}, optio
     strands: patchStrands.length
       ? mergeUniqueArray(base.strands, patchStrands, 24)
       : base.strands,
+    relatedConstructIds: patchRelatedConstructIds.length
+      ? mergeUniqueArray(base.relatedConstructIds, patchRelatedConstructIds, 24)
+      : base.relatedConstructIds,
     provenance: options.provenance
       ?? (patchProvenance
         ? {
@@ -695,6 +713,7 @@ function fromRow(row) {
     notes: row.notes,
     tags: safeJsonParse(row.tagsJson, []),
     strands: safeJsonParse(row.strandsJson, []),
+    relatedConstructIds: normalizeRelatedConstructIds(safeJsonParse(row.relatedConstructIdsJson, []), row.id),
     provenance: safeJsonParse(row.provenanceJson, null),
     learnedCount: Number(row.learnedCount ?? 1),
     updatedAt: row.updatedAt
@@ -2069,6 +2088,7 @@ export function ensureSubjectspaceTables(db) {
       tagsJson TEXT NOT NULL,
       strandsJson TEXT NOT NULL,
       provenanceJson TEXT,
+      relatedConstructIdsJson TEXT,
       learnedCount INTEGER NOT NULL DEFAULT 1,
       updatedAt TEXT NOT NULL
     );
@@ -2119,6 +2139,11 @@ export function ensureSubjectspaceTables(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON chat_messages(conversationId, createdAt ASC);
   `);
+
+  const columns = db.prepare("PRAGMA table_info(subject_constructs)").all();
+  if (!columns.some((column) => column.name === "relatedConstructIdsJson")) {
+    db.exec("ALTER TABLE subject_constructs ADD COLUMN relatedConstructIdsJson TEXT;");
+  }
 }
 
 export function seedSubjectspace(db, filePath = defaultSubjectSeedsPath) {
@@ -2435,9 +2460,9 @@ export function upsertSubjectConstruct(db, payload = {}) {
   db.prepare(`
     INSERT INTO subject_constructs (
       id, subjectId, subjectLabel, constructLabel, target, objective, contextJson,
-      stepsJson, notes, tagsJson, strandsJson, provenanceJson, learnedCount, updatedAt
+      stepsJson, notes, tagsJson, strandsJson, provenanceJson, relatedConstructIdsJson, learnedCount, updatedAt
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       subjectId = excluded.subjectId,
       subjectLabel = excluded.subjectLabel,
@@ -2450,6 +2475,7 @@ export function upsertSubjectConstruct(db, payload = {}) {
       tagsJson = excluded.tagsJson,
       strandsJson = excluded.strandsJson,
       provenanceJson = excluded.provenanceJson,
+      relatedConstructIdsJson = excluded.relatedConstructIdsJson,
       learnedCount = excluded.learnedCount,
       updatedAt = excluded.updatedAt
   `).run(
@@ -2465,6 +2491,7 @@ export function upsertSubjectConstruct(db, payload = {}) {
     JSON.stringify(record.tags ?? []),
     JSON.stringify(record.strands ?? []),
     record.provenance ? JSON.stringify(record.provenance) : null,
+    record.relatedConstructIds?.length ? JSON.stringify(record.relatedConstructIds) : null,
     Number(existing?.learnedCount ?? 0) + 1,
     updatedAt
   );
@@ -2534,6 +2561,27 @@ function scoreLinkedReinforcement(record, lexicalScores = [], links = []) {
   };
 }
 
+function fetchRelatedSubjectConstructs(db, construct = null) {
+  const constructId = String(construct?.id ?? "").trim();
+  if (!constructId) {
+    return [];
+  }
+
+  const relatedIds = normalizeRelatedConstructIds(construct?.relatedConstructIds, constructId);
+  const relatedConstructs = [];
+
+  for (const relatedId of relatedIds) {
+    const related = getSubjectConstruct(db, relatedId);
+    if (!related) {
+      continue;
+    }
+
+    relatedConstructs.push(related);
+  }
+
+  return relatedConstructs;
+}
+
 export function recallSubjectSpace(db, { question = "", subjectId = "" } = {}) {
   const parsed = parseSubjectQuestion(question, subjectId);
   const constructs = listSubjectConstructs(db, subjectId);
@@ -2571,6 +2619,7 @@ export function recallSubjectSpace(db, { question = "", subjectId = "" } = {}) {
 
   const matched = ranked[0] ?? null;
   const ready = Boolean(matched && matched.score >= READY_THRESHOLD);
+  const relatedConstructs = ready && matched ? fetchRelatedSubjectConstructs(db, matched) : [];
   const routing = buildRouting(parsed, ranked, constructs);
   const candidates = ranked.slice(0, 5).map((item) => ({
     id: item.id,
@@ -2579,6 +2628,7 @@ export function recallSubjectSpace(db, { question = "", subjectId = "" } = {}) {
     constructLabel: item.constructLabel,
     target: item.target,
     objective: item.objective,
+    relatedConstructIds: item.relatedConstructIds ?? [],
     score: item.score,
     support: item.support,
     matchedRatio: Number(item.matchedRatio ?? 0),
@@ -2595,6 +2645,7 @@ export function recallSubjectSpace(db, { question = "", subjectId = "" } = {}) {
     parsed,
     ready,
     matched: ready ? matched : null,
+    relatedConstructs,
     candidates,
     answer: ready && matched
       ? buildRecallAnswer(matched)

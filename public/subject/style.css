@@ -531,7 +531,8 @@ a.primary-action {
 :root[data-theme="dark"] .diff-card,
 :root[data-theme="dark"] .answer-meta div,
 :root[data-theme="dark"] .setup-grid article,
-:root[data-theme="dark"] .candidate-list li {
+:root[data-theme="dark"] .candidate-list li,
+:root[data-theme="dark"] .related-construct-card {
   background: rgba(34, 47, 52, 0.88);
   border-color: rgba(237, 244, 241, 0.14);
 }
@@ -857,6 +858,20 @@ a.primary-action {
 
 .review-list.warning ul {
   color: var(--ink);
+}
+
+.related-construct-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.related-construct-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(18, 107, 115, 0.12);
+  background: rgba(249, 252, 251, 0.76);
 }
 
 .review-actions {

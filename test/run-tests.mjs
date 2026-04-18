@@ -474,6 +474,39 @@ await check("legacy database migration creates a clean strandspace database", as
   }
 });
 
+await check("ensureSubjectspaceTables upgrades older subjectspace tables with related construct ids", async () => {
+  const legacyPath = await registerTempDatabasePath(join(tempDir, `subjectspace-legacy-columns-${Date.now()}.sqlite`));
+  const legacyDb = new DatabaseSync(legacyPath);
+
+  try {
+    legacyDb.exec(`
+      CREATE TABLE subject_constructs (
+        id TEXT PRIMARY KEY,
+        subjectId TEXT NOT NULL,
+        subjectLabel TEXT NOT NULL,
+        constructLabel TEXT NOT NULL,
+        target TEXT,
+        objective TEXT,
+        contextJson TEXT NOT NULL,
+        stepsJson TEXT NOT NULL,
+        notes TEXT,
+        tagsJson TEXT NOT NULL,
+        strandsJson TEXT NOT NULL,
+        provenanceJson TEXT,
+        learnedCount INTEGER NOT NULL DEFAULT 1,
+        updatedAt TEXT NOT NULL
+      );
+    `);
+
+    ensureSubjectspaceTables(legacyDb);
+
+    const columns = legacyDb.prepare("PRAGMA table_info(subject_constructs)").all();
+    assert.ok(columns.some((column) => column.name === "relatedConstructIdsJson"));
+  } finally {
+    legacyDb.close();
+  }
+});
+
 await check("ensureSoundspaceTables upgrades older soundspace tables before creating new indexes", async () => {
   const legacyPath = await registerTempDatabasePath(join(tempDir, `soundspace-legacy-columns-${Date.now()}.sqlite`));
   const legacyDb = new DatabaseSync(legacyPath);
@@ -766,6 +799,86 @@ await check("subject construct saves create related construct links and similar 
     assert.equal(listSubjectConstructs(db, "portrait-lighting").length, 2);
     assert.match(String(merged.notes), /jacket gets lost/i);
     assert.equal(merged.context.background, "charcoal roll");
+  } finally {
+    db.close();
+  }
+});
+
+await check("subjectspace recall returns explicit related constructs for recipe-style constructs", async () => {
+  const db = new DatabaseSync(":memory:");
+  ensureSubjectspaceTables(db);
+
+  try {
+    const almondFlour = upsertSubjectConstruct(db, {
+      subjectId: "diabetic-baking",
+      subjectLabel: "Diabetic Baking",
+      constructLabel: "Diabetic bread: almond flour",
+      target: "Almond flour ingredient note",
+      objective: "use almond flour as the main low-carb base",
+      context: {
+        ingredient: "almond flour",
+        amount: "2 cups"
+      },
+      steps: [
+        "Sift the almond flour before mixing.",
+        "Keep it dry so the loaf does not collapse."
+      ],
+      tags: ["ingredient", "almond flour", "bread"]
+    });
+
+    const xanthanGum = upsertSubjectConstruct(db, {
+      subjectId: "diabetic-baking",
+      subjectLabel: "Diabetic Baking",
+      constructLabel: "Diabetic bread: xanthan gum",
+      target: "Xanthan gum ingredient note",
+      objective: "use xanthan gum for structure and lift",
+      context: {
+        ingredient: "xanthan gum",
+        amount: "1 teaspoon"
+      },
+      steps: [
+        "Whisk it into the dry ingredients first."
+      ],
+      tags: ["ingredient", "xanthan gum", "bread"]
+    });
+
+    const recipe = upsertSubjectConstruct(db, {
+      subjectId: "diabetic-baking",
+      subjectLabel: "Diabetic Baking",
+      constructLabel: "Diabetic bread recipe",
+      target: "Low-carb sandwich bread",
+      objective: "build a diabetic-friendly bread loaf with structure and a usable crumb",
+      context: {
+        loaf: "8 inch pan"
+      },
+      steps: [
+        "Mix the dry ingredients first.",
+        "Fold the wet ingredients in gently.",
+        "Bake until the center sets."
+      ],
+      notes: "Use the linked ingredient constructs as the ingredient memory for this recipe.",
+      tags: ["recipe", "bread", "diabetic"],
+      relatedConstructIds: [almondFlour.id, ` ${xanthanGum.id} `, almondFlour.id]
+    });
+
+    assert.deepEqual(recipe.relatedConstructIds, [almondFlour.id, xanthanGum.id]);
+
+    const storedRecipe = getSubjectConstruct(db, recipe.id);
+    assert.deepEqual(storedRecipe.relatedConstructIds, [almondFlour.id, xanthanGum.id]);
+
+    const recall = recallSubjectSpace(db, {
+      subjectId: "diabetic-baking",
+      question: "What is my diabetic bread recipe?"
+    });
+
+    assert.equal(recall.ready, true);
+    assert.equal(recall.matched?.constructLabel, "Diabetic bread recipe");
+    assert.deepEqual(recall.matched?.relatedConstructIds, [almondFlour.id, xanthanGum.id]);
+    assert.equal(recall.relatedConstructs.length, 2);
+    assert.deepEqual(
+      recall.relatedConstructs.map((construct) => construct.constructLabel),
+      ["Diabetic bread: almond flour", "Diabetic bread: xanthan gum"]
+    );
   } finally {
     db.close();
   }
@@ -1255,6 +1368,71 @@ await check("GET /api/stats reports database counts, size, and new local graph t
     assert.ok(Array.isArray(payload.tables));
     assert.ok(payload.tables.some((table) => table.name === "strand_binders"));
     assert.ok(payload.tables.some((table) => table.name === "construct_links"));
+  });
+});
+
+await check("POST /api/subjectspace/learn, /library, and /answer expose related construct ids and hydrated related constructs", async () => {
+  await withServer(async (address) => {
+    const almondFlour = await createSubjectConstruct(address.port, {
+      subjectLabel: "Diabetic Baking",
+      constructLabel: "Diabetic bread: almond flour",
+      target: "Almond flour ingredient note",
+      objective: "use almond flour as the main low-carb base",
+      context: "ingredient: almond flour\namount: 2 cups",
+      steps: "Sift the almond flour before mixing\nKeep it dry until the wet ingredients are ready",
+      notes: "Ingredient construct for the bread recipe.",
+      tags: "ingredient, almond flour, bread"
+    });
+
+    const xanthanGum = await createSubjectConstruct(address.port, {
+      subjectLabel: "Diabetic Baking",
+      constructLabel: "Diabetic bread: xanthan gum",
+      target: "Xanthan gum ingredient note",
+      objective: "use xanthan gum for structure and lift",
+      context: "ingredient: xanthan gum\namount: 1 teaspoon",
+      steps: "Whisk it into the dry ingredients first",
+      notes: "Ingredient construct for the bread recipe.",
+      tags: "ingredient, xanthan gum, bread"
+    });
+
+    const recipeResponse = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/learn`, {
+      subjectId: almondFlour.subjectId,
+      subjectLabel: "Diabetic Baking",
+      constructLabel: "Diabetic bread recipe",
+      target: "Low-carb sandwich bread",
+      objective: "build a diabetic-friendly bread loaf with structure and a usable crumb",
+      context: "loaf: 8 inch pan",
+      steps: "Mix the dry ingredients first\nFold the wet ingredients in gently\nBake until the center sets",
+      notes: "Use the linked ingredient constructs as the ingredient memory for this recipe.",
+      tags: "recipe, bread, diabetic",
+      relatedConstructIds: [almondFlour.id, ` ${xanthanGum.id} `, almondFlour.id]
+    });
+
+    assert.equal(recipeResponse.status, 200);
+    const savedRecipe = await recipeResponse.json();
+    assert.deepEqual(savedRecipe.construct.relatedConstructIds, [almondFlour.id, xanthanGum.id]);
+    assert.equal(savedRecipe.construct.relatedConstructs.length, 2);
+
+    const libraryResponse = await fetch(`http://127.0.0.1:${address.port}/api/subjectspace/library?subjectId=${encodeURIComponent(almondFlour.subjectId)}`);
+    assert.equal(libraryResponse.status, 200);
+    const libraryPayload = await libraryResponse.json();
+    const libraryRecipe = libraryPayload.constructs.find((construct) => construct.id === savedRecipe.construct.id);
+    assert.deepEqual(libraryRecipe?.relatedConstructIds, [almondFlour.id, xanthanGum.id]);
+
+    const answerResponse = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/answer`, {
+      subjectId: almondFlour.subjectId,
+      question: "What is my diabetic bread recipe?"
+    });
+
+    assert.equal(answerResponse.status, 200);
+    const answerPayload = await answerResponse.json();
+    assert.equal(answerPayload.source, "strandspace");
+    assert.deepEqual(answerPayload.construct.relatedConstructIds, [almondFlour.id, xanthanGum.id]);
+    assert.equal(answerPayload.recall.relatedConstructs.length, 2);
+    assert.deepEqual(
+      answerPayload.recall.relatedConstructs.map((construct) => construct.constructLabel),
+      ["Diabetic bread: almond flour", "Diabetic bread: xanthan gum"]
+    );
   });
 });
 

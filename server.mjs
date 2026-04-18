@@ -31,12 +31,13 @@ import {
   seedSubjectspace,
   upsertSubjectConstruct
 } from "./strandspace/subjectspace.js";
+// === OPENAI ASSIST (uses OPENAI_API_KEY env var) ===
 import {
   buildSuggestedConstructFromAssist,
   generateOpenAiSoundConstructBuilder,
+  generateOpenAiSubjectAssist,
   generateOpenAiSubjectConstructBuilder,
   generateOpenAiSubjectSuggestions,
-  generateOpenAiSubjectAssist,
   getOpenAiAssistStatus
 } from "./strandspace/openai-assist.js";
 
@@ -104,6 +105,10 @@ const API_TIMEOUTS_MS = new Map([
   ["/api/backend/db/table", DEFAULT_API_TIMEOUT_MS],
   ["/api/backend/db/row", DEFAULT_API_TIMEOUT_MS],
   ["/api/chat", EXTENDED_API_TIMEOUT_MS],
+  ["/api/chat/conversations", DEFAULT_API_TIMEOUT_MS],
+  ["/api/chat/history", DEFAULT_API_TIMEOUT_MS],
+  ["/api/chat/delete", DEFAULT_API_TIMEOUT_MS],
+  ["/api/tts", EXTENDED_API_TIMEOUT_MS],
   ["/api/stats", DEFAULT_API_TIMEOUT_MS],
   ["/api/subjectspace/subject-ideas", EXTENDED_API_TIMEOUT_MS],
   ["/api/subjectspace/build", EXTENDED_API_TIMEOUT_MS],
@@ -140,6 +145,7 @@ const BACKEND_TABLES = {
       "tagsJson",
       "strandsJson",
       "provenanceJson",
+      "relatedConstructIdsJson",
       "learnedCount"
     ],
     searchColumns: [
@@ -150,7 +156,8 @@ const BACKEND_TABLES = {
       "objective",
       "notes",
       "tagsJson",
-      "strandsJson"
+      "strandsJson",
+      "relatedConstructIdsJson"
     ],
     orderBy: "updatedAt DESC, constructLabel ASC"
   },
@@ -437,9 +444,9 @@ function upsertMigratedSubjectConstruct(targetDb, construct = {}) {
   targetDb.prepare(`
     INSERT INTO subject_constructs (
       id, subjectId, subjectLabel, constructLabel, target, objective, contextJson,
-      stepsJson, notes, tagsJson, strandsJson, provenanceJson, learnedCount, updatedAt
+      stepsJson, notes, tagsJson, strandsJson, provenanceJson, relatedConstructIdsJson, learnedCount, updatedAt
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       subjectId = excluded.subjectId,
       subjectLabel = excluded.subjectLabel,
@@ -452,6 +459,7 @@ function upsertMigratedSubjectConstruct(targetDb, construct = {}) {
       tagsJson = excluded.tagsJson,
       strandsJson = excluded.strandsJson,
       provenanceJson = excluded.provenanceJson,
+      relatedConstructIdsJson = excluded.relatedConstructIdsJson,
       learnedCount = excluded.learnedCount,
       updatedAt = excluded.updatedAt
   `).run(
@@ -467,6 +475,9 @@ function upsertMigratedSubjectConstruct(targetDb, construct = {}) {
     JSON.stringify(Array.isArray(construct.tags) ? construct.tags : []),
     JSON.stringify(Array.isArray(construct.strands) ? construct.strands : []),
     provenance ? JSON.stringify(provenance) : null,
+    Array.isArray(construct.relatedConstructIds) && construct.relatedConstructIds.length
+      ? JSON.stringify(construct.relatedConstructIds)
+      : null,
     Math.max(Number(construct.learnedCount ?? 1) || 1, 1),
     String(construct.updatedAt ?? new Date().toISOString())
   );
@@ -942,6 +953,16 @@ function sendText(res, statusCode, text) {
   res.end(text);
 }
 
+function sendBinary(res, statusCode, buffer, mimeType) {
+  if (!res || res.writableEnded) return;
+  res.writeHead(statusCode, {
+    "Cache-Control": "no-store",
+    "Content-Type": mimeType,
+    "Content-Length": Buffer.byteLength(buffer)
+  });
+  res.end(buffer);
+}
+
 async function readJsonBody(req) {
   const chunks = [];
   for await (const chunk of req) {
@@ -968,6 +989,34 @@ function measureSync(task) {
   };
 }
 
+async function synthesizeElevenLabs(text, voice = "alloy", format = "mp3") {
+  const key = String(process.env.ELEVENLABS_API_KEY ?? "").trim();
+  if (!key) {
+    throw new Error("ELEVENLABS_API_KEY not configured");
+  }
+
+  const accept = format === "wav" ? "audio/wav" : "audio/mpeg";
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}/stream`;
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "xi-api-key": key,
+      "Content-Type": "application/json",
+      "Accept": accept
+    },
+    body: JSON.stringify({ text })
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    throw new Error(`ElevenLabs TTS failed: ${resp.status} ${resp.statusText} ${body}`);
+  }
+
+  const arrayBuffer = await resp.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
 function readSubjectspaceParams(source = null) {
   if (source instanceof URL) {
     return {
@@ -986,6 +1035,9 @@ function buildSubjectspaceAnswerPayload(recall, { question = "", subjectId = "",
   const hydratedConstruct = db
     ? hydrateSubjectConstructWithRelations(db, recall.matched)
     : hydrateConstructForClient(recall.matched);
+  const hydratedRelatedConstructs = db
+    ? hydrateSubjectConstructList(recall.relatedConstructs)
+    : (Array.isArray(recall.relatedConstructs) ? recall.relatedConstructs.map((construct) => hydrateConstructForClient(construct)).filter(Boolean) : []);
 
   return {
     ok: true,
@@ -996,9 +1048,16 @@ function buildSubjectspaceAnswerPayload(recall, { question = "", subjectId = "",
     construct: hydratedConstruct,
     recall: {
       ...recall,
-      matched: hydratedConstruct
+      matched: hydratedConstruct,
+      relatedConstructs: hydratedRelatedConstructs
     }
   };
+}
+
+function hydrateSubjectConstructList(constructs = []) {
+  return (Array.isArray(constructs) ? constructs : [])
+    .map((construct) => hydrateConstructForClient(construct))
+    .filter(Boolean);
 }
 
 function hydrateSubjectConstructWithRelations(db, construct = null) {
@@ -1007,9 +1066,16 @@ function hydrateSubjectConstructWithRelations(db, construct = null) {
     return null;
   }
 
+  const relatedConstructs = hydrateSubjectConstructList(
+    Array.isArray(hydrated.relatedConstructIds)
+      ? hydrated.relatedConstructIds.map((relatedId) => getSubjectConstruct(db, relatedId)).filter(Boolean)
+      : []
+  );
+
   return {
     ...hydrated,
-    relatedConstructs: listConstructLinks(db, hydrated.id).slice(0, 6),
+    relatedConstructs,
+    linkedConstructs: listConstructLinks(db, hydrated.id).slice(0, 6),
     binderPreview: listStrandBinders(db, hydrated.subjectId).slice(0, 6)
   };
 }
@@ -1682,6 +1748,10 @@ function resolvePublicPath(pathname = "") {
     return "/subject/index.html";
   }
 
+  if (pathname === "/chat" || pathname === "/chat/") {
+    return "/chat/index.html";
+  }
+
   return pathname;
 }
 
@@ -2197,6 +2267,7 @@ async function handleApi(req, res) {
     return;
   }
 
+
   if (url.pathname === "/api/backend/overview") {
     if (req.method !== "GET") {
       res.writeHead(405, { Allow: "GET" });
@@ -2669,10 +2740,8 @@ async function handleApi(req, res) {
     let assistResult;
     try {
       assistResult = await runTimed("Subjectspace assist", () => generateOpenAiSubjectAssist({
-        question,
-        subjectId,
-        subjectLabel,
-        recall
+        parsed: { raw: question },
+        subjectLabel
       }), {
         route: url.pathname,
         question: previewQuestionForLogs(question),
@@ -2782,10 +2851,8 @@ async function handleApi(req, res) {
       const started = performance.now();
       try {
         const assistResult = await runTimed("Subjectspace compare assist", () => generateOpenAiSubjectAssist({
-          question: benchmarkQuestion,
-          subjectId,
-          subjectLabel,
-          recall
+          parsed: { raw: benchmarkQuestion },
+          subjectLabel
         }), {
           route: url.pathname,
           question: previewQuestionForLogs(benchmarkQuestion),
@@ -2984,10 +3051,8 @@ async function handleApi(req, res) {
     let assistResult;
     try {
       assistResult = await runTimed("Subjectspace chat assist", () => generateOpenAiSubjectAssist({
-        question: message,
-        subjectId,
-        subjectLabel,
-        recall
+        parsed: { raw: message },
+        subjectLabel
       }), {
         route: url.pathname,
         question: previewQuestionForLogs(message),
@@ -3060,6 +3125,164 @@ async function handleApi(req, res) {
         model: assistResult.model ?? config.model
       }
     });
+    return;
+  }
+
+  if (url.pathname === "/api/tts") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const text = String(payload.text ?? payload.message ?? "").trim();
+    if (!text) {
+      sendJson(res, 400, { error: "text is required" });
+      return;
+    }
+
+    const voice = String(payload.voice ?? process.env.STRANDSPACE_TTS_VOICE ?? "alloy");
+    const format = String(payload.format ?? "mp3");
+    const provider = String(process.env.STRANDSPACE_TTS_PROVIDER ?? process.env.TTS_PROVIDER ?? "elevenlabs").trim();
+
+    try {
+      let audioBuffer;
+      let mime = "audio/mpeg";
+
+      if (provider === "elevenlabs") {
+        audioBuffer = await synthesizeElevenLabs(text, voice, format);
+        mime = format === "wav" ? "audio/wav" : "audio/mpeg";
+      } else {
+        sendJson(res, 501, { ok: false, error: "No TTS provider configured. Set STRANDSPACE_TTS_PROVIDER=elevenlabs and ELEVENLABS_API_KEY." });
+        return;
+      }
+
+      // Return raw audio bytes
+      sendBinary(res, 200, audioBuffer, mime);
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      sendJson(res, 502, { ok: false, error: "TTS generation failed", details: message });
+      return;
+    }
+  }
+
+  if (url.pathname === "/api/chat/conversations") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    const subjectId = String(url.searchParams.get("subjectId") ?? "").trim();
+    const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 20, 1), 100);
+    const offset = Math.max(Number(url.searchParams.get("offset")) || 0, 0);
+
+    try {
+      const conversations = db.prepare(`
+        SELECT 
+          id, 
+          subjectId, 
+          title, 
+          createdAt, 
+          lastMessageAt, 
+          (SELECT COUNT(*) FROM chat_messages WHERE conversationId = chat_conversations.id) as messageCount
+        FROM chat_conversations
+        WHERE subjectId = ? OR ? = ''
+        ORDER BY lastMessageAt DESC
+        LIMIT ? OFFSET ?
+      `).all(subjectId, subjectId, limit, offset);
+
+      const totalCount = db.prepare(`
+        SELECT COUNT(*) as count FROM chat_conversations
+        WHERE subjectId = ? OR ? = ''
+      `).get(subjectId, subjectId)?.count ?? 0;
+
+      sendJson(res, 200, {
+        ok: true,
+        conversations,
+        totalCount,
+        limit,
+        offset
+      });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
+  if (url.pathname.match(/^\/api\/chat\/history\/.+$/)) {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    const conversationId = String(url.pathname.split("/").pop()).trim();
+    if (!conversationId) {
+      sendJson(res, 400, { error: "conversationId is required" });
+      return;
+    }
+
+    try {
+      const messages = db.prepare(`
+        SELECT 
+          id, 
+          conversationId, 
+          role, 
+          content, 
+          subjectId, 
+          constructId, 
+          metadataJson, 
+          createdAt
+        FROM chat_messages
+        WHERE conversationId = ?
+        ORDER BY createdAt ASC
+      `).all(conversationId);
+
+      if (!messages.length) {
+        sendJson(res, 404, { ok: false, error: "Conversation not found" });
+        return;
+      }
+
+      sendJson(res, 200, {
+        ok: true,
+        conversationId,
+        messages: messages.map(msg => ({
+          ...msg,
+          metadata: msg.metadataJson ? JSON.parse(msg.metadataJson) : null,
+          metadataJson: undefined
+        }))
+      });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
+  if (url.pathname.match(/^\/api\/chat\/delete\/.+$/) && req.method === "POST") {
+    const conversationId = String(url.pathname.split("/").pop()).trim();
+    if (!conversationId) {
+      sendJson(res, 400, { error: "conversationId is required" });
+      return;
+    }
+
+    try {
+      db.prepare("DELETE FROM chat_messages WHERE conversationId = ?").run(conversationId);
+      db.prepare("DELETE FROM chat_conversations WHERE id = ?").run(conversationId);
+      
+      sendJson(res, 200, { ok: true, deleted: conversationId });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
     return;
   }
 

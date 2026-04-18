@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Strandspace Chat</title>
+    <link rel="stylesheet" href="/chat/style.css?v=2026-04-18-chat-01" />
+    <script type="module" src="/chat/app.js?v=2026-04-18-chat-01" defer></script>
+  </head>
+  <body>
+    <header class="page-switch">
+      <a class="brand-mark" href="/">Strandspace</a>
+      <div class="page-switch-controls">
+        <nav class="page-nav" aria-label="Workspace switcher">
+          <a class="switch-link" href="/">Home</a>
+          <a class="switch-link" href="/subject">Topic View</a>
+          <a class="switch-link is-active" href="/chat" aria-current="page">Chat</a>
+          <a class="switch-link" href="/backend">Backend</a>
+        </nav>
+        <span id="chat-status-badge" class="status-badge">Loading...</span>
+        <button id="theme-toggle" type="button" class="ghost-action theme-toggle">Dark Mode</button>
+      </div>
+    </header>
+
+    <main class="app-shell chat-shell">
+      <section class="chat-sidebar">
+        <div class="sidebar-head">
+          <h2>Conversations</h2>
+          <button id="new-chat-btn" class="primary-action new-chat-btn" title="Start a new conversation">
+            + New Chat
+          </button>
+        </div>
+
+        <div id="conversations-list" class="conversations-list">
+          <p class="placeholder">Loading conversations...</p>
+        </div>
+      </section>
+
+      <section class="chat-main">
+        <div class="chat-header">
+          <div>
+            <h1 id="chat-title">Select a conversation</h1>
+            <p id="chat-subtitle" class="meta">Choose from recent conversations or start a new one</p>
+          </div>
+          <button id="delete-chat-btn" class="ghost-action delete-chat-btn" title="Delete this conversation" style="display: none;">
+            Delete
+          </button>
+        </div>
+
+        <div id="messages-container" class="messages-container">
+          <div class="welcome-state">
+            <h2>Welcome to Strandspace Chat</h2>
+            <p>Start a new conversation or select one from the sidebar to continue.</p>
+          </div>
+        </div>
+
+        <form id="chat-form" class="chat-input-form" style="display: none;">
+          <label class="sr-only" for="message-input">Send a message</label>
+          <textarea
+            id="message-input"
+            name="message"
+            rows="3"
+            placeholder="Ask a question or describe what you'd like to explore..."
+            autocomplete="off"
+          ></textarea>
+          <div class="input-actions">
+            <button type="submit" class="primary-action send-btn">Send</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>

@@ -511,6 +511,7 @@ function renderWhyMatchedPanel(recall = {}) {
 
 function renderConstructDetails(construct = {}) {
   const contextEntries = Object.entries(construct.context ?? {}).filter(([, value]) => value);
+  const relatedConstructs = Array.isArray(construct.relatedConstructs) ? construct.relatedConstructs.filter(Boolean) : [];
   return `
     <section class="focus-panel">
       <div class="focus-head">
@@ -538,6 +539,43 @@ function renderConstructDetails(construct = {}) {
       ${Array.isArray(construct.tags) && construct.tags.length ? `
         <div class="chip-row">
           ${construct.tags.slice(0, 10).map((tag) => `<span class="chip">${escapeHtml(tag)}</span>`).join("")}
+        </div>
+      ` : ""}
+      ${relatedConstructs.length ? `
+        <div class="review-list">
+          <strong>Related constructs</strong>
+          <div class="related-construct-grid">
+            ${relatedConstructs.map((relatedConstruct) => {
+              const relatedContextEntries = Object.entries(relatedConstruct.context ?? {}).filter(([, value]) => value).slice(0, 4);
+              const relatedSteps = Array.isArray(relatedConstruct.steps) ? relatedConstruct.steps.slice(0, 6) : [];
+
+              return `
+                <article class="related-construct-card">
+                  <div class="focus-head">
+                    <strong>${escapeHtml(relatedConstruct.constructLabel ?? "Related construct")}</strong>
+                    <span class="focus-subtitle">${escapeHtml(relatedConstruct.target ?? relatedConstruct.subjectLabel ?? currentSubjectLabel())}</span>
+                  </div>
+                  ${relatedConstruct.objective ? `<p class="answer-detail">${escapeHtml(relatedConstruct.objective)}</p>` : ""}
+                  ${relatedContextEntries.length ? `
+                    <div class="setup-grid">
+                      ${relatedContextEntries.map(([key, value]) => `
+                        <article>
+                          <strong>${escapeHtml(key)}</strong>
+                          <p>${escapeHtml(value)}</p>
+                        </article>
+                      `).join("")}
+                    </div>
+                  ` : ""}
+                  ${relatedSteps.length ? `
+                    <div class="review-list">
+                      <strong>Steps</strong>
+                      <ul>${relatedSteps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}</ul>
+                    </div>
+                  ` : ""}
+                </article>
+              `;
+            }).join("")}
+          </div>
         </div>
       ` : ""}
       <div class="review-actions">
