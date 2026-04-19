@@ -104,6 +104,17 @@ What is my festival stage scene recall habit?
 
 Strandspace is especially useful when the answer should become better local memory after each pass instead of becoming another disconnected message.
 
+## What It Is Becoming
+
+Strandspace is moving toward a local-first chatbot that:
+
+- starts from reusable constructs instead of empty prompts
+- learns new subject knowledge through reviewable memory updates
+- keeps common subject recall fast and inspectable
+- reduces repeated LLM calls as the local construct field gets stronger
+
+The same pattern can support music engineering, Python engineering, accounting coding, and other domain-specific assistants where repeated structure matters.
+
 ## Configuration
 
 Create `.env` from `.env.example`:
@@ -168,6 +179,14 @@ That release pack is intended to show how Strandspace can evolve into a domain c
 - Legacy local databases can still be migrated into the preferred `strandspace.sqlite` path.
 - Request timeouts and graceful shutdown handling are built in for the server and OpenAI assist layer.
 - The current automated suite lives in `test/run-tests.mjs`.
+
+## Verification
+
+Recently verified:
+
+- `npm test` passes
+- backend overview responds with live dataset health, DB size, and table counts
+- `/backend` renders the admin workspace sections in a headless browser smoke check
 
 ## Project Docs
 
