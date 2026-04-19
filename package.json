@@ -2,6 +2,22 @@
   "name": "strandspace-studio",
   "version": "1.0.0",
   "private": true,
+  "description": "Construct-based memory for repetitive learned tasks, adaptive recall, and LLM-assisted expansion.",
+  "keywords": [
+    "strandspace",
+    "local-first",
+    "memory",
+    "semantic-recall",
+    "task-memory",
+    "adaptive-workflows",
+    "agents",
+    "llm"
+  ],
+  "homepage": "https://github.com/UberKJ/Strandspace",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/UberKJ/Strandspace.git"
+  },
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
