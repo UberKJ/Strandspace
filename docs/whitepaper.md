@@ -2,7 +2,7 @@
 
 **Updated April 15, 2026**
 
-**Query-triggered semantic recall with compact prompt benchmarking**
+**Local-first construct recall for repetitive learned tasks, adaptive workflows, and LLM-assisted expansion**
 
 > Store the pieces. Store the triggers. Store the rules that let meaning form.
 
@@ -10,7 +10,21 @@
 
 ## Executive Summary
 
-Strandspace Studio is a working prototype for domain-specific recall. Instead of treating every answer as a fresh retrieval problem, it stores reusable constructs that can be reactivated from partial cues.
+Strandspace Studio is a working prototype for local-first semantic memory aimed at a practical problem:
+
+**When a system has already learned a repeated task, setup, route, or workflow, it should recall that construct locally first instead of rebuilding the answer from scratch every time.**
+
+This project is not framed as a replacement for LLMs or a claim of general intelligence.
+It is a memory-and-construct layer for repeated work.
+
+That includes systems such as:
+
+- agents that perform learned workflows
+- robots that repeat known tasks with occasional variation
+- route-following systems
+- troubleshooting assistants
+- task-based domain tools
+- any environment where the work is often similar, but never perfectly identical
 
 The current build centers on:
 
@@ -33,7 +47,7 @@ As of April 15, 2026, the current implementation shows three concrete results:
 
 ## Abstract
 
-Strandspace Studio is a query-triggered semantic recall framework for reusable local memory.
+Strandspace Studio is a query-triggered semantic recall framework for reusable local memory focused on **repeated learned behavior**.
 
 A query is treated as an activation event rather than a generic text search.
 
@@ -62,6 +76,8 @@ A seeded application layer that demonstrates the same pattern in live sound and 
 
 When local evidence is strong enough, Strandspace answers directly. When the match is narrow or incomplete, the system can route to an OpenAI assist path for validation or expansion and then learn the refined result back into local memory.
 
+This makes Strandspace less like a general-purpose thinker and more like a **dependable task memory that remembers how the job usually goes, notices when the pattern changes, and adapts only where needed**.
+
 ---
 
 ## 1. Problem Statement
@@ -80,6 +96,9 @@ Strandspace addresses that problem by shifting from **answer everything from scr
 
 It does not claim to replace LLMs.
 It claims that a local semantic memory layer can carry the stable parts of repeated work, while the LLM path remains available for uncertainty, validation, or expansion.
+
+A useful mental model is not “replace the thinker.”
+It is “build the worker that remembers how this job usually goes.”
 
 ---
 
