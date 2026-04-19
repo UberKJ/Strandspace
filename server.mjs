@@ -57,11 +57,6 @@ import {
   migrateLegacyDatabase,
   resolveDatabasePath
 } from "./server/persistence.mjs";
-import {
-  generateWithOllama,
-  getOllamaConfig,
-  getOllamaStatus
-} from "./server/ollama.mjs";
 export { migrateLegacyDatabase } from "./server/persistence.mjs";
 export { sanitizeLegacyProvenance } from "./server/persistence.mjs";
 
@@ -114,6 +109,7 @@ const mimeTypes = {
 const DEFAULT_API_TIMEOUT_MS = 15000;
 const EXTENDED_API_TIMEOUT_MS = 22000;
 const LOCAL_MODEL_API_TIMEOUT_MS = 65000;
+const DEFAULT_MODEL_LAB_OPENAI_TIMEOUT_MS = 45000;
 const SHUTDOWN_GRACE_MS = 10000;
 const LOG_LEVELS = {
   debug: 10,
@@ -130,9 +126,10 @@ const API_TIMEOUTS_MS = new Map([
   ["/api/chat/conversations", DEFAULT_API_TIMEOUT_MS],
   ["/api/chat/history", DEFAULT_API_TIMEOUT_MS],
   ["/api/chat/delete", DEFAULT_API_TIMEOUT_MS],
-  ["/api/ollama/status", DEFAULT_API_TIMEOUT_MS],
-  ["/api/ollama/generate", LOCAL_MODEL_API_TIMEOUT_MS],
-  ["/api/ollama/compare", LOCAL_MODEL_API_TIMEOUT_MS],
+  ["/api/model-lab/status", DEFAULT_API_TIMEOUT_MS],
+  ["/api/model-lab/generate", LOCAL_MODEL_API_TIMEOUT_MS],
+  ["/api/model-lab/compare", LOCAL_MODEL_API_TIMEOUT_MS],
+  ["/api/model-lab/reports", DEFAULT_API_TIMEOUT_MS],
   ["/api/tts", EXTENDED_API_TIMEOUT_MS],
   ["/api/stats", DEFAULT_API_TIMEOUT_MS],
   ["/api/subjectspace/subject-ideas", EXTENDED_API_TIMEOUT_MS],
@@ -344,6 +341,23 @@ const BACKEND_TABLES = {
       "metadataJson"
     ],
     orderBy: "createdAt DESC"
+  },
+  benchmark_reports: {
+    label: "Benchmark Reports",
+    primaryKey: "id",
+    editableColumns: [],
+    searchColumns: [
+      "subjectId",
+      "subjectLabel",
+      "testLabel",
+      "provider",
+      "providerLabel",
+      "model",
+      "question",
+      "benchmarkQuestion",
+      "summary"
+    ],
+    orderBy: "createdAt DESC"
   }
 };
 
@@ -404,7 +418,6 @@ function buildApiErrorPayload(error, fallback = "Internal server error") {
 
 function buildSystemHealthPayload() {
   const assistStatus = getOpenAiAssistStatus();
-  const ollamaConfig = getOllamaConfig();
   return {
     ok: true,
     mode: assistStatus.enabled ? "assist-enabled" : "local-only",
@@ -420,12 +433,193 @@ function buildSystemHealthPayload() {
       timeoutMs: assistStatus.timeoutMs ?? null,
       reason: assistStatus.reason ?? ""
     },
-    ollama: {
-      baseUrl: ollamaConfig.baseUrl,
-      timeoutMs: ollamaConfig.timeoutMs,
-      defaultModel: ollamaConfig.defaultModel
-    },
     remoteAllowed: isRemoteAccessAllowed()
+  };
+}
+
+function ensureBenchmarkTables(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS benchmark_reports (
+      id TEXT PRIMARY KEY,
+      subjectId TEXT,
+      subjectLabel TEXT,
+      testLabel TEXT,
+      provider TEXT NOT NULL,
+      providerLabel TEXT,
+      model TEXT,
+      mode TEXT NOT NULL DEFAULT 'compare',
+      grounded INTEGER NOT NULL DEFAULT 0,
+      promptMode TEXT,
+      question TEXT,
+      benchmarkQuestion TEXT,
+      localConstructLabel TEXT,
+      llmConstructLabel TEXT,
+      localLatencyMs REAL,
+      llmLatencyMs REAL,
+      deltaMs REAL,
+      speedup REAL,
+      comparisonAvailable INTEGER NOT NULL DEFAULT 0,
+      faster TEXT,
+      summary TEXT,
+      promptsJson TEXT,
+      localJson TEXT,
+      llmJson TEXT,
+      comparisonJson TEXT,
+      debugJson TEXT,
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_benchmark_reports_created ON benchmark_reports(createdAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_benchmark_reports_provider_model ON benchmark_reports(provider, model, createdAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_benchmark_reports_subject ON benchmark_reports(subjectId, createdAt DESC);
+  `);
+}
+
+function buildBenchmarkReportId() {
+  return `bench-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function safeJsonParse(value, fallback = null) {
+  if (!value) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeBenchmarkTestLabel(value = "", fallback = "Manual benchmark") {
+  const label = String(value ?? "").trim();
+  return label || fallback;
+}
+
+function persistBenchmarkReport(db, payload = {}) {
+  ensureBenchmarkTables(db);
+  const createdAt = new Date().toISOString();
+  const prompts = payload.prompts ?? {};
+  const local = payload.local ?? {};
+  const llm = payload.llm ?? {};
+  const comparison = payload.comparison ?? {};
+  const debug = payload.debug ?? null;
+
+  db.prepare(`
+    INSERT INTO benchmark_reports (
+      id, subjectId, subjectLabel, testLabel, provider, providerLabel, model, mode, grounded, promptMode,
+      question, benchmarkQuestion, localConstructLabel, llmConstructLabel, localLatencyMs, llmLatencyMs,
+      deltaMs, speedup, comparisonAvailable, faster, summary, promptsJson, localJson, llmJson,
+      comparisonJson, debugJson, createdAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    buildBenchmarkReportId(),
+    String(payload.subjectId ?? "").trim() || null,
+    String(payload.subjectLabel ?? "").trim() || null,
+    normalizeBenchmarkTestLabel(payload.testLabel, "Manual benchmark"),
+    String(payload.provider ?? "").trim() || "unknown",
+    String(llm.providerLabel ?? payload.providerLabel ?? "").trim() || null,
+    String(llm.model ?? payload.model ?? "").trim() || null,
+    String(payload.mode ?? "compare").trim() || "compare",
+    payload.grounded ? 1 : 0,
+    String(debug?.promptMode ?? payload.promptMode ?? "").trim() || null,
+    String(payload.question ?? "").trim() || null,
+    String(prompts?.benchmark?.question ?? payload.question ?? "").trim() || null,
+    String(local.constructLabel ?? "").trim() || null,
+    String(llm.constructLabel ?? "").trim() || null,
+    Number.isFinite(Number(local.latencyMs)) ? Number(local.latencyMs) : null,
+    Number.isFinite(Number(llm.latencyMs)) ? Number(llm.latencyMs) : null,
+    Number.isFinite(Number(comparison.deltaMs)) ? Number(comparison.deltaMs) : null,
+    Number.isFinite(Number(comparison.speedup)) ? Number(comparison.speedup) : null,
+    comparison.available ? 1 : 0,
+    String(comparison.faster ?? "").trim() || null,
+    String(comparison.summary ?? "").trim() || null,
+    JSON.stringify(prompts ?? {}),
+    JSON.stringify(local ?? {}),
+    JSON.stringify(llm ?? {}),
+    JSON.stringify(comparison ?? {}),
+    debug ? JSON.stringify(debug) : null,
+    createdAt
+  );
+}
+
+function buildBenchmarkReportsPayload(db, options = {}) {
+  ensureBenchmarkTables(db);
+  const recentLimit = Math.max(1, Math.min(Number(options.recentLimit ?? 10) || 10, 25));
+  const summaryLimit = Math.max(1, Math.min(Number(options.summaryLimit ?? 8) || 8, 20));
+  const recent = db.prepare(`
+    SELECT * FROM benchmark_reports
+    ORDER BY createdAt DESC
+    LIMIT ?
+  `).all(recentLimit).map((row) => ({
+    id: row.id,
+    subjectId: row.subjectId || "",
+    subjectLabel: row.subjectLabel || "",
+    testLabel: row.testLabel || "Manual benchmark",
+    provider: row.provider || "",
+    providerLabel: row.providerLabel || row.provider || "Provider",
+    model: row.model || "",
+    mode: row.mode || "compare",
+    grounded: Boolean(row.grounded),
+    promptMode: row.promptMode || "",
+    question: row.question || "",
+    benchmarkQuestion: row.benchmarkQuestion || "",
+    localConstructLabel: row.localConstructLabel || "",
+    llmConstructLabel: row.llmConstructLabel || "",
+    localLatencyMs: Number.isFinite(Number(row.localLatencyMs)) ? Number(row.localLatencyMs) : null,
+    llmLatencyMs: Number.isFinite(Number(row.llmLatencyMs)) ? Number(row.llmLatencyMs) : null,
+    deltaMs: Number.isFinite(Number(row.deltaMs)) ? Number(row.deltaMs) : null,
+    speedup: Number.isFinite(Number(row.speedup)) ? Number(row.speedup) : null,
+    comparisonAvailable: Boolean(row.comparisonAvailable),
+    faster: row.faster || "",
+    summary: row.summary || "",
+    prompts: safeJsonParse(row.promptsJson, {}),
+    local: safeJsonParse(row.localJson, {}),
+    llm: safeJsonParse(row.llmJson, {}),
+    comparison: safeJsonParse(row.comparisonJson, {}),
+    debug: safeJsonParse(row.debugJson, null),
+    createdAt: row.createdAt
+  }));
+  const summaryByModel = db.prepare(`
+    SELECT
+      provider,
+      providerLabel,
+      model,
+      COUNT(*) as runCount,
+      AVG(localLatencyMs) as averageLocalLatencyMs,
+      AVG(llmLatencyMs) as averageLlmLatencyMs,
+      AVG(CASE WHEN comparisonAvailable = 1 THEN speedup END) as averageSpeedup,
+      MAX(createdAt) as lastRunAt
+    FROM benchmark_reports
+    GROUP BY provider, providerLabel, model
+    ORDER BY runCount DESC, lastRunAt DESC
+    LIMIT ?
+  `).all(summaryLimit).map((row) => ({
+    provider: row.provider || "",
+    providerLabel: row.providerLabel || row.provider || "Provider",
+    model: row.model || "",
+    runCount: Number(row.runCount ?? 0),
+    averageLocalLatencyMs: Number.isFinite(Number(row.averageLocalLatencyMs)) ? Number(row.averageLocalLatencyMs) : null,
+    averageLlmLatencyMs: Number.isFinite(Number(row.averageLlmLatencyMs)) ? Number(row.averageLlmLatencyMs) : null,
+    averageSpeedup: Number.isFinite(Number(row.averageSpeedup)) ? Number(Number(row.averageSpeedup).toFixed(1)) : null,
+    lastRunAt: row.lastRunAt || null
+  }));
+  const counts = db.prepare(`
+    SELECT
+      COUNT(*) as totalRuns,
+      COUNT(DISTINCT provider || ':' || IFNULL(model, '')) as providerModelCount,
+      COUNT(DISTINCT subjectId) as subjectCount
+    FROM benchmark_reports
+  `).get();
+
+  return {
+    totalRuns: Number(counts?.totalRuns ?? 0),
+    providerModelCount: Number(counts?.providerModelCount ?? 0),
+    subjectCount: Number(counts?.subjectCount ?? 0),
+    recent,
+    summaryByModel,
+    debugEntries: recent
+      .map((item) => item.debug)
+      .filter((entry) => entry && typeof entry === "object")
   };
 }
 
@@ -512,6 +706,7 @@ async function runTimed(label, task, meta = {}) {
 function countConstructs(db) {
   ensureSubjectspaceTables(db);
   ensureSoundspaceTables(db);
+  ensureBenchmarkTables(db);
 
   const subjectCount = Number(db.prepare("SELECT COUNT(*) as count FROM subject_constructs").get().count ?? 0);
   const soundCount = Number(db.prepare("SELECT COUNT(*) as count FROM sound_constructs").get().count ?? 0);
@@ -521,6 +716,7 @@ function countConstructs(db) {
   const constructStrandCount = Number(db.prepare("SELECT COUNT(*) as count FROM construct_strands").get().count ?? 0);
   const conversationCount = Number(db.prepare("SELECT COUNT(*) as count FROM chat_conversations").get().count ?? 0);
   const chatMessageCount = Number(db.prepare("SELECT COUNT(*) as count FROM chat_messages").get().count ?? 0);
+  const benchmarkReportCount = Number(db.prepare("SELECT COUNT(*) as count FROM benchmark_reports").get().count ?? 0);
 
   return {
     subjectCount,
@@ -530,7 +726,8 @@ function countConstructs(db) {
     subjectStrandCount,
     constructStrandCount,
     conversationCount,
-    chatMessageCount
+    chatMessageCount,
+    benchmarkReportCount
   };
 }
 
@@ -804,6 +1001,10 @@ async function buildBackendOverviewPayload(db) {
   const subjects = listSubjectSpaces(db);
   const tables = listBackendTableSummaries(db);
   const datasetHealth = auditSubjectDataset(db, { maxIssues: 6 });
+  const modelLabReports = buildBenchmarkReportsPayload(db, {
+    recentLimit: 8,
+    summaryLimit: 6
+  });
   let releaseDatasetHealth = null;
   let databaseSizeBytes = null;
 
@@ -836,6 +1037,7 @@ async function buildBackendOverviewPayload(db) {
       subjectSpaceCount: subjects.length
     },
     datasetHealth,
+    modelLabReports,
     releaseDatasetHealth,
     tables,
     subjects: subjects.slice(0, 8)
@@ -1632,6 +1834,7 @@ function selectSubjectspaceBenchmarkPrompt(db, { question = "", subjectId = "", 
 }
 
 function buildSubjectspaceBenchmark(localLatencyMs, llm = {}, prompts = null) {
+  const llmLabel = String(llm.providerLabel || llm.label || "the LLM assist round-trip").trim() || "the LLM assist round-trip";
   const promptNote = prompts?.benchmark?.tokenSavings > 0
     ? ` Compact benchmark prompt saved about ${prompts.benchmark.tokenSavings} estimated token${prompts.benchmark.tokenSavings === 1 ? "" : "s"}.`
     : "";
@@ -1653,8 +1856,8 @@ function buildSubjectspaceBenchmark(localLatencyMs, llm = {}, prompts = null) {
       speedup: null,
       deltaMs: Number.isFinite(llm.latencyMs) ? toLatencyMs(Math.abs(Number(llm.latencyMs) - localLatencyMs)) : null,
       summary: Number.isFinite(llm.latencyMs)
-        ? `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. The LLM path failed after ${Number(llm.latencyMs).toFixed(3)} ms: ${llm.error}${promptNote}`
-        : `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. The LLM benchmark failed: ${llm.error}${promptNote}`
+        ? `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. ${llmLabel} failed after ${Number(llm.latencyMs).toFixed(3)} ms: ${llm.error}${promptNote}`
+        : `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. ${llmLabel} failed: ${llm.error}${promptNote}`
     };
   }
 
@@ -1664,7 +1867,7 @@ function buildSubjectspaceBenchmark(localLatencyMs, llm = {}, prompts = null) {
       faster: "strandbase",
       speedup: null,
       deltaMs: null,
-      summary: `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. The LLM benchmark failed${llm.error ? `: ${llm.error}` : "."}${promptNote}`.trim()
+      summary: `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. ${llmLabel} failed${llm.error ? `: ${llm.error}` : "."}${promptNote}`.trim()
     };
   }
 
@@ -1680,8 +1883,8 @@ function buildSubjectspaceBenchmark(localLatencyMs, llm = {}, prompts = null) {
     speedup,
     deltaMs,
     summary: faster === "strandbase"
-      ? `Strandbase recall was ${speedup}x faster than the LLM assist round-trip for this prompt.${promptNote}`
-      : `The LLM assist round-trip was ${speedup}x faster than Strandbase recall for this prompt.${promptNote}`
+      ? `Strandbase recall was ${speedup}x faster than ${llmLabel} for this prompt.${promptNote}`
+      : `${llmLabel} was ${speedup}x faster than Strandbase recall for this prompt.${promptNote}`
   };
 }
 
@@ -1708,70 +1911,6 @@ function buildRecallGroundingBlock(recall = {}) {
     steps.length ? `Steps:\n${steps.map((step, index) => `${index + 1}. ${step}`).join("\n")}` : "",
     tags.length ? `Tags:\n- ${tags.join("\n- ")}` : ""
   ].filter(Boolean).join("\n\n");
-}
-
-function buildOllamaPrompt({
-  question = "",
-  subjectLabel = "",
-  recall = null,
-  groundWithLocalRecall = true
-} = {}) {
-  const normalizedQuestion = normalizePromptText(question);
-  if (!groundWithLocalRecall || !recall?.matched) {
-    return {
-      prompt: normalizedQuestion,
-      promptMode: "question-only",
-      grounded: false
-    };
-  }
-
-  const grounding = buildRecallGroundingBlock(recall);
-  return {
-    prompt: [
-      "You are helping test a local-first Strandspace memory system.",
-      "Answer the user's question using the local recall context when it is present.",
-      "If the local memory does not contain an exact value, say that clearly instead of inventing one.",
-      subjectLabel ? `Subject: ${subjectLabel}` : "",
-      `User question: ${normalizedQuestion}`,
-      grounding
-    ].filter(Boolean).join("\n\n"),
-    promptMode: "local-grounded",
-    grounded: true
-  };
-}
-
-function buildRecallCandidateGroundingBlock(recall = {}) {
-  const candidates = Array.isArray(recall?.candidates)
-    ? recall.candidates.filter((candidate) => candidate && candidate.id).slice(0, 3)
-    : [];
-  if (!candidates.length) {
-    return "";
-  }
-
-  return [
-    "Top local Strandspace candidates:",
-    ...candidates.map((candidate, index) => {
-      const contextEntries = Object.entries(candidate.context ?? {})
-        .filter(([key, value]) => key && value)
-        .slice(0, 2)
-        .map(([key, value]) => `    - ${key}: ${value}`);
-      const stepPreview = Array.isArray(candidate.steps)
-        ? candidate.steps.filter(Boolean).slice(0, 2).map((step) => `    - ${step}`)
-        : [];
-      const tagPreview = Array.isArray(candidate.tags)
-        ? candidate.tags.filter(Boolean).slice(0, 4)
-        : [];
-
-      return [
-        `${index + 1}. ${candidate.constructLabel || "Untitled construct"} (score ${Number(candidate.score ?? 0).toFixed(2)})`,
-        candidate.target ? `   target: ${candidate.target}` : "",
-        candidate.objective ? `   objective: ${candidate.objective}` : "",
-        contextEntries.length ? `   context:\n${contextEntries.join("\n")}` : "",
-        stepPreview.length ? `   steps:\n${stepPreview.join("\n")}` : "",
-        tagPreview.length ? `   tags: ${tagPreview.join(", ")}` : ""
-      ].filter(Boolean).join("\n");
-    })
-  ].join("\n\n");
 }
 
 function buildLocalChatConstructLabel(message = "", matchedConstruct = null) {
@@ -1868,88 +2007,47 @@ function parseLocalChatAssistOutput(output = "", {
   };
 }
 
-function buildOllamaChatPrompt({
-  message = "",
-  subjectLabel = "",
-  recall = null
-} = {}) {
-  const promptPlan = buildOllamaPrompt({
-    question: message,
-    subjectLabel,
-    recall,
-    groundWithLocalRecall: true
-  });
-  const candidateGrounding = buildRecallCandidateGroundingBlock(recall);
-
-  return {
-    ...promptPlan,
-    prompt: [
-      "You are the local Strandspace assistant running on a local LLM.",
-      "Read the local Strandspace memory below before answering.",
-      "If the memory is partial, fill the gap with a practical reusable construct draft instead of repeating that more information is needed.",
-      "Return exactly two sections in this order.",
-      "ANSWER:",
-      "Provide a direct user-facing reply in plain text.",
-      "",
-      "CONSTRUCT:",
-      `Subject: ${subjectLabel || recall?.matched?.subjectLabel || "General Recall"}`,
-      "Construct Label: concise reusable construct name",
-      "Target: what this construct covers",
-      "Objective: why the construct matters",
-      "Context:",
-      "- key: value",
-      "Steps:",
-      "- reusable step",
-      "Notes: concise summary",
-      "Tags:",
-      "- keyword",
-      "",
-      promptPlan.prompt,
-      candidateGrounding
-    ].filter(Boolean).join("\n\n")
-  };
-}
-
-function buildOllamaBenchmark(localLatencyMs, ollama = {}, promptMode = "question-only") {
+function buildProviderBenchmark(localLatencyMs, llm = {}, promptMode = "question-only", providerLabel = "Selected model") {
+  const label = String(providerLabel || llm.providerLabel || llm.label || "Selected model").trim() || "Selected model";
   const promptNote = promptMode === "local-grounded"
-    ? " Ollama was grounded with the local construct before generating its reply."
-    : " Ollama answered from the raw question only.";
+    ? ` ${label} was grounded with the local construct before generating its reply.`
+    : ` ${label} answered from the raw question only.`;
 
-  if (!ollama.enabled) {
+  if (!llm.enabled) {
     return {
       available: false,
       faster: "strandbase",
       speedup: null,
       deltaMs: null,
-      summary: `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. ${ollama.reason}${promptNote}`.trim()
+      summary: `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. ${llm.reason}${promptNote}`.trim()
     };
   }
 
-  if (ollama.error) {
+  if (llm.error) {
     return {
       available: false,
       faster: "strandbase",
       speedup: null,
-      deltaMs: Number.isFinite(ollama.latencyMs) ? toLatencyMs(Math.abs(Number(ollama.latencyMs) - localLatencyMs)) : null,
-      summary: Number.isFinite(ollama.latencyMs)
-        ? `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. Ollama failed after ${Number(ollama.latencyMs).toFixed(3)} ms: ${ollama.error}${promptNote}`
-        : `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. Ollama failed: ${ollama.error}${promptNote}`
+      deltaMs: Number.isFinite(llm.latencyMs) ? toLatencyMs(Math.abs(Number(llm.latencyMs) - localLatencyMs)) : null,
+      summary: Number.isFinite(llm.latencyMs)
+        ? `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. ${label} failed after ${Number(llm.latencyMs).toFixed(3)} ms: ${llm.error}${promptNote}`
+        : `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. ${label} failed: ${llm.error}${promptNote}`
     };
   }
 
-  if (!Number.isFinite(ollama.latencyMs)) {
+  if (!Number.isFinite(llm.latencyMs)) {
     return {
       available: false,
       faster: "strandbase",
       speedup: null,
       deltaMs: null,
-      summary: `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. Ollama did not return a measurable latency.${promptNote}`
+      summary: `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. ${label} did not return a measurable latency.${promptNote}`
     };
   }
 
-  const faster = localLatencyMs <= ollama.latencyMs ? "strandbase" : "ollama";
-  const fasterLatency = faster === "strandbase" ? localLatencyMs : ollama.latencyMs;
-  const slowerLatency = faster === "strandbase" ? ollama.latencyMs : localLatencyMs;
+  const faster = localLatencyMs <= llm.latencyMs ? "strandbase" : "llm";
+  const fasterLatency = faster === "strandbase" ? localLatencyMs : llm.latencyMs;
+  const slowerLatency = faster === "strandbase" ? llm.latencyMs : localLatencyMs;
   const speedup = Number((slowerLatency / Math.max(fasterLatency, 0.001)).toFixed(1));
   const deltaMs = toLatencyMs(slowerLatency - fasterLatency);
 
@@ -1959,8 +2057,157 @@ function buildOllamaBenchmark(localLatencyMs, ollama = {}, promptMode = "questio
     speedup,
     deltaMs,
     summary: faster === "strandbase"
-      ? `Strandbase recall was ${speedup}x faster than Ollama for this prompt.${promptNote}`
-      : `Ollama was ${speedup}x faster than Strandbase recall for this prompt.${promptNote}`
+      ? `Strandbase recall was ${speedup}x faster than ${label} for this prompt.${promptNote}`
+      : `${label} was ${speedup}x faster than Strandbase recall for this prompt.${promptNote}`
+  };
+}
+
+async function buildModelLabStatusPayload() {
+  const openai = getOpenAiAssistStatus();
+  const benchmarkTimeoutMs = (() => {
+    const parsed = Number.parseInt(
+      String(process.env.SUBJECTSPACE_MODEL_LAB_TIMEOUT_MS ?? process.env.MODEL_LAB_OPENAI_TIMEOUT_MS ?? "").trim(),
+      10
+    );
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MODEL_LAB_OPENAI_TIMEOUT_MS;
+  })();
+  const providers = [
+    {
+      provider: "openai",
+      label: "OpenAI Assist",
+      available: Boolean(openai.enabled),
+      enabled: Boolean(openai.enabled),
+      defaultModel: String(openai.model ?? "").trim(),
+      models: Array.isArray(openai.models) && openai.models.length
+        ? openai.models.map((model) => ({
+          id: model,
+          name: model,
+          provider: "openai"
+        }))
+        : [],
+      reason: openai.reason,
+      capabilities: ["draft", "compare", "populate"]
+    }
+  ];
+
+  const defaultProvider = providers.find((provider) => provider.enabled)?.provider
+    ?? providers.find((provider) => provider.available)?.provider
+    ?? "openai";
+  const defaultModel = providers.find((provider) => provider.provider === defaultProvider)?.defaultModel ?? "";
+
+  return {
+    ok: true,
+    providers,
+    defaultProvider,
+    defaultModel,
+    reason: openai.reason,
+    requestTimeoutMs: openai.timeoutMs,
+    benchmarkTimeoutMs
+  };
+}
+
+function normalizeModelProvider(value = "", status = null) {
+  return String(status?.defaultProvider ?? "openai").trim() || "openai";
+}
+
+function findModelProvider(status = null, provider = "") {
+  const providers = Array.isArray(status?.providers) ? status.providers : [];
+  return providers.find((entry) => entry.provider === provider) ?? null;
+}
+
+function buildModelAlternativeSuggestions(status = null, provider = "", model = "") {
+  const providers = Array.isArray(status?.providers) ? status.providers : [];
+  const normalizedProvider = String(provider ?? "").trim();
+  const normalizedModel = String(model ?? "").trim();
+
+  return providers.flatMap((entry) => {
+    const models = Array.isArray(entry.models) ? entry.models : [];
+    return models.map((item) => ({
+      provider: entry.provider,
+      providerLabel: entry.label,
+      model: String(item.name ?? item.id ?? "").trim()
+    }));
+  }).filter((entry) => entry.model && !(entry.provider === normalizedProvider && entry.model === normalizedModel))
+    .slice(0, 5);
+}
+
+function isModelTestingUnavailableError(error = null) {
+  const code = String(error?.payload?.code ?? error?.code ?? "").trim().toUpperCase();
+  return ["OPENAI_REQUEST_TIMEOUT"].includes(code);
+}
+
+function buildModelTestingUnavailablePayload({
+  error = null,
+  status = null,
+  provider = "",
+  providerMeta = null,
+  model = "",
+  question = "",
+  recall = null,
+  prompts = null,
+  debug = null,
+  localLatencyMs = null
+} = {}) {
+  const code = String(error?.payload?.code ?? error?.code ?? "MODEL_TESTING_UNAVAILABLE").trim().toUpperCase() || "MODEL_TESTING_UNAVAILABLE";
+  const detail = String(error?.payload?.detail ?? "").trim();
+  const baseError = String(error?.payload?.error ?? error?.message ?? "Model testing is unavailable right now.").trim() || "Model testing is unavailable right now.";
+  const suggestions = buildModelAlternativeSuggestions(status, provider, model);
+  const suggestionText = suggestions.length
+    ? ` Try ${suggestions.map((entry) => `${entry.providerLabel} ${entry.model}`).join(", ")} instead.`
+    : " Try another configured model instead.";
+
+  return {
+    statusCode: 503,
+    payload: {
+      ok: false,
+      code: "MODEL_TESTING_UNAVAILABLE",
+      error: `Model testing unavailable. ${baseError}`.trim(),
+      detail: `${detail || baseError}${suggestionText}`.trim(),
+      provider,
+      providerLabel: providerMeta?.label ?? "",
+      model,
+      question,
+      recall,
+      prompts,
+      debug,
+      localLatencyMs,
+      suggestedModels: suggestions
+    }
+  };
+}
+
+function createModelLabDebugEntry({
+  mode = "draft",
+  provider = "",
+  providerLabel = "",
+  model = "",
+  question = "",
+  requestPrompt = "",
+  responseText = "",
+  constructLabel = "",
+  grounded = false,
+  localReady = false,
+  latencyMs = null,
+  localLatencyMs = null,
+  promptMode = "",
+  error = ""
+} = {}) {
+  return {
+    timestamp: new Date().toISOString(),
+    mode,
+    provider,
+    providerLabel,
+    model,
+    question,
+    requestPrompt,
+    responseText,
+    constructLabel,
+    grounded: Boolean(grounded),
+    localReady: Boolean(localReady),
+    latencyMs: Number.isFinite(Number(latencyMs)) ? Number(latencyMs) : null,
+    localLatencyMs: Number.isFinite(Number(localLatencyMs)) ? Number(localLatencyMs) : null,
+    promptMode,
+    error: String(error ?? "").trim()
   };
 }
 
@@ -2015,6 +2262,7 @@ function openMemoryDatabase() {
   ensureSoundspaceTables(database);
   seedSoundspace(database);
   ensureSubjectspaceTables(database);
+  ensureBenchmarkTables(database);
   seedSubjectspace(database);
   syncSoundConstructsToSubjectspace(database);
   return database;
@@ -2045,11 +2293,13 @@ export function closeMemoryDatabase() {
 export function resetExampleData(targetDb = openMemoryDatabase()) {
   ensureSubjectspaceTables(targetDb);
   ensureSoundspaceTables(targetDb);
+  ensureBenchmarkTables(targetDb);
 
   targetDb.exec("BEGIN");
   try {
     targetDb.exec("DELETE FROM chat_messages;");
     targetDb.exec("DELETE FROM chat_conversations;");
+    targetDb.exec("DELETE FROM benchmark_reports;");
     targetDb.exec("DELETE FROM construct_links;");
     targetDb.exec("DELETE FROM strand_binders;");
     targetDb.exec("DELETE FROM sound_constructs;");
@@ -2508,30 +2758,27 @@ async function handleApi(req, res) {
       database: overview.database,
       counts: overview.counts,
       datasetHealth: overview.datasetHealth,
+      modelLabReports: overview.modelLabReports,
       releaseDatasetHealth: overview.releaseDatasetHealth,
       tables: overview.tables,
       subjects: overview.subjects,
-      openai: buildSystemHealthPayload().openai,
-      ollama: buildSystemHealthPayload().ollama
+      openai: buildSystemHealthPayload().openai
     });
     return;
   }
 
-  if (url.pathname === "/api/ollama/status") {
+  if (url.pathname === "/api/model-lab/status") {
     if (req.method !== "GET") {
       res.writeHead(405, { Allow: "GET" });
       res.end();
       return;
     }
 
-    const status = await runTimed("Ollama status check", () => getOllamaStatus(), {
-      route: url.pathname
-    });
-    sendJson(res, 200, status);
+    sendJson(res, 200, await buildModelLabStatusPayload());
     return;
   }
 
-  if (url.pathname === "/api/ollama/generate") {
+  if (url.pathname === "/api/model-lab/generate") {
     if (req.method !== "POST") {
       res.writeHead(405, { Allow: "POST" });
       res.end();
@@ -2546,11 +2793,14 @@ async function handleApi(req, res) {
       return;
     }
 
+    const status = await buildModelLabStatusPayload();
+    const provider = normalizeModelProvider(payload.provider, status);
+    const providerMeta = findModelProvider(status, provider);
     const prompt = normalizePromptText(payload.prompt ?? payload.question ?? "");
     const subjectId = String(payload.subjectId ?? payload.subject ?? "").trim();
-    const system = String(payload.system ?? "").trim();
-    const model = String(payload.model ?? "").trim();
+    const model = String(payload.model ?? providerMeta?.defaultModel ?? "").trim();
     const groundWithLocalRecall = payload.groundWithLocalRecall !== false;
+    const requestTimeoutMs = Number(status?.benchmarkTimeoutMs ?? DEFAULT_MODEL_LAB_OPENAI_TIMEOUT_MS);
 
     if (!prompt) {
       sendJson(res, 400, {
@@ -2561,71 +2811,161 @@ async function handleApi(req, res) {
       return;
     }
 
+    if (!providerMeta?.available) {
+      sendJson(res, 503, {
+        ok: false,
+        code: "PROVIDER_UNAVAILABLE",
+        error: providerMeta?.reason ?? "The selected model provider is unavailable.",
+        provider,
+        status
+      });
+      return;
+    }
+
     const recallRun = measureSync(() => recallSubjectSpace(db, {
       question: prompt,
       subjectId
     }));
     const recall = recallRun.result;
     const subjectLabel = resolveSubjectspaceLabel(db, subjectId, recall);
-    const promptPlan = buildOllamaPrompt({
-      question: prompt,
-      subjectLabel,
-      recall,
-      groundWithLocalRecall
-    });
 
-    let result;
-    let latencyMs = null;
-    const started = performance.now();
-    try {
-      result = await runTimed("Ollama generate", () => generateWithOllama({
-        prompt: promptPlan.prompt,
-        model,
-        system
-      }), {
-        route: url.pathname,
-        subjectId: subjectId || recall.matched?.subjectId || "",
-        promptMode: promptPlan.promptMode,
-        question: previewQuestionForLogs(prompt)
-      });
-      latencyMs = toLatencyMs(performance.now() - started);
-    } catch (error) {
-      const normalizedError = buildApiErrorPayload(error, "Unable to generate a local Ollama response.");
-      sendJson(res, normalizedError.statusCode, {
-        ...normalizedError.payload,
-        prompt,
-        promptMode: promptPlan.promptMode,
-        grounded: promptPlan.grounded,
-        recall,
-        recallLatencyMs: recallRun.latencyMs
+    const config = getOpenAiAssistStatus();
+    if (!config.enabled) {
+      sendJson(res, 503, {
+        ok: false,
+        code: "OPENAI_DISABLED",
+        error: config.reason,
+        provider,
+        status
       });
       return;
     }
 
+    let assistResult;
+    const started = performance.now();
+    try {
+      assistResult = await runTimed("Model lab OpenAI draft", () => generateOpenAiSubjectAssist({
+        question: prompt,
+        subjectId,
+        subjectLabel,
+        recall,
+        model,
+        requestTimeoutMs
+      }), {
+        route: url.pathname,
+        provider,
+        question: previewQuestionForLogs(prompt),
+        subjectId: subjectId || recall.matched?.subjectId || ""
+      });
+    } catch (error) {
+      const normalizedError = buildApiErrorPayload(error, "Unable to run the selected OpenAI model.");
+      if (isModelTestingUnavailableError(error)) {
+        const unavailable = buildModelTestingUnavailablePayload({
+          error,
+          status,
+          provider,
+          providerMeta,
+          model: model || config.model,
+          question: prompt,
+          recall,
+          debug: createModelLabDebugEntry({
+            mode: "draft",
+            provider,
+            providerLabel: providerMeta.label,
+            model: model || config.model,
+            question: prompt,
+            requestPrompt: prompt,
+            grounded: Boolean(recall.matched),
+            localReady: Boolean(recall.ready),
+            localLatencyMs: recallRun.latencyMs,
+            error: normalizedError.payload.error
+          }),
+          localLatencyMs: recallRun.latencyMs
+        });
+        sendJson(res, unavailable.statusCode, unavailable.payload);
+        return;
+      }
+      sendJson(res, normalizedError.statusCode, {
+        ...normalizedError.payload,
+        provider,
+        recall,
+        recallLatencyMs: recallRun.latencyMs,
+        debug: createModelLabDebugEntry({
+          mode: "draft",
+          provider,
+          providerLabel: providerMeta.label,
+          model: model || config.model,
+          question: prompt,
+          requestPrompt: prompt,
+          grounded: Boolean(recall.matched),
+          localReady: Boolean(recall.ready),
+          localLatencyMs: recallRun.latencyMs,
+          error: normalizedError.payload.error
+        })
+      });
+      return;
+    }
+
+    const suggestedConstruct = buildSuggestedConstructFromAssist({
+      subjectId: subjectId || recall.matched?.subjectId || undefined,
+      subjectLabel,
+      assist: assistResult.assist,
+      question: prompt,
+      routingMode: recall.routing?.mode ?? "",
+      model: assistResult.model ?? model ?? config.model
+    });
+    const usage = normalizeUsageMetrics(assistResult.usage);
+    const answerText = [
+      assistResult.assist?.rationale ?? "",
+      assistResult.assist?.nextQuestion ? `Next question: ${assistResult.assist.nextQuestion}` : ""
+    ].filter(Boolean).join("\n\n").trim() || `OpenAI returned a draft for ${suggestedConstruct.constructLabel}.`;
+    const latencyMs = toLatencyMs(performance.now() - started);
+
     sendJson(res, 200, {
       ok: true,
-      provider: "ollama",
+      provider,
       prompt,
-      promptMode: promptPlan.promptMode,
-      grounded: promptPlan.grounded,
+      grounded: Boolean(recall.matched),
       subjectId: recall.matched?.subjectId ?? subjectId,
       subjectLabel,
       recall,
       recallLatencyMs: recallRun.latencyMs,
-      ollama: {
+      suggestedConstruct: hydrateConstructForClient(suggestedConstruct),
+      model: {
+        provider,
+        providerLabel: providerMeta.label,
+        label: "OpenAI assist",
         enabled: true,
-        label: "Ollama local model",
-        model: result.model,
+        model: assistResult.model ?? config.model,
         latencyMs,
-        output: result.output,
-        doneReason: result.doneReason,
-        stats: result.stats
-      }
+        output: answerText,
+        answer: answerText,
+        apiAction: assistResult.assist?.apiAction ?? null,
+        usage,
+        stats: usage,
+        draft: hydrateConstructForClient(suggestedConstruct)
+      },
+      debug: createModelLabDebugEntry({
+        mode: "draft",
+        provider,
+        providerLabel: providerMeta.label,
+        model: assistResult.model ?? config.model,
+        question: prompt,
+        requestPrompt: prompt,
+        responseText: answerText,
+        constructLabel: suggestedConstruct.constructLabel,
+        grounded: Boolean(recall.matched),
+        localReady: Boolean(recall.ready),
+        latencyMs,
+        localLatencyMs: recallRun.latencyMs,
+        promptMode: "subjectspace-assist"
+      })
     });
     return;
+
   }
 
-  if (url.pathname === "/api/ollama/compare") {
+  if (url.pathname === "/api/model-lab/compare") {
     if (req.method !== "POST") {
       res.writeHead(405, { Allow: "POST" });
       res.end();
@@ -2641,10 +2981,6 @@ async function handleApi(req, res) {
     }
 
     const { question, subjectId } = readSubjectspaceParams(payload);
-    const system = String(payload.system ?? "").trim();
-    const model = String(payload.model ?? "").trim();
-    const groundWithLocalRecall = payload.groundWithLocalRecall !== false;
-
     if (!question) {
       sendJson(res, 400, {
         ok: false,
@@ -2654,76 +2990,200 @@ async function handleApi(req, res) {
       return;
     }
 
-    const localRun = measureSync(() => recallSubjectSpace(db, {
+    const status = await buildModelLabStatusPayload();
+    const provider = normalizeModelProvider(payload.provider, status);
+    const providerMeta = findModelProvider(status, provider);
+    const model = String(payload.model ?? providerMeta?.defaultModel ?? "").trim();
+    const groundWithLocalRecall = payload.groundWithLocalRecall !== false;
+    const requestTimeoutMs = Number(status?.benchmarkTimeoutMs ?? DEFAULT_MODEL_LAB_OPENAI_TIMEOUT_MS);
+    const originalLocal = measureSync(() => recallSubjectSpace(db, {
       question,
       subjectId
     }));
-    const recall = localRun.result;
-    const subjectLabel = resolveSubjectspaceLabel(db, subjectId, recall);
-    const promptPlan = buildOllamaPrompt({
+    const prompts = selectSubjectspaceBenchmarkPrompt(db, {
       question,
-      subjectLabel,
-      recall,
-      groundWithLocalRecall
+      subjectId,
+      recall: originalLocal.result
     });
-    let ollama = {
-      label: "Ollama local model",
-      enabled: true,
-      model: model || getOllamaConfig().defaultModel,
-      latencyMs: null,
-      promptMode: promptPlan.promptMode,
-      output: "",
-      reason: "",
-      error: null,
-      stats: null
-    };
+    const benchmarkQuestion = prompts.question || question;
+    const local = prompts.benchmark.optimized
+      ? measureSync(() => recallSubjectSpace(db, {
+        question: benchmarkQuestion,
+        subjectId
+      }))
+      : originalLocal;
+    const recall = local.result;
+    const subjectLabel = resolveSubjectspaceLabel(db, subjectId, recall);
 
-    const started = performance.now();
-    try {
-      const result = await runTimed("Ollama compare generate", () => generateWithOllama({
-        prompt: promptPlan.prompt,
-        model,
-        system
-      }), {
-        route: url.pathname,
-        subjectId: subjectId || recall.matched?.subjectId || "",
-        promptMode: promptPlan.promptMode,
-        question: previewQuestionForLogs(question)
+    if (!providerMeta?.available) {
+      sendJson(res, 503, {
+        ok: false,
+        code: "PROVIDER_UNAVAILABLE",
+        error: providerMeta?.reason ?? "The selected model provider is unavailable.",
+        provider,
+        prompts,
+        recall
       });
-      ollama = {
-        ...ollama,
-        model: result.model,
-        latencyMs: toLatencyMs(performance.now() - started),
-        output: result.output,
-        stats: result.stats
-      };
-    } catch (error) {
-      ollama = {
-        ...ollama,
-        latencyMs: toLatencyMs(performance.now() - started),
-        error: error?.payload?.error ?? (error instanceof Error ? error.message : String(error)),
-        reason: error?.payload?.detail ?? ""
-      };
+      return;
     }
 
-    logEvent("info", "Ollama compare completed", {
+    let llm = {
+      label: provider === "openai" ? "OpenAI assist round-trip" : "Selected model round-trip",
+      enabled: true,
+      provider,
+      providerLabel: providerMeta.label,
+      model,
+      mode: "assist_round_trip",
+      question: benchmarkQuestion,
+      latencyMs: null,
+      apiAction: null,
+      constructLabel: null,
+      promptTokens: prompts.benchmark.estimatedTokens,
+      promptTokenSource: "estimate",
+      outputTokens: null,
+      totalTokens: null,
+      reason: providerMeta.reason,
+      error: null,
+      output: ""
+    };
+    let debug = null;
+
+    const config = getOpenAiAssistStatus();
+    if (!config.enabled) {
+      llm = {
+        ...llm,
+        enabled: false,
+        reason: config.reason
+      };
+    } else {
+      const started = performance.now();
+      try {
+        const assistResult = await runTimed("Model lab OpenAI compare", () => generateOpenAiSubjectAssist({
+          question: benchmarkQuestion,
+          subjectId,
+          subjectLabel,
+          recall,
+          model,
+          requestTimeoutMs
+        }), {
+          route: url.pathname,
+          provider,
+          question: previewQuestionForLogs(benchmarkQuestion),
+          subjectId: subjectId || recall.matched?.subjectId || ""
+        });
+        const usage = normalizeUsageMetrics(assistResult.usage);
+        const answerText = [
+          assistResult.assist?.rationale ?? "",
+          assistResult.assist?.nextQuestion ? `Next question: ${assistResult.assist.nextQuestion}` : ""
+        ].filter(Boolean).join("\n\n").trim();
+
+        llm = {
+          ...llm,
+          model: assistResult.model ?? config.model,
+          latencyMs: toLatencyMs(performance.now() - started),
+          apiAction: assistResult.assist?.apiAction ?? null,
+          constructLabel: assistResult.assist?.constructLabel ?? null,
+          promptTokens: usage?.inputTokens ?? llm.promptTokens,
+          promptTokenSource: usage?.inputTokens ? "usage" : llm.promptTokenSource,
+          outputTokens: usage?.outputTokens ?? null,
+          totalTokens: usage?.totalTokens ?? null,
+          output: answerText
+        };
+        debug = createModelLabDebugEntry({
+          mode: "compare",
+          provider,
+          providerLabel: providerMeta.label,
+          model: assistResult.model ?? config.model,
+          question,
+          requestPrompt: benchmarkQuestion,
+          responseText: answerText,
+          constructLabel: assistResult.assist?.constructLabel ?? "",
+          grounded: false,
+          localReady: Boolean(recall.ready),
+          latencyMs: llm.latencyMs,
+          localLatencyMs: local.latencyMs,
+          promptMode: "subjectspace-assist"
+        });
+      } catch (error) {
+        if (isModelTestingUnavailableError(error)) {
+          const unavailableDebug = createModelLabDebugEntry({
+            mode: "compare",
+            provider,
+            providerLabel: providerMeta.label,
+            model: model || config.model,
+            question,
+            requestPrompt: benchmarkQuestion,
+            localReady: Boolean(recall.ready),
+            latencyMs: toLatencyMs(performance.now() - started),
+            localLatencyMs: local.latencyMs,
+            error: error instanceof Error ? error.message : String(error),
+            promptMode: "subjectspace-assist"
+          });
+          const unavailable = buildModelTestingUnavailablePayload({
+            error,
+            status,
+            provider,
+            providerMeta,
+            model: model || config.model,
+            question,
+            recall,
+            prompts,
+            debug: unavailableDebug,
+            localLatencyMs: local.latencyMs
+          });
+          logEvent("warn", "Model lab compare unavailable", {
+            route: url.pathname,
+            provider,
+            model: model || config.model,
+            question: previewQuestionForLogs(question),
+            error: unavailable.payload.error
+          });
+          sendJson(res, unavailable.statusCode, unavailable.payload);
+          return;
+        }
+        llm = {
+          ...llm,
+          latencyMs: toLatencyMs(performance.now() - started),
+          error: error instanceof Error ? error.message : String(error)
+        };
+        debug = createModelLabDebugEntry({
+          mode: "compare",
+          provider,
+          providerLabel: providerMeta.label,
+          model: model || config.model,
+          question,
+          requestPrompt: benchmarkQuestion,
+          localReady: Boolean(recall.ready),
+          latencyMs: llm.latencyMs,
+          localLatencyMs: local.latencyMs,
+          error: llm.error,
+          promptMode: "subjectspace-assist"
+        });
+      }
+    }
+
+    logEvent("info", "Model lab compare completed", {
       route: url.pathname,
-      localLatencyMs: localRun.latencyMs,
-      ollamaLatencyMs: ollama.latencyMs,
-      promptMode: promptPlan.promptMode,
+      provider,
+      model: llm.model,
+      localLatencyMs: local.latencyMs,
+      llmLatencyMs: llm.latencyMs,
       question: previewQuestionForLogs(question),
       subjectId: recall.matched?.subjectId ?? subjectId ?? "",
       localReady: recall.ready
     });
 
-    sendJson(res, 200, {
+    const resultPayload = {
       ok: true,
+      provider,
       question,
-      subjectId: recall.matched?.subjectId ?? subjectId,
       subjectLabel,
+      subjectId: recall.matched?.subjectId ?? subjectId,
+      prompts,
       local: {
         label: "Strandbase recall",
-        latencyMs: localRun.latencyMs,
+        question: benchmarkQuestion,
+        latencyMs: local.latencyMs,
         ready: recall.ready,
         route: recall.routing?.mode ?? null,
         confidence: Number(recall.readiness?.confidence ?? 0),
@@ -2731,15 +3191,36 @@ async function handleApi(req, res) {
         constructLabel: recall.matched?.constructLabel ?? null,
         answer: recall.answer
       },
-      ollama,
-      comparison: buildOllamaBenchmark(localRun.latencyMs, ollama, promptPlan.promptMode),
-      promptMode: promptPlan.promptMode,
-      grounded: promptPlan.grounded,
-      recall
+      llm,
+      comparison: buildSubjectspaceBenchmark(local.latencyMs, llm, prompts),
+      recall,
+      debug
+    };
+    persistBenchmarkReport(db, {
+      ...resultPayload,
+      mode: "compare",
+      testLabel: payload.testLabel ?? payload.variantMode ?? "Manual benchmark"
     });
+    sendJson(res, 200, resultPayload);
     return;
   }
 
+  if (url.pathname === "/api/model-lab/reports") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      reports: buildBenchmarkReportsPayload(db, {
+        recentLimit: Number(url.searchParams.get("recent") ?? 10) || 10,
+        summaryLimit: Number(url.searchParams.get("summary") ?? 8) || 8
+      })
+    });
+    return;
+  }
 
   if (url.pathname === "/api/backend/overview") {
     if (req.method !== "GET") {
@@ -3547,136 +4028,6 @@ async function handleApi(req, res) {
       return;
     }
 
-    const allowLocalModel = payload.useLocalModel !== false;
-    const requestedLocalModel = String(payload.localModel ?? payload.model ?? "").trim();
-    if (allowLocalModel) {
-      const ollamaStatus = await getOllamaStatus();
-      if (ollamaStatus.reachable && Array.isArray(ollamaStatus.models) && ollamaStatus.models.length) {
-        const promptPlan = buildOllamaChatPrompt({
-          message,
-          subjectLabel,
-          recall
-        });
-
-        try {
-          const ollamaResult = await runTimed("Subjectspace chat local assist", () => generateWithOllama({
-            prompt: promptPlan.prompt,
-            model: requestedLocalModel,
-            system: "Return the exact ANSWER and CONSTRUCT sections requested in the prompt."
-          }), {
-            route: url.pathname,
-            provider: "ollama",
-            subjectId: subjectId || recall.matched?.subjectId || "",
-            promptMode: promptPlan.promptMode,
-            question: previewQuestionForLogs(message)
-          });
-          const parsedLocalAssist = parseLocalChatAssistOutput(ollamaResult.output, {
-            message,
-            subjectId: subjectId || recall.matched?.subjectId || "",
-            subjectLabel,
-            recall
-          });
-          const chatMergeBase = chooseChatEnrichmentBase(db, recall, parsedLocalAssist.draft);
-          const chatDraft = mergeChatConstructIntoLocalBase(chatMergeBase?.construct, parsedLocalAssist.draft, {
-            source: "chatbot-derived-ollama",
-            provider: "ollama",
-            model: ollamaResult.model,
-            conversationId,
-            chatbotDerived: true,
-            groundedWithLocalRecall: promptPlan.grounded,
-            promptMode: promptPlan.promptMode,
-            learnedFromQuestion: message,
-            enrichmentScore: Number(chatMergeBase?.totalScore ?? 0),
-            enrichmentTokenOverlap: Number(chatMergeBase?.tokenOverlap ?? 0),
-            enrichmentStrandOverlap: Number(chatMergeBase?.strandOverlap ?? 0)
-          });
-          const savedConstruct = upsertSubjectConstruct(db, mergeSubjectConstruct(chatDraft, {
-            provenance: {
-              ...(chatDraft?.provenance ?? {}),
-              source: "chatbot-derived-ollama",
-              provider: "ollama",
-              model: ollamaResult.model,
-              conversationId,
-              chatbotDerived: true,
-              groundedWithLocalRecall: promptPlan.grounded,
-              promptMode: promptPlan.promptMode,
-              learnedFromQuestion: message
-            }
-          }, {
-            preserveId: false,
-            provenance: {
-              ...(chatDraft?.provenance ?? {}),
-              source: "chatbot-derived-ollama",
-              provider: "ollama",
-              model: ollamaResult.model,
-              conversationId,
-              chatbotDerived: true,
-              groundedWithLocalRecall: promptPlan.grounded,
-              promptMode: promptPlan.promptMode,
-              learnedFromQuestion: message
-            }
-          }));
-          const refreshedRecall = recallSubjectSpace(db, {
-            question: message,
-            subjectId: savedConstruct.subjectId
-          });
-          const answer = refreshedRecall.ready
-            ? refreshedRecall.answer
-            : (parsedLocalAssist.answer || recall.answer);
-
-          appendChatMessage(db, {
-            conversationId,
-            role: "assistant",
-            content: answer,
-            subjectId: savedConstruct.subjectId,
-            constructId: savedConstruct.id,
-            metadata: {
-              source: "chatbot-derived-ollama",
-              provider: "ollama",
-              model: ollamaResult.model,
-              promptMode: promptPlan.promptMode
-            }
-          });
-
-          sendJson(res, 200, {
-            ok: true,
-            source: "chatbot-derived-ollama",
-            conversationId,
-            answer,
-            recall: refreshedRecall,
-            recallLatencyMs: initialRecall.latencyMs,
-            savedConstruct: hydrateSubjectConstructWithRelations(db, savedConstruct),
-            ollama: {
-              enabled: true,
-              provider: "ollama",
-              model: ollamaResult.model,
-              output: ollamaResult.output,
-              doneReason: ollamaResult.doneReason,
-              stats: ollamaResult.stats,
-              promptMode: promptPlan.promptMode,
-              grounded: promptPlan.grounded
-            },
-            config: {
-              provider: "ollama",
-              enabled: true,
-              model: ollamaResult.model,
-              timeoutMs: ollamaStatus.timeoutMs,
-              baseUrl: ollamaStatus.baseUrl
-            }
-          });
-          return;
-        } catch (error) {
-          logEvent("warn", "Subjectspace chat local assist unavailable", {
-            route: url.pathname,
-            provider: "ollama",
-            subjectId: subjectId || recall.matched?.subjectId || "",
-            question: previewQuestionForLogs(message),
-            error: error instanceof Error ? error.message : String(error)
-          });
-        }
-      }
-    }
-
     const config = getOpenAiAssistStatus();
     if (!config.enabled) {
       appendChatMessage(db, {
@@ -4256,7 +4607,6 @@ export async function createApp() {
   databasePath = await resolveDatabasePath();
   openMemoryDatabase();
   const assistStatus = getOpenAiAssistStatus();
-  const ollamaConfig = getOllamaConfig();
   logEvent("info", "Database path selected", {
     databasePath,
     remoteAllowed: isRemoteAccessAllowed()
@@ -4265,11 +4615,6 @@ export async function createApp() {
     model: assistStatus.model,
     timeoutMs: assistStatus.timeoutMs,
     reason: assistStatus.reason
-  });
-  logEvent("info", "Ollama test path configured", {
-    baseUrl: ollamaConfig.baseUrl,
-    timeoutMs: ollamaConfig.timeoutMs,
-    defaultModel: ollamaConfig.defaultModel || ""
   });
 
   const server = http.createServer(async (req, res) => {

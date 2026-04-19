@@ -5,6 +5,8 @@
 
 let currentConversationId = null;
 let currentMessages = [];
+let currentConversationMeta = null;
+let conversationsCache = [];
 
 // Status badge
 const statusBadge = document.getElementById('chat-status-badge');
@@ -20,14 +22,25 @@ async function loadConversations() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     
     const data = await response.json();
-    renderConversationsList(data.conversations);
+    conversationsCache = Array.isArray(data.conversations) ? data.conversations : [];
+    renderConversationsList(conversationsCache);
     setStatus('Ready', 'success');
+    return conversationsCache;
   } catch (error) {
     console.error('Failed to load conversations:', error);
     setStatus('Error loading conversations', 'error');
     document.getElementById('conversations-list').innerHTML = 
       `<p class="placeholder">Failed to load conversations</p>`;
+    return [];
   }
+}
+
+function findConversationMeta(conversationId) {
+  if (!conversationId) {
+    return null;
+  }
+
+  return conversationsCache.find((entry) => entry.id === conversationId) || null;
 }
 
 // Render conversations list
@@ -69,6 +82,11 @@ async function loadConversation(conversationId) {
     const data = await response.json();
     currentConversationId = conversationId;
     currentMessages = data.messages || [];
+    currentConversationMeta = {
+      ...(findConversationMeta(conversationId) || {}),
+      ...(data.conversation || {}),
+      id: conversationId
+    };
     
     // Update UI
     updateConversationUI();
@@ -82,15 +100,18 @@ async function loadConversation(conversationId) {
 
 // Update UI for selected conversation
 function updateConversationUI() {
-  const conv = currentMessages[0]?.conversationId;
   const title = document.getElementById('chat-title');
   const subtitle = document.getElementById('chat-subtitle');
   const form = document.getElementById('chat-form');
   const deleteBtn = document.getElementById('delete-chat-btn');
   const container = document.getElementById('messages-container');
+  const conversationTitle = String(currentConversationMeta?.title ?? "").trim();
+  const subjectId = String(currentConversationMeta?.subjectId ?? currentMessages[0]?.subjectId ?? "").trim();
 
-  title.textContent = `Conversation ${conv?.substring(0, 12)}...` || 'Chat';
-  subtitle.textContent = `${currentMessages.length} messages`;
+  title.textContent = conversationTitle || (currentConversationId ? `Conversation ${currentConversationId.substring(0, 12)}...` : 'Chat');
+  subtitle.textContent = subjectId
+    ? `${currentMessages.length} messages in ${subjectId}`
+    : `${currentMessages.length} messages`;
   form.style.display = 'flex';
   deleteBtn.style.display = 'block';
   container.className = 'messages-container';
@@ -127,9 +148,18 @@ function renderMessages() {
 // Send message
 async function sendMessage(content) {
   if (!content.trim()) return;
+  const input = document.getElementById('message-input');
+  const submitButton = document.querySelector('.send-btn');
 
   try {
     setStatus('Sending...', 'neutral');
+    if (input) {
+      input.disabled = true;
+    }
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = 'Sending...';
+    }
 
     const response = await fetch('/api/chat', {
       method: 'POST',
@@ -140,21 +170,34 @@ async function sendMessage(content) {
       })
     });
 
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    
     const data = await response.json();
+    if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
     
     // Update conversation if this was the first message
     if (!currentConversationId) {
       currentConversationId = data.conversationId;
     }
+    currentConversationMeta = findConversationMeta(currentConversationId) || currentConversationMeta;
 
-    // Refresh conversation
+    await loadConversations();
+    currentConversationMeta = findConversationMeta(currentConversationId) || currentConversationMeta;
     await loadConversation(currentConversationId);
     setStatus('Ready', 'success');
   } catch (error) {
     console.error('Failed to send message:', error);
-    setStatus('Error sending message', 'error');
+    setStatus(error instanceof Error ? error.message : 'Error sending message', 'error');
+    if (input) {
+      input.value = content;
+      input.focus();
+    }
+  } finally {
+    if (input) {
+      input.disabled = false;
+    }
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = 'Send';
+    }
   }
 }
 
@@ -221,15 +264,22 @@ function escapeHtml(text) {
 document.getElementById('new-chat-btn').addEventListener('click', () => {
   currentConversationId = null;
   currentMessages = [];
+  currentConversationMeta = null;
   document.getElementById('messages-container').innerHTML = `
     <div class="welcome-state">
       <h2>New Conversation</h2>
       <p>Ask a question to get started.</p>
     </div>
   `;
+  document.getElementById('chat-title').textContent = 'New Conversation';
+  document.getElementById('chat-subtitle').textContent = 'Ask a question to get started';
   document.getElementById('chat-form').style.display = 'flex';
   document.getElementById('delete-chat-btn').style.display = 'none';
   document.getElementById('message-input').focus();
+  document.querySelectorAll('.conversation-item').forEach(btn => {
+    btn.classList.remove('is-active');
+  });
+  setStatus('Ready', 'success');
 });
 
 document.getElementById('chat-form').addEventListener('submit', async (e) => {

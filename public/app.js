@@ -13,6 +13,9 @@ const graphMetaEl = document.getElementById("graph-meta");
 const speedMetaEl = document.getElementById("speed-meta");
 const speedReportEl = document.getElementById("speed-report");
 const speedCompareButton = document.getElementById("speed-compare-button");
+const benchmarkHistoryMetaEl = document.getElementById("benchmark-history-meta");
+const benchmarkHistoryReportEl = document.getElementById("benchmark-history-report");
+const benchmarkHistoryRefreshButton = document.getElementById("benchmark-history-refresh-button");
 const benchmarkVariantMetaEl = document.getElementById("benchmark-variant-meta");
 const benchmarkVariantModeEl = document.getElementById("benchmark-variant-mode");
 const benchmarkWordBudgetEl = document.getElementById("benchmark-word-budget");
@@ -21,15 +24,16 @@ const benchmarkRepeatCountEl = document.getElementById("benchmark-repeat-count")
 const benchmarkPreviewEl = document.getElementById("benchmark-preview");
 const benchmarkUseVariantButton = document.getElementById("benchmark-use-variant-button");
 const benchmarkRunVariantButton = document.getElementById("benchmark-run-variant-button");
-const benchmarkRunVariantOllamaButton = document.getElementById("benchmark-run-variant-ollama-button");
-const ollamaMetaEl = document.getElementById("ollama-meta");
-const ollamaModelEl = document.getElementById("ollama-model");
-const ollamaGroundingEl = document.getElementById("ollama-grounding");
-const ollamaPromptEl = document.getElementById("ollama-prompt");
-const ollamaReportEl = document.getElementById("ollama-report");
-const ollamaUseLastButton = document.getElementById("ollama-use-last-button");
-const ollamaGenerateButton = document.getElementById("ollama-generate-button");
-const ollamaCompareButton = document.getElementById("ollama-compare-button");
+const modelLabMetaEl = document.getElementById("model-lab-meta");
+const llmProviderEl = document.getElementById("llm-provider");
+const modelLabModelEl = document.getElementById("model-lab-model");
+const modelLabPromptEl = document.getElementById("model-lab-prompt");
+const modelLabReportEl = document.getElementById("model-lab-report");
+const modelLabUseLastButton = document.getElementById("model-lab-use-last-button");
+const modelLabGenerateButton = document.getElementById("model-lab-generate-button");
+const modelLabCompareButton = document.getElementById("model-lab-compare-button");
+const llmDebugMetaEl = document.getElementById("llm-debug-meta");
+const llmDebugReportEl = document.getElementById("llm-debug-report");
 const libraryMetaEl = document.getElementById("library-meta");
 const libraryListEl = document.getElementById("library-list");
 const resetExamplesButton = document.getElementById("reset-examples-button");
@@ -86,6 +90,22 @@ const isBuilderPage = document.body?.classList.contains("builder-page");
 const subjectStorageKey = "strandspace:last-subject-id";
 const themeStorageKey = "strandspace:theme";
 const pendingDraftStorageKey = "strandspace:pending-draft";
+const defaultModelLabProviders = [
+  {
+    provider: "openai",
+    label: "OpenAI Assist",
+    available: false,
+    enabled: false,
+    defaultModel: "gpt-5.4-mini",
+    models: [
+      { id: "gpt-5.4-mini", name: "gpt-5.4-mini", provider: "openai" },
+      { id: "gpt-5.4", name: "gpt-5.4", provider: "openai" },
+      { id: "gpt-5.2", name: "gpt-5.2", provider: "openai" }
+    ],
+    reason: "Configured fallback model list loaded in the browser.",
+    capabilities: ["draft", "compare", "populate"]
+  }
+];
 const fallbackSuggestedPrompts = [
   "How do I set gain staging for a full band before soundcheck?",
   "Recall my conference room speech coverage preset.",
@@ -109,17 +129,21 @@ let benchmarkState = {
   phase: "idle",
   message: ""
 };
-let ollamaStatus = {
-  reachable: false,
-  models: [],
-  defaultModel: "",
-  reason: "Checking Ollama..."
+let modelLabStatus = {
+  providers: defaultModelLabProviders,
+  defaultProvider: "openai",
+  defaultModel: "gpt-5.4-mini",
+  reason: "Checking OpenAI model access...",
+  requestTimeoutMs: 20000,
+  benchmarkTimeoutMs: 45000
 };
-let latestOllamaRun = null;
-let ollamaState = {
+let latestModelLabRun = null;
+let modelLabState = {
   phase: "idle",
   message: ""
 };
+let modelDebugEntries = [];
+let benchmarkReports = null;
 let systemHealth = null;
 let latestSubjectIdeas = null;
 let backendOverview = null;
@@ -127,6 +151,28 @@ let datasetHealth = null;
 let lastRenderedTrace = null;
 let lastRenderedGraphConstruct = null;
 const pagedListSize = 5;
+const MODEL_LAB_STATUS_FETCH_TIMEOUT_MS = 8000;
+const MODEL_LAB_REPORTS_FETCH_TIMEOUT_MS = 8000;
+
+function normalizedTimeoutMs(value, fallbackMs) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackMs;
+}
+
+function modelLabRequestTimeoutMs(mode = "request") {
+  const fallback = mode === "benchmark" ? 45000 : 20000;
+  const base = normalizedTimeoutMs(
+    mode === "benchmark" ? modelLabStatus.benchmarkTimeoutMs : modelLabStatus.requestTimeoutMs,
+    fallback
+  );
+  return Math.max(8000, Math.min(base + 5000, 65000));
+}
+
+function modelLabTimeoutMessage(mode = "request") {
+  const timeoutMs = modelLabRequestTimeoutMs(mode);
+  const label = mode === "benchmark" ? "Benchmark compare" : "Model lab request";
+  return `${label} timed out after ${formatMilliseconds(timeoutMs)}. Try \`gpt-5.4-mini\`, shorten the prompt, or run the compare again.`;
+}
 let pagerState = {
   suggestedPrompts: 0,
   examplePrompts: 0
@@ -231,7 +277,7 @@ function renderSystemStatusBadge(health = null) {
 
   if (health.openai?.enabled) {
     systemStatusBadgeEl.className = "status-badge assist";
-    systemStatusBadgeEl.textContent = `Assist enabled · ${health.openai.model ?? "OpenAI"}`;
+    systemStatusBadgeEl.textContent = `Assist enabled - ${health.openai.model ?? "OpenAI"}`;
     return;
   }
 
@@ -314,6 +360,20 @@ function formatMilliseconds(value) {
   return `${Number(value).toFixed(Number(value) >= 10 ? 1 : 3)} ms`;
 }
 
+function formatTimestamp(value = "") {
+  const date = new Date(String(value ?? ""));
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown time";
+  }
+
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
 function formatTokenCount(value, { approximate = false } = {}) {
   if (!Number.isFinite(Number(value))) {
     return "n/a";
@@ -379,8 +439,32 @@ function activeBenchmarkQuestion() {
   return String(recallQuestionInput?.value ?? "").trim() || lastQuestion;
 }
 
-function activeOllamaPrompt() {
-  return String(ollamaPromptEl?.value ?? "").trim() || activeBenchmarkQuestion();
+function activeModelLabPrompt() {
+  return String(modelLabPromptEl?.value ?? "").trim() || activeBenchmarkQuestion();
+}
+
+function selectedModelProvider() {
+  return String(llmProviderEl?.value ?? modelLabStatus.defaultProvider ?? "openai").trim() || "openai";
+}
+
+function selectedProviderMeta() {
+  const provider = selectedModelProvider();
+  const providers = Array.isArray(modelLabStatus.providers) ? modelLabStatus.providers : [];
+  return providers.find((entry) => entry.provider === provider) ?? null;
+}
+
+function selectedModelLabel() {
+  const providerMeta = selectedProviderMeta();
+  const model = String(modelLabModelEl?.value ?? providerMeta?.defaultModel ?? "").trim();
+  if (!providerMeta) {
+    return model || "OpenAI model";
+  }
+
+  return model ? `${providerMeta.label} - ${model}` : providerMeta.label;
+}
+
+function activeModelGrounding() {
+  return true;
 }
 
 function activeBenchmarkBasePrompt() {
@@ -700,7 +784,7 @@ function renderGraph(construct = null) {
           ? constructStrands.slice(0, 10).map((strand) => `
               <article class="trace-chip">
                 <strong>${escapeHtml(strand.label ?? strand.strandKey ?? "strand")}</strong>
-                <span>${escapeHtml(`${strand.layer ?? "anchor"}/${strand.role ?? "feature"} · ${Number(strand.weight ?? 0).toFixed(2)}`)}</span>
+                <span>${escapeHtml(`${strand.layer ?? "anchor"}/${strand.role ?? "feature"} - ${Number(strand.weight ?? 0).toFixed(2)}`)}</span>
               </article>
             `).join("")
           : "<p class=\"trace-empty\">No construct strands are attached yet.</p>"}
@@ -713,7 +797,7 @@ function renderGraph(construct = null) {
           ? subjectStrands.slice(0, 10).map((strand) => `
               <article class="trace-chip">
                 <strong>${escapeHtml(strand.label ?? strand.strandKey ?? "strand")}</strong>
-                <span>${escapeHtml(`${strand.constructCount ?? 0} constructs · ${strand.usageCount ?? 0} recalls`)}</span>
+                <span>${escapeHtml(`${strand.constructCount ?? 0} constructs - ${strand.usageCount ?? 0} recalls`)}</span>
               </article>
             `).join("")
           : "<p class=\"trace-empty\">No subject strand summary is available yet.</p>"}
@@ -739,7 +823,7 @@ function renderGraph(construct = null) {
           ? binders.slice(0, 8).map((item) => `
               <article class="trace-chip">
                 <strong>${escapeHtml(`${item.leftTerm ?? ""} + ${item.rightTerm ?? ""}`)}</strong>
-                <span>${escapeHtml(`weight ${Number(item.weight ?? 0).toFixed(2)} · ${item.reason ?? item.source ?? "binder"}`)}</span>
+                <span>${escapeHtml(`weight ${Number(item.weight ?? 0).toFixed(2)} - ${item.reason ?? item.source ?? "binder"}`)}</span>
               </article>
             `).join("")
           : "<p class=\"trace-empty\">No binder cues are available yet.</p>"}
@@ -1148,7 +1232,7 @@ async function loadAssistStatus() {
 
   subjectMetaEl.textContent = subjectMetaText();
   renderSpeedReport();
-  renderOllamaReport();
+  renderModelLabReport();
 }
 
 async function loadSystemHealth() {
@@ -1160,40 +1244,71 @@ async function loadSystemHealth() {
   }
 }
 
-function syncOllamaModelOptions() {
-  if (!ollamaModelEl) {
+function syncModelLabModelOptions() {
+  if (!modelLabModelEl || !llmProviderEl) {
     return;
   }
 
-  const models = Array.isArray(ollamaStatus.models) ? ollamaStatus.models : [];
-  const selectedValue = String(ollamaModelEl.value ?? "").trim()
-    || String(ollamaStatus.defaultModel ?? "").trim();
+  const providers = Array.isArray(modelLabStatus.providers) && modelLabStatus.providers.length
+    ? modelLabStatus.providers
+    : defaultModelLabProviders;
+  const currentProvider = selectedModelProvider();
+  if (!providers.length) {
+    llmProviderEl.innerHTML = `<option value="">OpenAI unavailable</option>`;
+    llmProviderEl.disabled = true;
+    modelLabModelEl.innerHTML = `<option value="">No models available</option>`;
+    modelLabModelEl.disabled = true;
+    return;
+  }
+
+  llmProviderEl.disabled = false;
+  llmProviderEl.innerHTML = providers.map((provider) => `
+    <option value="${escapeHtml(provider.provider)}">${escapeHtml(provider.label)}</option>
+  `).join("");
+  llmProviderEl.value = providers.some((provider) => provider.provider === currentProvider)
+    ? currentProvider
+    : (modelLabStatus.defaultProvider ?? providers[0].provider);
+
+  const providerMeta = selectedProviderMeta();
+  const models = Array.isArray(providerMeta?.models) ? providerMeta.models : [];
+  const selectedValue = String(modelLabModelEl.value ?? "").trim()
+    || String(providerMeta?.defaultModel ?? modelLabStatus.defaultModel ?? "").trim();
 
   if (!models.length) {
-    ollamaModelEl.innerHTML = `<option value="">${escapeHtml(ollamaStatus.reachable ? "No local models installed" : "Ollama unavailable")}</option>`;
-    ollamaModelEl.disabled = true;
+    const fallbackModels = defaultModelLabProviders[0]?.models ?? [];
+    if (!fallbackModels.length) {
+      modelLabModelEl.innerHTML = `<option value="">${escapeHtml(providerMeta?.available ? "No models available" : (providerMeta?.reason || "Provider unavailable"))}</option>`;
+      modelLabModelEl.disabled = true;
+      return;
+    }
+
+    modelLabModelEl.disabled = false;
+    modelLabModelEl.innerHTML = fallbackModels.map((model) => `
+      <option value="${escapeHtml(model.name ?? model.id ?? "")}">${escapeHtml(model.name ?? model.id ?? "")}</option>
+    `).join("");
+    modelLabModelEl.value = String(providerMeta?.defaultModel ?? modelLabStatus.defaultModel ?? fallbackModels[0].name ?? fallbackModels[0].id ?? "");
     return;
   }
 
-  ollamaModelEl.disabled = false;
-  ollamaModelEl.innerHTML = models.map((model) => `
-    <option value="${escapeHtml(model.name)}">${escapeHtml(model.name)}</option>
+  modelLabModelEl.disabled = false;
+  modelLabModelEl.innerHTML = models.map((model) => `
+    <option value="${escapeHtml(model.name ?? model.id ?? "")}">${escapeHtml(model.name ?? model.id ?? "")}</option>
   `).join("");
 
-  const exactMatch = models.find((model) => model.name === selectedValue);
-  ollamaModelEl.value = exactMatch?.name ?? models[0].name;
+  const exactMatch = models.find((model) => (model.name ?? model.id) === selectedValue);
+  modelLabModelEl.value = String(exactMatch?.name ?? exactMatch?.id ?? models[0].name ?? models[0].id ?? "");
 }
 
-function renderOllamaOutput(text = "") {
+function renderModelLabOutput(text = "") {
   const value = String(text ?? "").trim();
   if (!value) {
-    return "<p class=\"meta\">No Ollama output was returned for this run.</p>";
+    return "<p class=\"meta\">No model output was returned for this run.</p>";
   }
 
-  return `<p class="ollama-output">${escapeHtml(value).replaceAll("\n", "<br />")}</p>`;
+  return `<p class="model-lab-output">${escapeHtml(value).replaceAll("\n", "<br />")}</p>`;
 }
 
-function renderOllamaStats(stats = null) {
+function renderModelLabStats(stats = null) {
   if (!stats || typeof stats !== "object") {
     return "";
   }
@@ -1215,46 +1330,188 @@ function renderOllamaStats(stats = null) {
     : "";
 }
 
-function renderOllamaReport() {
-  if (!ollamaMetaEl || !ollamaReportEl) {
+function appendModelDebugEntry(entry = null) {
+  if (!entry || typeof entry !== "object") {
     return;
   }
 
-  syncOllamaModelOptions();
-  const reachable = Boolean(ollamaStatus.reachable);
-  const prompt = activeOllamaPrompt();
-  const hasPrompt = Boolean(normalizePrompt(prompt));
-  const modelLabel = String(ollamaModelEl?.value ?? ollamaStatus.defaultModel ?? "").trim();
-  const isLoading = ollamaState.phase === "loading";
-  const loadingText = ollamaState.message || "Running Ollama...";
+  modelDebugEntries = [entry, ...modelDebugEntries].slice(0, 10);
+  renderModelDebugWindow();
+}
 
-  if (ollamaUseLastButton) {
-    ollamaUseLastButton.disabled = !activeBenchmarkQuestion();
+function renderModelDebugWindow() {
+  if (!llmDebugReportEl || !llmDebugMetaEl) {
+    return;
   }
-  if (ollamaGenerateButton) {
-    ollamaGenerateButton.disabled = !reachable || isLoading || !hasPrompt;
-    ollamaGenerateButton.textContent = isLoading ? "Running..." : "Run Ollama draft";
+
+  if (!modelDebugEntries.length) {
+    llmDebugMetaEl.textContent = "The backend keeps the latest model prompts and returns here so you can inspect how each provider is shaping Strandspace input.";
+    llmDebugReportEl.className = "trace-grid empty";
+    llmDebugReportEl.innerHTML = "<p>Run a model draft or benchmark compare to inspect the raw question, request prompt, and model return.</p>";
+    return;
   }
-  if (ollamaCompareButton) {
-    ollamaCompareButton.disabled = !reachable || isLoading || !hasPrompt;
-    ollamaCompareButton.textContent = isLoading ? "Comparing..." : "Compare local vs Ollama";
+
+  llmDebugMetaEl.textContent = `${modelDebugEntries.length} recent model call${modelDebugEntries.length === 1 ? "" : "s"} captured from the backend lab.`;
+  llmDebugReportEl.className = "trace-grid debug-grid";
+  llmDebugReportEl.innerHTML = modelDebugEntries.map((entry) => `
+    <article class="debug-card">
+      <div class="assist-head">
+        <div>
+          <p class="assist-kicker">${escapeHtml(entry.mode === "compare" ? "Compare call" : "Draft call")}</p>
+          <h3>${escapeHtml(entry.providerLabel || entry.provider || "OpenAI model")}</h3>
+        </div>
+        <span class="assist-badge">${escapeHtml(entry.model || "default model")}</span>
+      </div>
+      <div class="speed-notes">
+        <span>${escapeHtml(entry.grounded ? "grounded" : "raw question")}</span>
+        ${entry.promptMode ? `<span>${escapeHtml(entry.promptMode)}</span>` : ""}
+        ${Number.isFinite(Number(entry.latencyMs)) ? `<span>${escapeHtml(formatMilliseconds(entry.latencyMs))}</span>` : ""}
+      </div>
+      <div class="debug-block">
+        <p class="answer-label">Question</p>
+        <pre>${escapeHtml(entry.question || "")}</pre>
+      </div>
+      <div class="debug-block">
+        <p class="answer-label">Request prompt</p>
+        <pre>${escapeHtml(entry.requestPrompt || entry.question || "")}</pre>
+      </div>
+      <div class="debug-block">
+        <p class="answer-label">Return</p>
+        <pre>${escapeHtml(entry.error || entry.responseText || "(no return text)")}</pre>
+      </div>
+      ${entry.constructLabel
+        ? `<p class="meta">Draft construct: ${escapeHtml(entry.constructLabel)}</p>`
+        : ""}
+    </article>
+  `).join("");
+}
+
+function renderBenchmarkReports() {
+  if (!benchmarkHistoryMetaEl || !benchmarkHistoryReportEl) {
+    return;
+  }
+
+  const reports = benchmarkReports ?? backendOverview?.modelLabReports ?? null;
+  const recent = Array.isArray(reports?.recent) ? reports.recent : [];
+  const summaryByModel = Array.isArray(reports?.summaryByModel) ? reports.summaryByModel : [];
+
+  if (!reports || (!recent.length && !summaryByModel.length)) {
+    benchmarkHistoryMetaEl.textContent = "Manual benchmark runs will be stored here after you trigger them from the backend.";
+    benchmarkHistoryReportEl.className = "speed-report empty";
+    benchmarkHistoryReportEl.innerHTML = "<p>Use the benchmark buttons above to save repeatable test runs, then refresh this page and keep comparing OpenAI models against the same Strandspace field.</p>";
+    return;
+  }
+
+  benchmarkHistoryMetaEl.textContent = `${reports.totalRuns ?? recent.length} stored manual benchmark run${Number(reports.totalRuns ?? recent.length) === 1 ? "" : "s"} across ${reports.providerModelCount ?? summaryByModel.length} OpenAI model paths.`;
+  benchmarkHistoryReportEl.className = "speed-report";
+  benchmarkHistoryReportEl.innerHTML = `
+    <div class="benchmark-report-summary">
+      <article class="speed-card strandbase">
+        <p class="assist-kicker">Stored runs</p>
+        <h3>${escapeHtml(String(reports.totalRuns ?? recent.length))}</h3>
+        <p>Only backend-triggered compare actions are stored, so refreshing the page keeps the same test history.</p>
+      </article>
+      <article class="speed-card llm">
+        <p class="assist-kicker">Covered paths</p>
+        <h3>${escapeHtml(String(reports.providerModelCount ?? summaryByModel.length))}</h3>
+        <p>${escapeHtml(String(reports.subjectCount ?? 0))} subjects have benchmark history attached to them.</p>
+      </article>
+    </div>
+    ${summaryByModel.length
+      ? `
+        <div class="benchmark-model-grid">
+          ${summaryByModel.map((item) => `
+            <article class="benchmark-model-card">
+              <div class="assist-head">
+                <div>
+                  <p class="assist-kicker">${escapeHtml(item.providerLabel ?? "OpenAI")}</p>
+                  <h3>${escapeHtml(item.model || "default model")}</h3>
+                </div>
+                <span class="assist-badge">${escapeHtml(`${item.runCount ?? 0} runs`)}</span>
+              </div>
+              <div class="speed-notes">
+                <span>Local avg ${escapeHtml(formatMilliseconds(item.averageLocalLatencyMs))}</span>
+                <span>Model avg ${escapeHtml(formatMilliseconds(item.averageLlmLatencyMs))}</span>
+                ${Number.isFinite(Number(item.averageSpeedup)) ? `<span>${escapeHtml(`${item.averageSpeedup}x avg speedup`)}</span>` : ""}
+              </div>
+              <p class="meta">Last run ${escapeHtml(formatTimestamp(item.lastRunAt))}</p>
+            </article>
+          `).join("")}
+        </div>
+      `
+      : ""}
+    <div class="benchmark-history-list">
+      ${recent.map((item) => `
+        <article class="benchmark-history-item">
+          <div class="assist-head">
+            <div>
+              <p class="assist-kicker">${escapeHtml(item.testLabel || "Manual benchmark")}</p>
+              <h3>${escapeHtml(item.providerLabel || item.provider || "OpenAI")} - ${escapeHtml(item.model || "default model")}</h3>
+            </div>
+            <span class="assist-badge">${escapeHtml(formatTimestamp(item.createdAt))}</span>
+          </div>
+          <p class="meta">${escapeHtml(previewQuestion(item.benchmarkQuestion || item.question || "", 180))}</p>
+          <div class="speed-notes">
+            <span>Local ${escapeHtml(formatMilliseconds(item.localLatencyMs))}</span>
+            <span>Model ${escapeHtml(formatMilliseconds(item.llmLatencyMs))}</span>
+            ${Number.isFinite(Number(item.speedup)) ? `<span>${escapeHtml(`${item.speedup}x`)}</span>` : ""}
+            <span>${escapeHtml(item.grounded ? "grounded" : "raw question")}</span>
+          </div>
+          <p>${escapeHtml(item.summary || "Benchmark stored.")}</p>
+          <div class="action-row">
+            <button
+              type="button"
+              class="secondary-button subtle-button"
+              data-benchmark-question="${escapeHtml(item.question || item.benchmarkQuestion || "")}"
+            >Use this prompt</button>
+          </div>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderModelLabReport() {
+  if (!modelLabMetaEl || !modelLabReportEl) {
+    return;
+  }
+
+  syncModelLabModelOptions();
+  const providerMeta = selectedProviderMeta();
+  const reachable = Boolean(providerMeta?.available);
+  const prompt = activeModelLabPrompt();
+  const hasPrompt = Boolean(normalizePrompt(prompt));
+  const modelLabel = String(modelLabModelEl?.value ?? providerMeta?.defaultModel ?? modelLabStatus.defaultModel ?? "").trim();
+  const isLoading = modelLabState.phase === "loading";
+  const loadingText = modelLabState.message || "Running selected OpenAI model...";
+
+  if (modelLabUseLastButton) {
+    modelLabUseLastButton.disabled = !activeBenchmarkQuestion();
+  }
+  if (modelLabGenerateButton) {
+    modelLabGenerateButton.disabled = !reachable || isLoading || !hasPrompt;
+    modelLabGenerateButton.textContent = isLoading ? "Running..." : "Build construct draft";
+  }
+  if (modelLabCompareButton) {
+    modelLabCompareButton.disabled = !reachable || isLoading || !hasPrompt;
+    modelLabCompareButton.textContent = isLoading ? "Comparing..." : "Compare local vs OpenAI";
   }
 
   if (!reachable) {
-    ollamaMetaEl.textContent = ollamaStatus.reason || "Ollama is unavailable.";
-    ollamaReportEl.className = "speed-report empty";
-    ollamaReportEl.innerHTML = `
-      <p>${escapeHtml(ollamaStatus.reason || "Ollama is unavailable.")}</p>
-      <p>Expected local runtime: ${escapeHtml(ollamaStatus.baseUrl ?? "http://127.0.0.1:11434")}.</p>
+    modelLabMetaEl.textContent = providerMeta?.reason || modelLabStatus.reason || "No OpenAI model is available.";
+    modelLabReportEl.className = "speed-report empty";
+    modelLabReportEl.innerHTML = `
+      <p>${escapeHtml(providerMeta?.reason || modelLabStatus.reason || "No OpenAI model is available.")}</p>
+      <p>Check your API key and configured OpenAI model list, then try again. Benchmark timeout budget: ${escapeHtml(formatMilliseconds(modelLabStatus.benchmarkTimeoutMs ?? modelLabStatus.requestTimeoutMs ?? 45000))}.</p>
     `;
     renderBenchmarkVariantLab();
     return;
   }
 
   if (isLoading) {
-    ollamaMetaEl.textContent = loadingText;
-    ollamaReportEl.className = "speed-report loading";
-    ollamaReportEl.innerHTML = `
+    modelLabMetaEl.textContent = loadingText;
+    modelLabReportEl.className = "speed-report loading";
+    modelLabReportEl.innerHTML = `
       <div class="speed-summary">
         <p><span class="spinner-inline" aria-hidden="true"></span>${escapeHtml(loadingText)}</p>
         <p>Prompt: "${escapeHtml(previewQuestion(prompt || activeBenchmarkQuestion()))}"</p>
@@ -1264,47 +1521,49 @@ function renderOllamaReport() {
     return;
   }
 
-  if (ollamaState.phase === "error") {
-    ollamaMetaEl.textContent = ollamaState.message || "Ollama request failed.";
-    ollamaReportEl.className = "speed-report error";
-    ollamaReportEl.innerHTML = `
+  if (modelLabState.phase === "error") {
+    modelLabMetaEl.textContent = modelLabState.message || "Model request failed.";
+    modelLabReportEl.className = "speed-report error";
+    modelLabReportEl.innerHTML = `
       <div class="speed-summary speed-summary-error">
-        <p>${escapeHtml(ollamaState.message || "Ollama request failed.")}</p>
+        <p>${escapeHtml(modelLabState.message || "Model request failed.")}</p>
       </div>
     `;
     renderBenchmarkVariantLab();
     return;
   }
 
-  if (!latestOllamaRun) {
-    ollamaMetaEl.textContent = hasPrompt
-      ? (ollamaStatus.reason || "Ollama is ready.")
-      : "Enter a backend prompt before running Ollama tests.";
-    ollamaReportEl.className = "speed-report empty";
-    ollamaReportEl.innerHTML = `
-      <p>Ready on ${escapeHtml(modelLabel || "the first local model")}.</p>
+  if (!latestModelLabRun) {
+    modelLabMetaEl.textContent = hasPrompt
+      ? (providerMeta?.reason || `${providerMeta?.label || "OpenAI"} is ready.`)
+      : "Enter a backend prompt before running model tests.";
+    modelLabReportEl.className = "speed-report empty";
+    modelLabReportEl.innerHTML = `
+      <p>Ready on ${escapeHtml(modelLabel || "the first available model")}.</p>
       <p>${escapeHtml(prompt ? `Current prompt: "${previewQuestion(prompt)}"` : "Paste a prompt or load one from recall before running draft or compare mode.")}</p>
     `;
     renderBenchmarkVariantLab();
     return;
   }
 
-  const payload = latestOllamaRun.payload ?? {};
+  const payload = latestModelLabRun.payload ?? {};
   const local = payload.local ?? {};
   const recall = payload.recall ?? {};
-  const ollama = payload.ollama ?? {};
+  const modelRun = payload.model ?? payload.llm ?? {};
   const comparison = payload.comparison ?? {};
-  const grounded = Boolean(payload.grounded);
-  const modeLabel = latestOllamaRun.mode === "compare" ? "Compare mode" : "Draft mode";
-  const maxLatency = Math.max(Number(local.latencyMs ?? payload.recallLatencyMs ?? 0), Number(ollama.latencyMs ?? 0), 1);
+  const grounded = Boolean(payload.grounded ?? payload.debug?.grounded);
+  const modeLabel = latestModelLabRun.mode === "compare" ? "Compare mode" : "Draft mode";
+  const maxLatency = Math.max(Number(local.latencyMs ?? payload.recallLatencyMs ?? 0), Number(modelRun.latencyMs ?? 0), 1);
+  const providerLabel = String(modelRun.providerLabel ?? providerMeta?.label ?? "OpenAI model").trim();
 
-  ollamaMetaEl.textContent = grounded
-    ? `${modeLabel}. Ollama was grounded with the best local construct before answering.`
-    : `${modeLabel}. Ollama answered from the raw question only.`;
+  modelLabMetaEl.textContent = grounded
+    ? `${modeLabel}. ${providerLabel} was grounded with the best local construct before answering.`
+    : `${modeLabel}. ${providerLabel} answered from the raw question only.`;
 
-  if (latestOllamaRun.mode === "generate") {
-    ollamaReportEl.className = "speed-report";
-    ollamaReportEl.innerHTML = `
+  if (latestModelLabRun.mode === "generate") {
+    const generatedDraft = payload.suggestedConstruct ?? modelRun.draft ?? null;
+    modelLabReportEl.className = "speed-report";
+    modelLabReportEl.innerHTML = `
       <div class="speed-grid">
         <article class="speed-card strandbase${recall.ready ? "" : " disabled"}">
           <p class="assist-kicker">Local recall</p>
@@ -1320,14 +1579,15 @@ function renderOllamaReport() {
           </div>
         </article>
         <article class="speed-card llm">
-          <p class="assist-kicker">Ollama output</p>
-          <h3>${escapeHtml(ollama.model ?? modelLabel ?? "Local model")}</h3>
-          <strong class="speed-latency">${escapeHtml(formatMilliseconds(ollama.latencyMs))}</strong>
+          <p class="assist-kicker">Model output</p>
+          <h3>${escapeHtml(modelRun.model ?? modelLabel ?? "OpenAI model")}</h3>
+          <strong class="speed-latency">${escapeHtml(formatMilliseconds(modelRun.latencyMs))}</strong>
           <div class="speed-bar" aria-hidden="true">
-            <span class="speed-bar-fill llm" style="width:${latencyBarWidth(ollama.latencyMs, maxLatency)}%"></span>
+            <span class="speed-bar-fill llm" style="width:${latencyBarWidth(modelRun.latencyMs, maxLatency)}%"></span>
           </div>
-          ${renderOllamaOutput(ollama.output)}
-          ${renderOllamaStats(ollama.stats)}
+          ${renderModelLabOutput(modelRun.answer || modelRun.output)}
+          ${renderModelLabStats(modelRun.stats ?? modelRun.usage)}
+          ${generatedDraft ? `<p class="meta">Draft construct: ${escapeHtml(generatedDraft.constructLabel ?? "Generated construct")}</p>` : ""}
         </article>
       </div>
     `;
@@ -1335,8 +1595,8 @@ function renderOllamaReport() {
     return;
   }
 
-  ollamaReportEl.className = "speed-report";
-  ollamaReportEl.innerHTML = `
+  modelLabReportEl.className = "speed-report";
+  modelLabReportEl.innerHTML = `
     <div class="speed-grid">
       <article class="speed-card strandbase">
         <p class="assist-kicker">Local path</p>
@@ -1351,69 +1611,136 @@ function renderOllamaReport() {
           <span>${escapeHtml(`Confidence ${formatPercent(local.confidence ?? 0)}`)}</span>
         </div>
       </article>
-      <article class="speed-card llm${ollama.error ? " disabled" : ""}">
-        <p class="assist-kicker">Ollama path</p>
-        <h3>${escapeHtml(ollama.model ?? modelLabel ?? "Local model")}</h3>
-        <strong class="speed-latency">${escapeHtml(formatMilliseconds(ollama.latencyMs))}</strong>
+      <article class="speed-card llm${modelRun.error ? " disabled" : ""}">
+        <p class="assist-kicker">${escapeHtml(providerLabel)} path</p>
+        <h3>${escapeHtml(modelRun.model ?? modelLabel ?? "OpenAI model")}</h3>
+        <strong class="speed-latency">${escapeHtml(formatMilliseconds(modelRun.latencyMs))}</strong>
         <div class="speed-bar" aria-hidden="true">
-          <span class="speed-bar-fill llm" style="width:${latencyBarWidth(ollama.latencyMs, maxLatency)}%"></span>
+          <span class="speed-bar-fill llm" style="width:${latencyBarWidth(modelRun.latencyMs, maxLatency)}%"></span>
         </div>
-        ${renderOllamaOutput(ollama.output || ollama.error || ollama.reason)}
-        ${renderOllamaStats(ollama.stats)}
+        ${renderModelLabOutput(modelRun.output || modelRun.error || modelRun.reason)}
+        ${renderModelLabStats(modelRun.stats ?? modelRun.usage)}
       </article>
     </div>
     <div class="speed-summary">
-      <p>${escapeHtml(comparison.summary ?? "Ollama comparison complete.")}</p>
+      <p>${escapeHtml(comparison.summary ?? "Model comparison complete.")}</p>
       <p>${escapeHtml(grounded ? "Grounding mode: local construct attached before generation." : "Grounding mode: raw question only.")}</p>
     </div>
   `;
   renderBenchmarkVariantLab();
 }
 
-async function loadOllamaStatus() {
-  if (!ollamaMetaEl) {
+async function loadModelLabStatus() {
+  if (!modelLabMetaEl) {
     return;
   }
 
   try {
-    const payload = await fetchJson("/api/ollama/status");
-    ollamaStatus = payload;
+    const payload = await fetchJson("/api/model-lab/status", {
+      timeoutMs: MODEL_LAB_STATUS_FETCH_TIMEOUT_MS,
+      timeoutMessage: "Loading model lab status timed out. Restart the backend server and refresh the page."
+    });
+    modelLabStatus = {
+      providers: Array.isArray(payload?.providers) && payload.providers.length ? payload.providers : defaultModelLabProviders,
+      defaultProvider: String(payload?.defaultProvider ?? "openai").trim() || "openai",
+      defaultModel: String(payload?.defaultModel ?? "gpt-5.4-mini").trim() || "gpt-5.4-mini",
+      reason: String(payload?.reason ?? "OpenAI model lab status loaded.").trim() || "OpenAI model lab status loaded.",
+      requestTimeoutMs: Number(payload?.requestTimeoutMs ?? 20000),
+      benchmarkTimeoutMs: Number(payload?.benchmarkTimeoutMs ?? payload?.requestTimeoutMs ?? 45000)
+    };
   } catch (error) {
-    ollamaStatus = {
-      reachable: false,
-      models: [],
-      defaultModel: "",
-      reason: error instanceof Error ? error.message : "Unable to reach Ollama."
+    modelLabStatus = {
+      providers: defaultModelLabProviders,
+      defaultProvider: "openai",
+      defaultModel: "gpt-5.4-mini",
+      reason: error instanceof Error ? error.message : "Unable to reach the OpenAI model lab.",
+      requestTimeoutMs: 20000,
+      benchmarkTimeoutMs: 45000
     };
   }
 
-  renderOllamaReport();
+  renderModelLabReport();
+  renderSpeedReport();
+  renderBenchmarkVariantLab();
 }
 
 async function fetchJson(url, options = {}) {
-  const response = await fetch(url, options);
-  const payload = await response.json().catch(() => ({}));
+  const {
+    timeoutMs = null,
+    timeoutMessage = "",
+    ...fetchOptions
+  } = options;
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  const timeout = Number(timeoutMs);
+  let timeoutId = null;
 
-  if (!response.ok) {
-    const message = [
-      payload.error ?? `Request failed with ${response.status}`,
-      payload.detail ?? "",
-      payload.code ? `Code: ${payload.code}` : ""
-    ].filter(Boolean).join(" ");
-    throw new Error(message);
+  if (controller && Number.isFinite(timeout) && timeout > 0) {
+    timeoutId = window.setTimeout(() => {
+      controller.abort();
+    }, timeout);
   }
 
-  return payload;
+  try {
+    const response = await fetch(url, {
+      ...fetchOptions,
+      signal: controller?.signal
+    });
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const message = [
+        payload.error ?? `Request failed with ${response.status}`,
+        payload.detail ?? "",
+        payload.code ? `Code: ${payload.code}` : ""
+      ].filter(Boolean).join(" ");
+      throw new Error(message);
+    }
+
+    return payload;
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(timeoutMessage || `Request timed out after ${Math.round(timeout)}ms.`);
+    }
+    throw error;
+  } finally {
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
+  }
 }
 
-function postJson(url, payload = {}) {
+function postJson(url, payload = {}, options = {}) {
   return fetchJson(url, {
+    ...options,
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
     body: JSON.stringify(payload)
   });
+}
+
+function isNotFoundError(error) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /\b404\b|not found|cannot post/i.test(message);
+}
+
+async function postBenchmarkCompare(payload = {}, options = {}) {
+  try {
+    return {
+      route: "model-lab",
+      payload: await postJson("/api/model-lab/compare", payload, options)
+    };
+  } catch (error) {
+    if (!isNotFoundError(error)) {
+      throw error;
+    }
+
+    return {
+      route: "subjectspace-compare",
+      payload: await postJson("/api/subjectspace/compare", payload, options)
+    };
+  }
 }
 
 async function resetWithExamples() {
@@ -1423,6 +1750,7 @@ async function resetWithExamples() {
     const payload = await postJson("/api/system/reset-examples", {});
     resetTransientState();
     await loadSubjects("");
+    await loadBenchmarkReports();
     renderIdleState();
     learnMetaEl.textContent = "Bundled examples restored.";
     recallMetaEl.textContent = "Example constructs were reloaded.";
@@ -1439,8 +1767,8 @@ function dbStateSummary() {
   const start = backendDbState.total ? backendDbState.offset + 1 : 0;
   const end = Math.min(backendDbState.offset + backendDbState.rows.length, backendDbState.total);
   return backendDbState.total
-    ? `${backendDbState.label || backendDbState.table} · rows ${start}-${end} of ${backendDbState.total}`
-    : `${backendDbState.label || backendDbState.table} · no rows returned`;
+    ? `${backendDbState.label || backendDbState.table} - rows ${start}-${end} of ${backendDbState.total}`
+    : `${backendDbState.label || backendDbState.table} - no rows returned`;
 }
 
 function renderBackendOverview() {
@@ -1452,6 +1780,10 @@ function renderBackendOverview() {
   const system = overview.system ?? {};
   const counts = overview.counts ?? {};
   const tables = Array.isArray(overview.tables) ? overview.tables : [];
+  benchmarkReports = overview.modelLabReports ?? benchmarkReports;
+  if ((!modelDebugEntries.length) && Array.isArray(benchmarkReports?.debugEntries)) {
+    modelDebugEntries = benchmarkReports.debugEntries;
+  }
 
   if (backendModeLabelEl) {
     backendModeLabelEl.textContent = system.openai?.enabled ? "Assist Enabled" : "Local-only mode";
@@ -1477,7 +1809,7 @@ function renderBackendOverview() {
   if (backendDbPathEl) {
     const dbPath = overview.database?.path ?? "Database path unavailable";
     const dbSize = formatBytes(overview.database?.sizeBytes ?? 0);
-    backendDbPathEl.textContent = `${dbPath}${dbSize !== "n/a" ? ` · ${dbSize}` : ""}`;
+    backendDbPathEl.textContent = `${dbPath}${dbSize !== "n/a" ? ` - ${dbSize}` : ""}`;
   }
   if (backendDbSizeEl) {
     const dbSize = formatBytes(overview.database?.sizeBytes ?? 0);
@@ -1566,7 +1898,7 @@ function renderDatasetHealth() {
               <div class="dataset-health-copy">
                 <strong>${escapeHtml(item.constructLabel ?? "Construct")}</strong>
                 <span>${escapeHtml(item.target || item.objective || item.subjectLabel || "")}</span>
-                <small>Relevance ${escapeHtml(String(Math.round(Number(item.relevance?.score ?? 0))))} | ${escapeHtml((item.relevance?.anchors ?? []).slice(0, 4).join(" • ") || "Needs richer anchors")}</small>
+                <small>Relevance ${escapeHtml(String(Math.round(Number(item.relevance?.score ?? 0))))} | ${escapeHtml((item.relevance?.anchors ?? []).slice(0, 4).join(" , ") || "Needs richer anchors")}</small>
               </div>
               <div class="dataset-health-actions">
                 <p>${escapeHtml((item.issues ?? []).slice(0, 2).join(" | "))}</p>
@@ -1602,7 +1934,7 @@ function renderBackendSchema() {
           column.primaryKey ? "primary key" : "",
           column.notNull ? "required" : "nullable",
           column.editable ? "editable" : "read-only"
-        ].filter(Boolean).join(" · ")
+        ].filter(Boolean).join(" - ")
       )}</small>
     </article>
   `).join("");
@@ -1707,9 +2039,39 @@ function syncSelectedBackendRow() {
 function renderBackendDbWorkspace() {
   renderBackendOverview();
   renderDatasetHealth();
+  renderBenchmarkReports();
   renderBackendSchema();
   renderBackendRows();
   renderBackendEditor();
+}
+
+async function loadBenchmarkReports() {
+  if (!benchmarkHistoryMetaEl || !benchmarkHistoryReportEl) {
+    return;
+  }
+
+  benchmarkHistoryMetaEl.textContent = "Loading stored benchmark reports from the backend...";
+  try {
+    const payload = await fetchJson("/api/model-lab/reports", {
+      timeoutMs: MODEL_LAB_REPORTS_FETCH_TIMEOUT_MS,
+      timeoutMessage: "Loading benchmark reports timed out. The compare may have finished, but the reports request did not return in time."
+    });
+    benchmarkReports = payload.reports ?? null;
+    modelDebugEntries = Array.isArray(benchmarkReports?.debugEntries) ? benchmarkReports.debugEntries : modelDebugEntries;
+    renderBenchmarkReports();
+    renderModelDebugWindow();
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      benchmarkHistoryMetaEl.textContent = "Stored benchmark reports need the newer model-lab backend route.";
+      benchmarkHistoryReportEl.className = "speed-report empty";
+      benchmarkHistoryReportEl.innerHTML = "<p>This server can still run recall benchmarks, but it does not support stored benchmark reports yet.</p>";
+      return;
+    }
+
+    benchmarkHistoryMetaEl.textContent = error instanceof Error ? error.message : "Unable to load stored benchmark reports.";
+    benchmarkHistoryReportEl.className = "speed-report empty";
+    benchmarkHistoryReportEl.innerHTML = `<p>${escapeHtml(error instanceof Error ? error.message : "Unable to load stored benchmark reports.")}</p>`;
+  }
 }
 
 async function loadBackendOverview() {
@@ -1834,19 +2196,19 @@ function resetTransientState({ clearAssist = true, clearComparison = true } = {}
   }
   if (clearComparison) {
     latestComparison = null;
-    latestOllamaRun = null;
+    latestModelLabRun = null;
     benchmarkState = {
       phase: "idle",
       message: ""
     };
-    ollamaState = {
+    modelLabState = {
       phase: "idle",
       message: ""
     };
   }
 
   renderSpeedReport();
-  renderOllamaReport();
+  renderModelLabReport();
 }
 
 function renderTrace(trace = null) {
@@ -2159,13 +2521,14 @@ function renderSpeedReport() {
 
   const benchmarkQuestion = activeBenchmarkQuestion();
   const hasBenchmarkPrompt = Boolean(normalizePrompt(benchmarkQuestion));
+  const providerLabel = selectedProviderMeta()?.label ?? "OpenAI";
   if (speedCompareButton) {
     speedCompareButton.disabled = benchmarkState.phase === "loading" || !hasBenchmarkPrompt;
-    speedCompareButton.textContent = benchmarkState.phase === "loading" ? "Running benchmark..." : "Compare local vs LLM";
+    speedCompareButton.textContent = benchmarkState.phase === "loading" ? "Running benchmark..." : "Compare local vs OpenAI";
   }
 
   if (!hasBenchmarkPrompt) {
-    speedMetaEl.textContent = "Benchmark the last live recall prompt against the local field and the LLM path.";
+    speedMetaEl.textContent = `Benchmark the last live recall prompt against the local field and ${providerLabel}.`;
     speedReportEl.className = "speed-report empty";
     speedReportEl.innerHTML = "<p>Enter a backend prompt or run recall first, then compare local Strandbase recall against the LLM assist round-trip.</p>";
     renderBenchmarkVariantLab();
@@ -2200,7 +2563,7 @@ function renderSpeedReport() {
 
   if (!latestComparison) {
     speedMetaEl.textContent = assistStatus.enabled
-      ? `Ready to benchmark the last prompt against ${assistStatus.model}.`
+      ? `Ready to benchmark the last prompt against ${selectedModelLabel()}.`
       : `Ready to benchmark local recall. ${assistStatus.reason}`;
     speedReportEl.className = "speed-report empty";
     speedReportEl.innerHTML = `
@@ -2208,7 +2571,7 @@ function renderSpeedReport() {
         Current prompt: "${escapeHtml(previewQuestion(benchmarkQuestion))}"
       </p>
       <p>
-        Use the benchmark button to time local Strandbase recall${assistStatus.enabled ? ` and the ${escapeHtml(assistStatus.model)} assist round-trip.` : "."}
+        Use the benchmark button to time local Strandbase recall${assistStatus.enabled ? ` and the ${escapeHtml(selectedModelLabel())} round-trip.` : "."}
       </p>
     `;
     renderBenchmarkVariantLab();
@@ -2265,8 +2628,8 @@ function renderSpeedReport() {
         </div>
       </article>
       <article class="speed-card llm${llmReady ? "" : " disabled"}">
-        <p class="assist-kicker">LLM path</p>
-        <h3>${escapeHtml(llm.label ?? "LLM assist round-trip")}</h3>
+        <p class="assist-kicker">${escapeHtml(llm.providerLabel ?? "OpenAI model")} path</p>
+        <h3>${escapeHtml(llm.label ?? "Model round-trip")}</h3>
         <strong class="speed-latency">${escapeHtml(formatMilliseconds(llm.latencyMs))}</strong>
         <div class="speed-bar" aria-hidden="true">
           <span class="speed-bar-fill llm" style="width:${latencyBarWidth(llm.latencyMs, maxLatency)}%"></span>
@@ -2306,9 +2669,7 @@ function renderBenchmarkVariantLab() {
   }
   if (benchmarkRunVariantButton) {
     benchmarkRunVariantButton.disabled = !hasVariantPrompt || benchmarkState.phase === "loading";
-  }
-  if (benchmarkRunVariantOllamaButton) {
-    benchmarkRunVariantOllamaButton.disabled = !hasVariantPrompt || ollamaState.phase === "loading" || !Boolean(ollamaStatus.reachable);
+    benchmarkRunVariantButton.textContent = benchmarkState.phase === "loading" ? "Benchmarking..." : "Compare variant vs OpenAI";
   }
 
   if (!hasBasePrompt) {
@@ -2357,7 +2718,7 @@ function renderAnswer(payload = null) {
     renderTrace(null);
     renderGraph(null);
     renderSpeedReport();
-    renderOllamaReport();
+    renderModelLabReport();
     return;
   }
 
@@ -2397,7 +2758,7 @@ function renderAnswer(payload = null) {
     renderGraph(topCandidate);
     animateFresh(answerPanelEl);
     renderSpeedReport();
-    renderOllamaReport();
+    renderModelLabReport();
     return;
   }
 
@@ -2541,7 +2902,7 @@ function renderAnswer(payload = null) {
   renderGraph(construct);
   animateFresh(answerPanelEl);
   renderSpeedReport();
-  renderOllamaReport();
+  renderModelLabReport();
 }
 
 function renderSubjectPicker() {
@@ -2626,7 +2987,7 @@ function renderLibrary() {
         <strong>${escapeHtml(construct.constructLabel)}</strong>
         <span>${escapeHtml(construct.target || construct.objective || construct.subjectLabel)}</span>
         <small>${escapeHtml(contextSummary(construct.context) || "Open to preview context")}</small>
-        <small>${escapeHtml((construct.relevance?.anchors ?? []).slice(0, 3).join(" • ") || "Needs richer anchors for stronger recall")}</small>
+        <small>${escapeHtml((construct.relevance?.anchors ?? []).slice(0, 3).join(" , ") || "Needs richer anchors for stronger recall")}</small>
       </button>
     `)
     .join("");
@@ -2912,110 +3273,144 @@ async function saveApiAssist() {
   }
 }
 
-function syncOllamaPromptWithRecall() {
-  if (!ollamaPromptEl) {
+function syncModelLabPromptWithRecall() {
+  if (!modelLabPromptEl) {
     return;
   }
 
   const prompt = activeBenchmarkQuestion();
   if (prompt) {
-    ollamaPromptEl.value = prompt;
+    modelLabPromptEl.value = prompt;
   }
-  renderOllamaReport();
+  renderModelLabReport();
 }
 
-async function runOllamaDraft() {
-  const prompt = activeOllamaPrompt();
+async function runModelLabDraft() {
+  const prompt = activeModelLabPrompt();
+  const provider = selectedModelProvider();
+  const providerMeta = selectedProviderMeta();
   if (!normalizePrompt(prompt)) {
-    recallMetaEl.textContent = "Type a prompt or run recall before sending it to Ollama.";
-    renderOllamaReport();
+    recallMetaEl.textContent = "Type a prompt or run recall before sending it to the selected OpenAI model.";
+    renderModelLabReport();
     return;
   }
 
-  if (ollamaPromptEl && !ollamaPromptEl.value.trim()) {
-    ollamaPromptEl.value = prompt;
+  if (modelLabPromptEl && !modelLabPromptEl.value.trim()) {
+    modelLabPromptEl.value = prompt;
   }
 
-  ollamaState = {
+  modelLabState = {
     phase: "loading",
-    message: "Running Ollama with the current backend prompt..."
+    message: `Running ${providerMeta?.label ?? "the selected OpenAI model"} with the current backend prompt...`
   };
-  renderOllamaReport();
+  renderModelLabReport();
 
   try {
-    latestOllamaRun = {
+    latestModelLabRun = {
       mode: "generate",
-      payload: await postJson("/api/ollama/generate", {
+      payload: await postJson("/api/model-lab/generate", {
+        provider,
         prompt,
         subjectId: currentSubjectId,
-        model: ollamaModelEl?.value ?? "",
-        groundWithLocalRecall: Boolean(ollamaGroundingEl?.checked)
+        model: modelLabModelEl?.value ?? "",
+        groundWithLocalRecall: activeModelGrounding()
+      }, {
+        timeoutMs: modelLabRequestTimeoutMs("request"),
+        timeoutMessage: modelLabTimeoutMessage("request")
       })
     };
-    ollamaState = {
+    appendModelDebugEntry(latestModelLabRun.payload?.debug ?? null);
+    if (latestModelLabRun.payload?.suggestedConstruct) {
+      const draft = latestModelLabRun.payload.suggestedConstruct;
+      applyConstructDraftToLearnForm(draft);
+      setEditorState("draft", draft);
+      renderAnswer(draftPayload(draft, {
+        source: provider,
+        input: prompt,
+        mergeMode: "draft",
+        buildChecks: [`${providerMeta?.label ?? "OpenAI model"} generated this draft in the backend model lab.`]
+      }));
+    }
+    modelLabState = {
       phase: "done",
-      message: "Ollama draft complete."
+      message: `${providerMeta?.label ?? "OpenAI model"} draft complete.`
     };
-    recallMetaEl.textContent = "Ollama draft complete.";
+    recallMetaEl.textContent = `${providerMeta?.label ?? "OpenAI model"} draft complete.`;
   } catch (error) {
-    latestOllamaRun = null;
-    ollamaState = {
+    latestModelLabRun = null;
+    modelLabState = {
       phase: "error",
-      message: error instanceof Error ? error.message : "Unable to run the Ollama draft."
+      message: error instanceof Error ? error.message : "Unable to run the selected OpenAI model draft."
     };
-    recallMetaEl.textContent = "Ollama draft failed.";
+    recallMetaEl.textContent = `${providerMeta?.label ?? "OpenAI model"} draft failed.`;
   }
 
-  renderOllamaReport();
+  renderModelLabReport();
 }
 
-async function runOllamaCompare() {
-  const question = activeOllamaPrompt();
+async function runModelLabCompare() {
+  const question = activeModelLabPrompt();
+  const provider = selectedModelProvider();
+  const providerMeta = selectedProviderMeta();
   if (!normalizePrompt(question)) {
-    recallMetaEl.textContent = "Type a prompt or run recall before comparing with Ollama.";
-    renderOllamaReport();
+    recallMetaEl.textContent = "Type a prompt or run recall before comparing with the selected OpenAI model.";
+    renderModelLabReport();
     return;
   }
 
-  if (ollamaPromptEl && !ollamaPromptEl.value.trim()) {
-    ollamaPromptEl.value = question;
+  if (modelLabPromptEl && !modelLabPromptEl.value.trim()) {
+    modelLabPromptEl.value = question;
   }
 
-  ollamaState = {
+  modelLabState = {
     phase: "loading",
-    message: "Comparing local Strandbase recall against Ollama..."
+    message: `Comparing local Strandbase recall against ${providerMeta?.label ?? "the selected OpenAI model"}...`
   };
-  renderOllamaReport();
+  renderModelLabReport();
 
   try {
-    latestOllamaRun = {
+    const compareRun = await postBenchmarkCompare({
+      provider,
+      question,
+      subjectId: currentSubjectId,
+      model: modelLabModelEl?.value ?? "",
+      groundWithLocalRecall: activeModelGrounding(),
+      testLabel: "Manual model lab compare"
+    }, {
+      timeoutMs: modelLabRequestTimeoutMs("benchmark"),
+      timeoutMessage: modelLabTimeoutMessage("benchmark")
+    });
+    latestModelLabRun = {
       mode: "compare",
-      payload: await postJson("/api/ollama/compare", {
-        question,
-        subjectId: currentSubjectId,
-        model: ollamaModelEl?.value ?? "",
-        groundWithLocalRecall: Boolean(ollamaGroundingEl?.checked)
-      })
+      route: compareRun.route,
+      payload: compareRun.payload
     };
-    ollamaState = {
+    appendModelDebugEntry(latestModelLabRun.payload?.debug ?? null);
+    if (compareRun.route === "model-lab") {
+      await loadBenchmarkReports();
+    }
+    modelLabState = {
       phase: "done",
-      message: latestOllamaRun.payload?.comparison?.summary ?? "Ollama comparison complete."
+      message: latestModelLabRun.payload?.comparison?.summary
+        ?? (compareRun.route === "subjectspace-compare" ? "Legacy benchmark compare complete." : "Model comparison complete.")
     };
-    recallMetaEl.textContent = latestOllamaRun.payload?.comparison?.summary ?? "Ollama comparison complete.";
+    recallMetaEl.textContent = latestModelLabRun.payload?.comparison?.summary ?? "Model comparison complete.";
   } catch (error) {
-    latestOllamaRun = null;
-    ollamaState = {
+    latestModelLabRun = null;
+    modelLabState = {
       phase: "error",
-      message: error instanceof Error ? error.message : "Unable to compare with Ollama."
+      message: error instanceof Error ? error.message : "Unable to compare with the selected OpenAI model."
     };
-    recallMetaEl.textContent = "Ollama comparison failed.";
+    recallMetaEl.textContent = `${providerMeta?.label ?? "OpenAI model"} comparison failed.`;
   }
 
-  renderOllamaReport();
+  renderModelLabReport();
 }
 
 async function runSpeedCompare() {
   const question = activeBenchmarkQuestion();
+  const provider = selectedModelProvider();
+  const providerMeta = selectedProviderMeta();
 
   if (!normalizePrompt(question)) {
     recallMetaEl.textContent = "Type a prompt or run recall before benchmarking.";
@@ -3026,22 +3421,33 @@ async function runSpeedCompare() {
   lastQuestion = question;
   benchmarkState = {
     phase: "loading",
-    message: assistStatus.enabled
-      ? "Timing Strandbase recall against the LLM assist round-trip..."
-      : "Timing local Strandbase recall. API assist is currently unavailable."
+    message: `Timing Strandbase recall against ${providerMeta?.label ?? "the selected OpenAI model"}...`
   };
   setButtonBusy(speedCompareButton, true, "Benchmarking...");
   renderSpeedReport();
 
   try {
-    latestComparison = await postJson("/api/subjectspace/compare", {
+    const compareRun = await postBenchmarkCompare({
+      provider,
       subjectId: currentSubjectId,
-      question
+      question,
+      model: modelLabModelEl?.value ?? "",
+      groundWithLocalRecall: activeModelGrounding(),
+      testLabel: "Manual benchmark"
+    }, {
+      timeoutMs: modelLabRequestTimeoutMs("benchmark"),
+      timeoutMessage: modelLabTimeoutMessage("benchmark")
     });
+    latestComparison = compareRun.payload;
+    appendModelDebugEntry(latestComparison.debug ?? null);
+    if (compareRun.route === "model-lab") {
+      await loadBenchmarkReports();
+    }
 
     benchmarkState = {
       phase: "done",
-      message: latestComparison.comparison?.summary ?? "Benchmark complete."
+      message: latestComparison.comparison?.summary
+        ?? (compareRun.route === "subjectspace-compare" ? "Legacy benchmark compare complete." : "Benchmark complete.")
     };
     recallMetaEl.textContent = latestComparison.comparison?.summary ?? "Benchmark complete.";
   } catch (error) {
@@ -3068,17 +3474,19 @@ function loadVariantIntoPrompts() {
   if (recallQuestionInput) {
     recallQuestionInput.value = variant.question;
   }
-  if (ollamaPromptEl) {
-    ollamaPromptEl.value = variant.question;
+  if (modelLabPromptEl) {
+    modelLabPromptEl.value = variant.question;
   }
   lastQuestion = variant.question;
-  recallMetaEl.textContent = `${variant.modeLabel} loaded into recall and Ollama prompts for the next test pass.`;
+  recallMetaEl.textContent = `${variant.modeLabel} loaded into recall and model prompts for the next test pass.`;
   renderSpeedReport();
-  renderOllamaReport();
+  renderModelLabReport();
 }
 
 async function runVariantSpeedCompare() {
   const variant = buildBenchmarkVariantPrompt();
+  const provider = selectedModelProvider();
+  const providerMeta = selectedProviderMeta();
   if (!normalizePrompt(variant.question)) {
     recallMetaEl.textContent = "Run recall first so Strandspace has a prompt to vary.";
     renderBenchmarkVariantLab();
@@ -3088,19 +3496,32 @@ async function runVariantSpeedCompare() {
   lastQuestion = variant.question;
   benchmarkState = {
     phase: "loading",
-    message: `Benchmarking the ${variant.modeLabel.toLowerCase()} variant against the LLM path...`
+    message: `Benchmarking the ${variant.modeLabel.toLowerCase()} variant against ${providerMeta?.label ?? "the selected OpenAI model"}...`
   };
   setButtonBusy(benchmarkRunVariantButton, true, "Benchmarking...");
   renderSpeedReport();
 
   try {
-    latestComparison = await postJson("/api/subjectspace/compare", {
+    const compareRun = await postBenchmarkCompare({
+      provider,
       subjectId: currentSubjectId,
-      question: variant.question
+      question: variant.question,
+      model: modelLabModelEl?.value ?? "",
+      groundWithLocalRecall: activeModelGrounding(),
+      testLabel: `${variant.modeLabel} benchmark`
+    }, {
+      timeoutMs: modelLabRequestTimeoutMs("benchmark"),
+      timeoutMessage: modelLabTimeoutMessage("benchmark")
     });
+    latestComparison = compareRun.payload;
+    appendModelDebugEntry(latestComparison.debug ?? null);
+    if (compareRun.route === "model-lab") {
+      await loadBenchmarkReports();
+    }
     benchmarkState = {
       phase: "done",
-      message: latestComparison.comparison?.summary ?? "Variant benchmark complete."
+      message: latestComparison.comparison?.summary
+        ?? (compareRun.route === "subjectspace-compare" ? "Legacy variant benchmark complete." : "Variant benchmark complete.")
     };
     recallMetaEl.textContent = `${variant.modeLabel} benchmark complete.`;
   } catch (error) {
@@ -3114,53 +3535,6 @@ async function runVariantSpeedCompare() {
 
   setButtonBusy(benchmarkRunVariantButton, false);
   renderSpeedReport();
-}
-
-async function runVariantOllamaCompare() {
-  const variant = buildBenchmarkVariantPrompt();
-  if (!normalizePrompt(variant.question)) {
-    recallMetaEl.textContent = "Run recall first so Strandspace has a prompt to vary.";
-    renderBenchmarkVariantLab();
-    return;
-  }
-
-  if (ollamaPromptEl) {
-    ollamaPromptEl.value = variant.question;
-  }
-
-  ollamaState = {
-    phase: "loading",
-    message: `Comparing the ${variant.modeLabel.toLowerCase()} variant against Ollama...`
-  };
-  setButtonBusy(benchmarkRunVariantOllamaButton, true, "Comparing...");
-  renderOllamaReport();
-
-  try {
-    latestOllamaRun = {
-      mode: "compare",
-      payload: await postJson("/api/ollama/compare", {
-        question: variant.question,
-        subjectId: currentSubjectId,
-        model: ollamaModelEl?.value ?? "",
-        groundWithLocalRecall: Boolean(ollamaGroundingEl?.checked)
-      })
-    };
-    ollamaState = {
-      phase: "done",
-      message: latestOllamaRun.payload?.comparison?.summary ?? "Variant Ollama comparison complete."
-    };
-    recallMetaEl.textContent = `${variant.modeLabel} Ollama comparison complete.`;
-  } catch (error) {
-    latestOllamaRun = null;
-    ollamaState = {
-      phase: "error",
-      message: error instanceof Error ? error.message : "Unable to compare the variant prompt with Ollama."
-    };
-    recallMetaEl.textContent = "Variant Ollama comparison failed.";
-  }
-
-  setButtonBusy(benchmarkRunVariantOllamaButton, false);
-  renderOllamaReport();
 }
 
 subjectSelect?.addEventListener("change", async () => {
@@ -3510,37 +3884,38 @@ benchmarkRunVariantButton?.addEventListener("click", () => {
   void runVariantSpeedCompare();
 });
 
-benchmarkRunVariantOllamaButton?.addEventListener("click", () => {
-  void runVariantOllamaCompare();
+modelLabUseLastButton?.addEventListener("click", () => {
+  syncModelLabPromptWithRecall();
 });
 
-ollamaUseLastButton?.addEventListener("click", () => {
-  syncOllamaPromptWithRecall();
+modelLabGenerateButton?.addEventListener("click", () => {
+  void runModelLabDraft();
 });
 
-ollamaGenerateButton?.addEventListener("click", () => {
-  void runOllamaDraft();
+modelLabCompareButton?.addEventListener("click", () => {
+  void runModelLabCompare();
 });
 
-ollamaCompareButton?.addEventListener("click", () => {
-  void runOllamaCompare();
+modelLabModelEl?.addEventListener("change", () => {
+  renderModelLabReport();
+  renderSpeedReport();
+  renderBenchmarkVariantLab();
 });
 
-ollamaModelEl?.addEventListener("change", () => {
-  renderOllamaReport();
+llmProviderEl?.addEventListener("change", () => {
+  syncModelLabModelOptions();
+  renderModelLabReport();
+  renderSpeedReport();
+  renderBenchmarkVariantLab();
 });
 
-ollamaGroundingEl?.addEventListener("change", () => {
-  renderOllamaReport();
-});
-
-ollamaPromptEl?.addEventListener("input", () => {
-  renderOllamaReport();
+modelLabPromptEl?.addEventListener("input", () => {
+  renderModelLabReport();
 });
 
 recallQuestionInput?.addEventListener("input", () => {
   renderBenchmarkVariantLab();
-  renderOllamaReport();
+  renderModelLabReport();
 });
 
 benchmarkVariantModeEl?.addEventListener("change", renderBenchmarkVariantLab);
@@ -3552,8 +3927,36 @@ resetExamplesButton?.addEventListener("click", () => {
   void resetWithExamples();
 });
 
+benchmarkHistoryRefreshButton?.addEventListener("click", () => {
+  void loadBenchmarkReports();
+});
+
 document.addEventListener("click", (event) => {
-  const shortcutButton = event.target instanceof Element ? event.target.closest("[data-db-shortcut]") : null;
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) {
+    return;
+  }
+
+  const benchmarkButton = target.closest("[data-benchmark-question]");
+  if (benchmarkButton) {
+    const prompt = String(benchmarkButton.getAttribute("data-benchmark-question") ?? "").trim();
+    if (prompt) {
+      if (recallQuestionInput) {
+        recallQuestionInput.value = prompt;
+      }
+      if (modelLabPromptEl) {
+        modelLabPromptEl.value = prompt;
+      }
+      lastQuestion = prompt;
+      recallMetaEl.textContent = "Saved benchmark prompt loaded back into recall and model lab.";
+      renderSpeedReport();
+      renderBenchmarkVariantLab();
+      renderModelLabReport();
+    }
+    return;
+  }
+
+  const shortcutButton = target.closest("[data-db-shortcut]");
   if (!shortcutButton) {
     return;
   }
@@ -3578,9 +3981,14 @@ syncEditorUi();
 renderBuilderChecks();
 renderSuggestedPrompts();
 renderSubjectIdeas();
+renderBenchmarkReports();
+renderModelDebugWindow();
 
 Promise.all([loadAssistStatus(), loadSubjects(), loadBackendOverview()])
-  .then(() => loadPendingDraftIfPresent())
+  .then(async () => {
+    await loadPendingDraftIfPresent();
+    await loadBenchmarkReports();
+  })
   .catch((error) => {
     subjectMetaEl.textContent = error instanceof Error ? error.message : "Unable to load the Strandspace backend.";
     recallMetaEl.textContent = "Startup failed.";
@@ -3593,4 +4001,4 @@ Promise.all([loadAssistStatus(), loadSubjects(), loadBackendOverview()])
     });
   });
 void loadSystemHealth();
-void loadOllamaStatus();
+void loadModelLabStatus();

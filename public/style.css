@@ -1123,39 +1123,56 @@ h3 {
   margin-top: 18px;
 }
 
-.ollama-panel {
+.model-lab-panel {
   margin-top: 18px;
+}
+
+.debug-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.debug-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(71, 48, 31, 0.1);
+  background: linear-gradient(180deg, rgba(255, 252, 247, 0.98), rgba(247, 241, 233, 0.92));
+}
+
+.debug-block {
+  display: grid;
+  gap: 8px;
+}
+
+.debug-block pre {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(71, 48, 31, 0.08);
+  background: rgba(255, 255, 255, 0.66);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.93rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
 }
 
 .recall-panel {
   margin-top: 18px;
 }
 
-.ollama-form-grid {
+.model-lab-form-grid {
   display: grid;
   grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
   gap: 14px;
   margin-bottom: 14px;
 }
 
-.ollama-toggle {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 56px;
-  padding: 16px 18px;
-  border-radius: 20px;
-  border: 1px solid rgba(71, 48, 31, 0.1);
-  background: rgba(255, 252, 247, 0.72);
-}
-
-.ollama-toggle input {
-  width: 18px;
-  height: 18px;
-  margin: 0;
-}
-
-.ollama-output {
+.model-lab-output {
   margin: 0;
   color: var(--ink);
   line-height: 1.7;
@@ -1180,13 +1197,13 @@ h3 {
 }
 
 .benchmark-variant-grid label,
-.ollama-panel label {
+.model-lab-panel label {
   display: grid;
   gap: 8px;
 }
 
 .benchmark-variant-grid label > span,
-.ollama-panel label > span {
+.model-lab-panel label > span {
   color: var(--muted);
   font-size: 0.84rem;
   font-weight: 700;
@@ -1196,8 +1213,8 @@ h3 {
 
 .benchmark-variant-grid input,
 .benchmark-variant-grid select,
-.ollama-panel textarea,
-.ollama-panel select {
+.model-lab-panel textarea,
+.model-lab-panel select {
   width: 100%;
   border: 1px solid rgba(71, 48, 31, 0.18);
   border-radius: 18px;
@@ -1210,8 +1227,8 @@ h3 {
 
 .benchmark-variant-grid input:focus,
 .benchmark-variant-grid select:focus,
-.ollama-panel textarea:focus,
-.ollama-panel select:focus {
+.model-lab-panel textarea:focus,
+.model-lab-panel select:focus {
   outline: none;
   border-color: rgba(181, 109, 54, 0.45);
   box-shadow: 0 0 0 4px rgba(181, 109, 54, 0.12);
@@ -1434,7 +1451,7 @@ h3 {
     min-height: auto;
   }
 
-  .ollama-form-grid,
+  .model-lab-form-grid,
   .speed-prompt-grid,
   .workspace-grid,
   .speed-grid,
@@ -1453,11 +1470,6 @@ h3 {
   .page-switch {
     padding-top: 14px;
   }
-
-  .ollama-toggle {
-    align-items: flex-start;
-  }
-
   .status-badge {
     width: 100%;
     justify-content: center;
@@ -1818,6 +1830,11 @@ body.backend-page {
 .dataset-health-copy,
 .dataset-health-actions,
 .dataset-health-issues,
+.benchmark-report-summary,
+.benchmark-model-grid,
+.benchmark-model-card,
+.benchmark-history-list,
+.benchmark-history-item,
 .answer-relevance {
   display: grid;
   gap: 12px;
@@ -1866,6 +1883,22 @@ body.backend-page {
 .dataset-health-actions {
   justify-items: end;
   max-width: 220px;
+}
+
+.benchmark-report-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.benchmark-model-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.benchmark-model-card,
+.benchmark-history-item {
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(71, 48, 31, 0.1);
+  background: rgba(255, 252, 247, 0.78);
 }
 
 .detail-label {
@@ -2148,7 +2181,8 @@ body.backend-page {
 
   .dataset-health-summary,
   .dataset-health-item,
-  .dataset-health-issues {
+  .dataset-health-issues,
+  .benchmark-report-summary {
     grid-template-columns: 1fr;
   }
 

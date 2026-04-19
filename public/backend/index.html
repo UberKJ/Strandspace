@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Strandspace Backend</title>
-    <link rel="stylesheet" href="/style.css?v=2026-04-18-backend-ollama-01" />
-    <script type="module" src="/app.js?v=2026-04-18-backend-ollama-01" defer></script>
+    <link rel="stylesheet" href="/style.css?v=2026-04-19-benchmark-reports-01" />
+    <script type="module" src="/app.js?v=2026-04-19-benchmark-reports-01" defer></script>
   </head>
   <body class="builder-page backend-page">
     <header class="page-switch backend-topbar">
@@ -123,7 +123,7 @@
           </div>
           <p class="meta">
             Use the builder to draft structured constructs, review the activation field in the answer panel, benchmark
-            local recall against OpenAI or Ollama, and drop into the SQLite editor when you need row-level control.
+            local recall against the selected OpenAI model, and drop into the SQLite editor when you need row-level control.
           </p>
         </section>
 
@@ -340,14 +340,30 @@
                 <p class="eyebrow small">Benchmark</p>
                 <h2>Strandbase vs LLM speed</h2>
               </div>
-              <p id="speed-meta" class="meta">Benchmark the last live recall prompt against the local field and the LLM path.</p>
+              <p id="speed-meta" class="meta">Benchmark the last live recall prompt against the local field and the selected OpenAI model.</p>
             </div>
             <div class="speed-actions">
-              <button id="speed-compare-button" type="button" class="secondary-button">Compare local vs LLM</button>
-              <p class="meta">Uses the most recent recall prompt so the timing stays grounded in the same subject and cue set.</p>
+              <button id="speed-compare-button" type="button" class="secondary-button">Compare local vs OpenAI</button>
+              <p class="meta">Uses the most recent recall prompt so the timing stays grounded in the same subject, cue set, and selected OpenAI model.</p>
             </div>
             <div id="speed-report" class="speed-report empty">
-              <p>Run a recall prompt first, then compare local Strandbase recall against the LLM assist round-trip.</p>
+              <p>Run a recall prompt first, then compare local Strandbase recall against the selected OpenAI round-trip.</p>
+            </div>
+          </section>
+
+          <section class="panel benchmark-history-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow small">Benchmark Reports</p>
+                <h2>Stored manual test runs</h2>
+              </div>
+              <div class="section-actions">
+                <p id="benchmark-history-meta" class="meta">Manual benchmark runs will be stored here after you trigger them from the backend.</p>
+                <button id="benchmark-history-refresh-button" type="button" class="secondary-button subtle-button">Refresh reports</button>
+              </div>
+            </div>
+            <div id="benchmark-history-report" class="speed-report empty">
+              <p>Use the benchmark buttons above to save repeatable test runs, then refresh this page and keep comparing OpenAI models against the same Strandspace field.</p>
             </div>
           </section>
 
@@ -385,52 +401,66 @@
             </div>
             <div class="action-row">
               <button id="benchmark-use-variant-button" type="button" class="secondary-button subtle-button">Load variant into recall</button>
-              <button id="benchmark-run-variant-button" type="button" class="secondary-button">Compare variant vs LLM</button>
-              <button id="benchmark-run-variant-ollama-button" type="button" class="secondary-button">Compare variant vs Ollama</button>
+              <button id="benchmark-run-variant-button" type="button" class="secondary-button">Compare variant vs OpenAI</button>
             </div>
             <div id="benchmark-preview" class="speed-report empty">
               <p>Pick a mode and Strandspace will generate a shorter, denser, or repetitive test prompt here before you run another benchmark.</p>
             </div>
           </section>
 
-          <section class="panel ollama-panel">
+          <section class="panel model-lab-panel">
             <div class="section-head">
               <div>
-                <p class="eyebrow small">Ollama Lab</p>
-                <h2>Test the local model against Strandbase</h2>
+                <p class="eyebrow small">Model Lab</p>
+                <h2>Test OpenAI models against Strandbase</h2>
               </div>
-              <p id="ollama-meta" class="meta">Checking the local Ollama runtime now.</p>
+              <p id="model-lab-meta" class="meta">Checking OpenAI model access now.</p>
             </div>
-            <div class="ollama-form-grid">
+            <div class="model-lab-form-grid">
               <label>
-                <span>Model</span>
-                <select id="ollama-model">
-                  <option value="">Detecting local models...</option>
+                <span>API</span>
+                <select id="llm-provider">
+                  <option value="">Detecting OpenAI access...</option>
                 </select>
               </label>
-              <label class="ollama-toggle">
-                <input id="ollama-grounding" type="checkbox" checked />
-                <span>Ground Ollama with the best local construct before generating</span>
+              <label>
+                <span>OpenAI model</span>
+                <select id="model-lab-model">
+                  <option value="">Detecting available models...</option>
+                </select>
               </label>
             </div>
             <label>
-              <span>Prompt for Ollama</span>
+              <span>Prompt for OpenAI model</span>
               <textarea
-                id="ollama-prompt"
+                id="model-lab-prompt"
                 rows="5"
-                placeholder="Use the last recall prompt or paste a new test prompt here."
+                placeholder="Use the last recall prompt or paste a model test prompt here."
               ></textarea>
             </label>
             <div class="speed-actions">
               <div class="action-row">
-                <button id="ollama-use-last-button" type="button" class="secondary-button subtle-button">Use last recall prompt</button>
-                <button id="ollama-generate-button" type="button" class="secondary-button">Run Ollama draft</button>
-                <button id="ollama-compare-button" type="button" class="secondary-button">Compare local vs Ollama</button>
+                <button id="model-lab-use-last-button" type="button" class="secondary-button subtle-button">Use last recall prompt</button>
+                <button id="model-lab-generate-button" type="button" class="secondary-button">Build construct draft</button>
+                <button id="model-lab-compare-button" type="button" class="secondary-button">Compare local vs OpenAI</button>
               </div>
-              <p class="meta">The compare flow keeps the same question in both paths and shows whether Ollama was grounded with the matched construct.</p>
+              <p class="meta">Use the OpenAI model dropdown to benchmark API-backed models, then inspect how their answers and construct drafts would populate Strandspace.</p>
             </div>
-            <div id="ollama-report" class="speed-report empty">
-              <p>Once Ollama is reachable, run a draft or compare test here without leaving the backend.</p>
+            <div id="model-lab-report" class="speed-report empty">
+              <p>Once OpenAI model access is available, run a draft or compare test here without leaving the backend.</p>
+            </div>
+          </section>
+
+          <section class="panel trace-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow small">Debug</p>
+                <h2>Model prompt and return window</h2>
+              </div>
+              <p id="llm-debug-meta" class="meta">The backend keeps the latest OpenAI prompts and returns here so you can inspect how each model is shaping Strandspace input.</p>
+            </div>
+            <div id="llm-debug-report" class="trace-grid empty">
+              <p>Run a model draft or benchmark compare to inspect the raw question, request prompt, and model return.</p>
             </div>
           </section>
         </section>

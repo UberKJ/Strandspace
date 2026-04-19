@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DEFAULT_MODEL = process.env.SUBJECTSPACE_OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-5.4-mini";
+const DEFAULT_MODEL_LIST = ["gpt-5.4-mini", "gpt-5.4", "gpt-5.2"];
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const projectRoot = join(__dirname, "..");
@@ -20,11 +21,34 @@ function resolvePositiveInteger(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function getOpenAiRequestTimeoutMs() {
+function getOpenAiRequestTimeoutMs(override = null) {
+  if (Number.isFinite(Number(override)) && Number(override) > 0) {
+    return Number(override);
+  }
+
   return resolvePositiveInteger(
     process.env.SUBJECTSPACE_OPENAI_TIMEOUT_MS ?? process.env.OPENAI_TIMEOUT_MS,
     DEFAULT_OPENAI_REQUEST_TIMEOUT_MS
   );
+}
+
+function resolveOpenAiModels() {
+  const configuredModels = String(
+    process.env.SUBJECTSPACE_OPENAI_MODELS
+    ?? process.env.OPENAI_MODELS
+    ?? ""
+  ).trim();
+
+  const models = configuredModels
+    ? configuredModels.split(",").map((entry) => entry.trim()).filter(Boolean)
+    : DEFAULT_MODEL_LIST;
+
+  return [...new Set([DEFAULT_MODEL, ...models].filter(Boolean))];
+}
+
+function resolveRequestedModel(value = "") {
+  const requested = String(value ?? "").trim();
+  return requested || DEFAULT_MODEL;
 }
 
 function buildOpenAiTimeoutError(timeoutMs) {
@@ -53,8 +77,8 @@ function buildOpenAiRequestError(error, fallbackMessage = "OpenAI request failed
   return normalized;
 }
 
-async function runOpenAiRequest(executor) {
-  const timeoutMs = getOpenAiRequestTimeoutMs();
+async function runOpenAiRequest(executor, options = {}) {
+  const timeoutMs = getOpenAiRequestTimeoutMs(options.timeoutMs);
   const controller = new AbortController();
   let timeoutId = null;
 
@@ -786,11 +810,13 @@ function normalizeUsagePayload(usage = null) {
 export function getOpenAiAssistStatus() {
   const enabled = Boolean(mockAssistRunner || resolveOpenAiApiKey());
   const timeoutMs = getOpenAiRequestTimeoutMs();
+  const models = resolveOpenAiModels();
 
   return {
     provider: "openai",
     enabled,
     model: DEFAULT_MODEL,
+    models,
     timeoutMs,
     reason: enabled
       ? `OpenAI assist is ready on ${DEFAULT_MODEL} with a ${timeoutMs}ms request timeout.`
@@ -802,21 +828,28 @@ export async function generateOpenAiSubjectAssist({
   question,
   subjectId = "",
   subjectLabel = "General Recall",
-  recall = {}
+  recall = {},
+  model = DEFAULT_MODEL,
+  requestTimeoutMs = null
 } = {}) {
+  const selectedModel = resolveRequestedModel(model);
+
   if (mockAssistRunner) {
     return runOpenAiRequest(() => mockAssistRunner({
       question,
       subjectId,
       subjectLabel,
-      recall
-    }));
+      recall,
+      model: selectedModel
+    }), {
+      timeoutMs: requestTimeoutMs
+    });
   }
 
   const openai = getClient();
   const response = await runOpenAiRequest((requestOptions) => (
     openai.responses.create({
-      model: DEFAULT_MODEL,
+      model: selectedModel,
       store: false,
       instructions: buildInstructions(),
       input: buildInput({
@@ -834,7 +867,9 @@ export async function generateOpenAiSubjectAssist({
         }
       }
     }, requestOptions)
-  ));
+  ), {
+    timeoutMs: requestTimeoutMs
+  });
 
   const parsed = JSON.parse(response.output_text);
   const matched = recall?.matched ?? null;
@@ -846,7 +881,7 @@ export async function generateOpenAiSubjectAssist({
 
   return {
     responseId: response.id,
-    model: response.model ?? DEFAULT_MODEL,
+    model: response.model ?? selectedModel,
     usage: normalizeUsagePayload(response.usage),
     assist
   };
@@ -857,7 +892,8 @@ export async function generateOpenAiSubjectConstructBuilder({
   subjectId = "",
   subjectLabel = "General Recall",
   seedDraft = {},
-  references = []
+  references = [],
+  requestTimeoutMs = null
 } = {}) {
   if (mockAssistRunner) {
     return runOpenAiRequest(() => mockAssistRunner({
@@ -868,7 +904,9 @@ export async function generateOpenAiSubjectConstructBuilder({
       subjectLabel,
       seedDraft,
       references
-    }));
+    }), {
+      timeoutMs: requestTimeoutMs
+    });
   }
 
   const openai = getClient();
@@ -893,7 +931,9 @@ export async function generateOpenAiSubjectConstructBuilder({
         }
       }
     }, requestOptions)
-  ));
+  ), {
+    timeoutMs: requestTimeoutMs
+  });
 
   const parsed = JSON.parse(response.output_text);
   const assist = normalizeAssistPayload(parsed, {
@@ -912,14 +952,17 @@ export async function generateOpenAiSubjectConstructBuilder({
 
 export async function generateOpenAiSubjectSuggestions({
   description = "",
-  requestedSubjectLabel = ""
+  requestedSubjectLabel = "",
+  requestTimeoutMs = null
 } = {}) {
   if (mockAssistRunner) {
     const mocked = await runOpenAiRequest(() => mockAssistRunner({
       mode: "subject-ideas",
       description,
       requestedSubjectLabel
-    }));
+    }), {
+      timeoutMs: requestTimeoutMs
+    });
 
     return {
       responseId: mocked?.responseId ?? null,
@@ -950,7 +993,9 @@ export async function generateOpenAiSubjectSuggestions({
         }
       }
     }, requestOptions)
-  ));
+  ), {
+    timeoutMs: requestTimeoutMs
+  });
 
   const parsed = JSON.parse(response.output_text);
 
@@ -967,7 +1012,8 @@ export async function generateOpenAiSubjectSuggestions({
 export async function generateOpenAiSoundConstructBuilder({
   question = "",
   recall = {},
-  seedConstruct = {}
+  seedConstruct = {},
+  requestTimeoutMs = null
 } = {}) {
   if (mockAssistRunner) {
     const mocked = await runOpenAiRequest(() => mockAssistRunner({
@@ -976,7 +1022,9 @@ export async function generateOpenAiSoundConstructBuilder({
       question,
       recall,
       seedConstruct
-    }));
+    }), {
+      timeoutMs: requestTimeoutMs
+    });
 
     return {
       responseId: mocked?.responseId ?? null,
@@ -1006,7 +1054,9 @@ export async function generateOpenAiSoundConstructBuilder({
         }
       }
     }, requestOptions)
-  ));
+  ), {
+    timeoutMs: requestTimeoutMs
+  });
 
   const parsed = JSON.parse(response.output_text);
 
@@ -1023,9 +1073,11 @@ export function buildSuggestedConstructFromAssist({
   subjectLabel = "General Recall",
   assist = {},
   question = "",
-  routingMode = ""
+  routingMode = "",
+  model = DEFAULT_MODEL
 } = {}) {
   const normalized = normalizeAssistPayload(assist);
+  const selectedModel = resolveRequestedModel(model);
 
   return {
     subjectId,
@@ -1039,7 +1091,7 @@ export function buildSuggestedConstructFromAssist({
     tags: normalized.tags,
     provenance: {
       source: "openai-responses",
-      model: DEFAULT_MODEL,
+      model: selectedModel,
       learnedFromQuestion: question,
       routingMode
     }

@@ -12,7 +12,7 @@
     "kill": "node scripts/kill-dev.js",
     "restart": "node scripts/restart-dev.js",
     "test": "node test/run-tests.mjs",
-    "test:node": "node --test test/"
+    "test:node": "node test/run-tests.mjs"
   },
   "dependencies": {
     "openai": "^6.34.0"
