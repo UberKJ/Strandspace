@@ -1,44 +1,99 @@
 # Strandspace Studio
 
-**Query-triggered semantic recall with compact prompt benchmarking**
+Local-first construct recall for repetitive learned tasks, adaptive workflows, and LLM-assisted expansion.
 
-Strandspace Studio is a working prototype for **local-first semantic memory**.
-Instead of rebuilding answers from scratch every time, it stores reusable constructs that can be reactivated from partial cues.
+Strandspace Studio is a working prototype for local-first semantic memory built around a practical idea:
 
-> **Store the pieces. Store the triggers. Store the rules that let meaning form.**
+**When a system has already learned a repeated task, setup, route, or workflow, it should recall that construct locally first instead of rebuilding the answer from scratch every time.**
+
+> Store the pieces. Store the triggers. Store the rules that let meaning form.
 
 ---
 
 ## Project Status
 
 Prototype in active development.
-Core recall, routing, learn-back, and benchmark flows are working.
-Benchmark and payload optimization are ongoing.
+
+Core recall, routing, learn-back, and compact benchmark flows are working. Regression coverage is active, benchmark behavior has been rewritten around semantically equivalent compact prompts, and payload optimization is still in progress.
 
 ---
 
 ## What Strandspace Is
 
-Most AI systems solve repeated questions by paying the same broad retrieval cost again and again. They search flat text, long prompt histories, or wide context windows even when the user is really asking about the same learned setup with only minor variations.
+Strandspace is **not** trying to replace AI or compete with large language models head-on.
+
+It is a memory-and-construct layer for systems that do repeated work.
+
+That includes things like:
+
+- agents that perform learned workflows
+- robots that repeat known tasks with occasional variation
+- route-following systems
+- repetitive setup assistants
+- troubleshooting systems
+- task-based domain assistants
+- any environment where the work is often similar, but never perfectly identical
+
+Most AI systems treat each new question as a fresh event and pay a broad retrieval or reasoning cost again and again.
 
 Strandspace takes a different path.
 
-It treats a query as an **activation event**, not just a text lookup.
+It treats a prompt as an **activation event**, not just a text lookup.
 
-A prompt triggers:
+A prompt can trigger:
 
-- **Trigger strands** to identify intent
-- **Anchor strands** to narrow domain and context
-- **Composite constructs** to reactivate reusable working knowledge
-- An **expression field** to form a temporary answer only when the construct is stable enough
+- **trigger strands** to identify intent
+- **anchor strands** to narrow domain and context
+- **composite constructs** to reactivate reusable learned knowledge
+- an **expression field** to form a temporary answer only when the construct is stable enough
 
-This lets the system answer familiar, repeated questions locally first, and use an LLM only when confidence is too low or expansion is actually needed.
+The goal is simple:
+
+**Recall what is already learned. Notice what changed. Adapt only where needed.**
+
+---
+
+## What Strandspace Is For
+
+Strandspace is designed for **repeated learned behavior**, not open-ended general intelligence.
+
+Its sweet spot is:
+
+- repeated questions
+- repeated setups
+- repeated procedures
+- repeated routes
+- stable environments with small changes
+- learned workflows that improve over time
+- systems that should reuse past success instead of improvising every time
+
+This is closer to a dependable task memory than a synthetic human mind.
+
+A useful mental model is not “replace the thinker.”
+It is “build the worker that remembers how this job usually goes.”
+
+---
+
+## Core Thesis
+
+Strandspace is built on one central idea:
+
+> When meaning can be reactivated from a learned construct, the system should recall locally first and spend external tokens only when the local field is not yet sufficient.
+
+That is the heart of the project.
+
+A second practical claim follows from it:
+
+> When the system has already learned a reusable construct, local recall should be cheaper, faster, and more efficient than a full LLM round-trip.
+
+Strandspace does not try to replace LLMs.
+It tries to stop using them as the first hammer for every nail.
 
 ---
 
 ## Current Product Structure
 
-Strandspace Studio currently has two main layers:
+Strandspace Studio currently has two main layers.
 
 ### Subjectspace
 
@@ -55,9 +110,12 @@ A stored construct can include:
 - notes
 - tags
 - derived strands
-- provenance and learned count
+- provenance
+- learned count
 
-Subjectspace is the general engine: teach it a reusable construct, then let future prompts reactivate it.
+Subjectspace is the general engine.
+
+Teach it a reusable construct, then let future prompts reactivate that construct when the cues match closely enough.
 
 ### Soundspace
 
@@ -71,7 +129,10 @@ It demonstrates how Strandspace can work in:
 - microphone gain staging
 - repeatable mixer or monitor scenes
 
-Soundspace exists because this kind of work repeats constantly with small changes. Most of the time, the system does not need to reinvent the answer. It needs to recall, refine, and reuse.
+Soundspace exists because this kind of work repeats constantly with small changes.
+
+Most of the time, the system does not need to reinvent the answer.
+It needs to **recall, refine, and reuse**.
 
 ---
 
@@ -80,16 +141,23 @@ Soundspace exists because this kind of work repeats constantly with small change
 Traditional AI workflows often:
 
 - do not preserve reusable working structure well
-- resend more context than the question really needs
+- resend more context than the question actually needs
 - make repeated domain recall slower and more expensive than necessary
 
-Strandspace is built around a narrower and more practical claim:
+Strandspace is aimed at a narrower and more practical problem:
 
-> When the system has already learned a reusable construct, local recall should be cheaper, faster, and more efficient than a full LLM round-trip.
+**How do you let an agent, assistant, or task system remember known patterns and adapt when reality shifts slightly?**
 
-It does **not** try to replace LLMs.
+That matters for real systems because repetition is everywhere.
 
-It tries to stop using them as the first hammer for every nail.
+A route changes.
+A setup changes.
+A scene changes.
+A user asks the same thing with different wording.
+A known workflow returns with one variable moved.
+
+Those are not always “new intelligence” problems.
+Often they are **recall-and-adjust** problems.
 
 ---
 
@@ -115,6 +183,8 @@ Before spending tokens externally, the system asks:
 
 **Is local memory already enough?**
 
+That question sits at the center of the whole architecture.
+
 ---
 
 ## Learn-Back Loop
@@ -130,6 +200,13 @@ Strandspace can learn the improved answer back into local memory:
 
 That creates a feedback loop where repeated work becomes progressively cheaper.
 
+In practical terms:
+
+- the first pass may need help
+- the second pass may be narrower
+- later passes may become local-first
+- repeated work becomes a learned construct instead of a recurring expense
+
 ---
 
 ## Compact Prompt Benchmarking
@@ -138,7 +215,7 @@ One of the most important updates in the current version is the benchmark rewrit
 
 The system no longer compares local recall vs LLM using only the original raw user prompt.
 
-Instead, Strandspace now tries to generate a **shorter benchmark prompt** and accepts it only if local recall can prove that the compact prompt lands on the **same construct**.
+Instead, Strandspace now tries to generate a **shorter benchmark prompt** and accepts it only if local recall can prove that the compact prompt lands on the same construct.
 
 ### Current benchmark flow
 
@@ -148,15 +225,17 @@ Instead, Strandspace now tries to generate a **shorter benchmark prompt** and ac
 4. Accept a compact benchmark prompt only if it recalls the same construct
 5. Time both the local path and the LLM path against that compact, semantically equivalent prompt
 
-This turns benchmarking into something more meaningful than a stopwatch race.
+This makes benchmarking more meaningful than a stopwatch race.
 
-It tests whether Strandspace can **compress the cue set while preserving recall identity**.
+It asks whether Strandspace can **compress the cue set while preserving recall identity**.
+
+That is a much better test for a learned recall system.
 
 ---
 
 ## Current Validation Status
 
-As of **April 15, 2026**, the active regression suite passes **11 of 11 tests**.
+As of April 15, 2026, the active regression suite passes **11 of 11 tests**.
 
 The suite currently covers:
 
@@ -200,40 +279,41 @@ The current prototype shows a strong directional result:
 
 A live benchmark shown in the UI reported:
 
-- original prompt: about **23 estimated tokens**
-- compact benchmark prompt: about **8 estimated tokens**
-- estimated savings: **15 tokens**
-- local recall: **4.590 ms**
-- LLM assist round-trip: **3388.3 ms**
-- observed speedup: **738.2x** in favor of local recall
+- original prompt: about 23 estimated tokens
+- compact benchmark prompt: about 8 estimated tokens
+- estimated savings: 15 tokens
+- local recall: 4.590 ms
+- LLM assist round-trip: 3388.3 ms
+- observed speedup: 738.2x in favor of local recall
 
 A second verification under a different subject showed:
 
-- original prompt: about **41 estimated tokens**
-- compact benchmark prompt: about **9 estimated tokens**
-- estimated savings: **32 tokens**
-- local recall: **0.388 ms**
-- LLM assist round-trip: **5462.432 ms**
+- original prompt: about 41 estimated tokens
+- compact benchmark prompt: about 9 estimated tokens
+- estimated savings: 32 tokens
+- local recall: 0.388 ms
+- LLM assist round-trip: 5462.432 ms
 
 These results do **not** mean LLM usage has already been minimized end to end.
 
-They do mean Strandspace is already shrinking the **user-query side** of recall and proving that learned constructs can be reactivated cheaply once they stabilize.
+They **do** mean Strandspace is already shrinking the user-query side of recall and proving that learned constructs can be reactivated cheaply once they stabilize.
 
 ---
 
 ## Important Interpretation Note
 
-Prompt savings and total LLM usage are **not the same thing**.
+Prompt savings and total LLM usage are not the same thing.
 
-Even when the compact benchmark prompt is much shorter, the current API assist path still includes routing data and a local recall snapshot. That means total LLM token usage can still be large.
+Even when the compact benchmark prompt is much shorter, the current API assist path still includes routing data and a local recall snapshot. That means total LLM token usage can still be larger than the final optimized build should allow.
 
-This is not a contradiction. It is an engineering signal.
+That is not a contradiction.
+It is an engineering signal.
 
 It means:
 
 - Strandspace is already reducing the user-side cue set
 - the current assist payload still carries more context than necessary
-- future optimization should reduce that assist packaging further
+- future optimization should reduce assist packaging further
 
 ---
 
@@ -250,7 +330,32 @@ The current build supports a stronger claim than the earlier prototype:
 - repeated local recall can be dramatically faster than a full LLM round-trip
 
 This is not just a theory sketch anymore.
-It is a working proof of concept with a benchmark method and test coverage around the claim.
+
+It is a working proof of concept with:
+
+- a usable interface
+- a benchmark method
+- regression tests
+- local-first routing
+- a teach-and-reuse loop
+- a domain demonstration in Soundspace
+
+---
+
+## What Strandspace Does Not Claim
+
+Strandspace does not currently claim to be:
+
+- AGI
+- a replacement for LLM reasoning
+- a full human-like cognition model
+- a universal answer engine
+
+That is not the point of this project.
+
+The point is narrower and more practical:
+
+**Build a system that remembers repeated patterns, reuses learned constructs, notices changes, and adapts without paying the full reasoning cost every time.**
 
 ---
 
@@ -282,6 +387,8 @@ Planned next steps:
 - continue cleaning legacy provenance values
 - add more seeded example domains beyond sound and portrait lighting
 - further demonstrate that Subjectspace is truly subject-agnostic
+- formalize strand classes and construct composition rules more clearly
+- improve change detection for repeated workflows with small variations
 
 ---
 
@@ -320,16 +427,21 @@ npm test
 
 ---
 
-## Core Thesis
+## White Paper
 
-Strandspace is built on one central idea:
+For the longer technical write-up, see `docs/whitepaper.md`.
 
-> When meaning can be reactivated from a learned construct, the system should recall locally first and spend external tokens only when the local field is not yet sufficient.
-
-That is the heart of the project.
+The README is the practical front door.
+The white paper remains the deeper theory and architecture document.
 
 ---
 
-## White Paper
+## Positioning in One Sentence
 
-For the longer technical write-up, see [docs/whitepaper.md](docs/whitepaper.md).
+**Strandspace is a construct-based memory system for agents and assistants that perform repeated tasks, recall learned patterns locally, and adapt when those patterns change.**
+
+---
+
+## About
+
+Local-first Strandspace Studio for recall, learning, repetitive task memory, and LLM-assisted expansion.
