@@ -8,9 +8,28 @@ const exampleRowEl = document.getElementById("example-row");
 const answerPanelEl = document.getElementById("answer-panel");
 const traceGridEl = document.getElementById("trace-grid");
 const traceSummaryEl = document.getElementById("trace-summary");
+const graphPanelEl = document.getElementById("graph-panel");
+const graphMetaEl = document.getElementById("graph-meta");
 const speedMetaEl = document.getElementById("speed-meta");
 const speedReportEl = document.getElementById("speed-report");
 const speedCompareButton = document.getElementById("speed-compare-button");
+const benchmarkVariantMetaEl = document.getElementById("benchmark-variant-meta");
+const benchmarkVariantModeEl = document.getElementById("benchmark-variant-mode");
+const benchmarkWordBudgetEl = document.getElementById("benchmark-word-budget");
+const benchmarkRepeatValueEl = document.getElementById("benchmark-repeat-value");
+const benchmarkRepeatCountEl = document.getElementById("benchmark-repeat-count");
+const benchmarkPreviewEl = document.getElementById("benchmark-preview");
+const benchmarkUseVariantButton = document.getElementById("benchmark-use-variant-button");
+const benchmarkRunVariantButton = document.getElementById("benchmark-run-variant-button");
+const benchmarkRunVariantOllamaButton = document.getElementById("benchmark-run-variant-ollama-button");
+const ollamaMetaEl = document.getElementById("ollama-meta");
+const ollamaModelEl = document.getElementById("ollama-model");
+const ollamaGroundingEl = document.getElementById("ollama-grounding");
+const ollamaPromptEl = document.getElementById("ollama-prompt");
+const ollamaReportEl = document.getElementById("ollama-report");
+const ollamaUseLastButton = document.getElementById("ollama-use-last-button");
+const ollamaGenerateButton = document.getElementById("ollama-generate-button");
+const ollamaCompareButton = document.getElementById("ollama-compare-button");
 const libraryMetaEl = document.getElementById("library-meta");
 const libraryListEl = document.getElementById("library-list");
 const resetExamplesButton = document.getElementById("reset-examples-button");
@@ -44,7 +63,13 @@ const backendModeDetailEl = document.getElementById("backend-mode-detail");
 const backendSubjectCountEl = document.getElementById("backend-subject-count");
 const backendConstructCountEl = document.getElementById("backend-construct-count");
 const backendSoundCountEl = document.getElementById("backend-sound-count");
+const backendSubjectStrandCountEl = document.getElementById("backend-subject-strand-count");
+const backendLinkCountEl = document.getElementById("backend-link-count");
 const backendDbPathEl = document.getElementById("backend-db-path");
+const datasetHealthMetaEl = document.getElementById("dataset-health-meta");
+const datasetHealthPanelEl = document.getElementById("dataset-health-panel");
+const datasetHealthRefreshButton = document.getElementById("dataset-health-refresh");
+const datasetCleanButton = document.getElementById("dataset-clean-button");
 const backendDbSizeEl = document.getElementById("backend-db-size");
 const backendDbMetaEl = document.getElementById("backend-db-meta");
 const backendDbTableListEl = document.getElementById("backend-db-tables");
@@ -84,10 +109,23 @@ let benchmarkState = {
   phase: "idle",
   message: ""
 };
+let ollamaStatus = {
+  reachable: false,
+  models: [],
+  defaultModel: "",
+  reason: "Checking Ollama..."
+};
+let latestOllamaRun = null;
+let ollamaState = {
+  phase: "idle",
+  message: ""
+};
 let systemHealth = null;
 let latestSubjectIdeas = null;
 let backendOverview = null;
+let datasetHealth = null;
 let lastRenderedTrace = null;
+let lastRenderedGraphConstruct = null;
 const pagedListSize = 5;
 let pagerState = {
   suggestedPrompts: 0,
@@ -341,6 +379,111 @@ function activeBenchmarkQuestion() {
   return String(recallQuestionInput?.value ?? "").trim() || lastQuestion;
 }
 
+function activeOllamaPrompt() {
+  return String(ollamaPromptEl?.value ?? "").trim() || activeBenchmarkQuestion();
+}
+
+function activeBenchmarkBasePrompt() {
+  return String(
+    latestComparison?.prompts?.benchmark?.question
+    ?? latestComparison?.question
+    ?? activeBenchmarkQuestion()
+    ?? ""
+  ).trim();
+}
+
+function promptKeywords(value = "") {
+  return [...new Set(
+    String(value ?? "")
+      .trim()
+      .split(/[^A-Za-z0-9]+/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .filter((item) => item.length > 2)
+  )];
+}
+
+function currentConstructForTesting() {
+  const construct = lastPayload?.construct ?? lastPayload?.recall?.matched ?? null;
+  return construct && typeof construct === "object" ? construct : null;
+}
+
+function extendPromptWithConstruct(basePrompt = "", wordBudget = 8) {
+  const construct = currentConstructForTesting();
+  const segments = [
+    basePrompt,
+    construct?.target,
+    construct?.objective,
+    ...(construct?.tags ?? []).slice(0, 4),
+    ...contextEntries(construct?.context ?? {}).slice(0, 2).map(([key, value]) => `${key} ${value}`)
+  ]
+    .map((item) => String(item ?? "").trim())
+    .filter(Boolean);
+  const words = [];
+
+  for (const segment of segments) {
+    for (const token of segment.split(/\s+/)) {
+      if (!token) {
+        continue;
+      }
+      words.push(token);
+      if (words.length >= wordBudget) {
+        return words.join(" ");
+      }
+    }
+  }
+
+  return words.join(" ").trim();
+}
+
+function buildBenchmarkVariantPrompt() {
+  const basePrompt = activeBenchmarkBasePrompt();
+  const mode = String(benchmarkVariantModeEl?.value ?? "fewer").trim() || "fewer";
+  const wordBudget = Math.max(3, Math.min(Number(benchmarkWordBudgetEl?.value ?? 8) || 8, 48));
+  const repeatValue = String(benchmarkRepeatValueEl?.value ?? "").trim();
+  const repeatCount = Math.max(0, Math.min(Number(benchmarkRepeatCountEl?.value ?? 3) || 0, 8));
+  const keywords = promptKeywords(basePrompt);
+  const compactPrompt = keywords.slice(0, wordBudget).join(" ").trim() || basePrompt;
+  const expandedPrompt = extendPromptWithConstruct(basePrompt, Math.max(wordBudget, basePrompt.split(/\s+/).filter(Boolean).length));
+  const repeatedCue = repeatValue
+    ? Array.from({ length: repeatCount }, () => repeatValue).join(" ").trim()
+    : "";
+
+  let question = basePrompt;
+  let modeLabel = "Base prompt";
+  if (mode === "fewer") {
+    question = compactPrompt;
+    modeLabel = "Fewer cue words";
+  } else if (mode === "more") {
+    question = expandedPrompt || basePrompt;
+    modeLabel = "More context words";
+  } else if (mode === "repetitive") {
+    question = [basePrompt, repeatedCue].filter(Boolean).join(" ").trim() || basePrompt;
+    modeLabel = "Repeated cue value";
+  } else if (mode === "mixed") {
+    question = [compactPrompt, repeatedCue].filter(Boolean).join(" ").trim() || compactPrompt;
+    modeLabel = "Fewer words plus repeat cue";
+  }
+
+  const words = question ? question.split(/\s+/).filter(Boolean).length : 0;
+  return {
+    basePrompt,
+    question: question.trim() || basePrompt,
+    mode,
+    modeLabel,
+    wordBudget,
+    repeatValue,
+    repeatCount,
+    wordCount: words,
+    tokenEstimate: Math.max(1, Math.round(words * 1.35)),
+    changed: normalizePrompt(question) !== normalizePrompt(basePrompt)
+  };
+}
+
+function normalizePrompt(value = "") {
+  return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 function benchmarkSummaryLine(comparisonPayload = null) {
   const local = comparisonPayload?.local ?? {};
   const llm = comparisonPayload?.llm ?? {};
@@ -506,11 +649,103 @@ function previewTrace(construct) {
       { name: construct.constructLabel, value: `${construct.subjectLabel} construct` },
       ...(construct.tags ?? []).slice(0, 4).map((tag) => ({ name: tag, value: "tagged memory" }))
     ],
+    persistentStrands: (construct.constructStrands ?? []).slice(0, 6).map((strand) => ({
+      name: strand.label ?? strand.strandKey,
+      value: `${strand.layer ?? "anchor"}/${strand.role ?? "feature"}`
+    })),
+    activatedStrands: (construct.constructStrands ?? []).slice(0, 3).map((strand) => ({
+      name: strand.label ?? strand.strandKey,
+      value: "preview activation"
+    })),
+    linkedStrands: (construct.linkedConstructs ?? []).slice(0, 4).map((item) => ({
+      name: item.constructLabel ?? item.relatedConstructId,
+      value: item.reason ?? "related construct"
+    })),
+    binderStrands: (construct.binderPreview ?? []).slice(0, 4).map((item) => ({
+      name: `${item.leftTerm} + ${item.rightTerm}`,
+      value: `weight ${Number(item.weight ?? 0).toFixed(2)}`
+    })),
     stabilizedMemory: [
       { name: construct.constructLabel, score: Number(construct.learnedCount ?? 1), role: "selected" }
     ],
     expressionField: `Previewing a stored construct in ${construct.subjectLabel} before recall is triggered.`
   };
+}
+
+function renderGraph(construct = null) {
+  lastRenderedGraphConstruct = construct;
+  if (!graphPanelEl || !graphMetaEl) {
+    return;
+  }
+
+  if (!construct) {
+    graphMetaEl.textContent = "Inspect the current construct as strands, binders, and linked memories, then jump into the editable graph tables.";
+    graphPanelEl.className = "trace-grid empty";
+    graphPanelEl.innerHTML = "<p>Load or recall a construct to see its local strand graph.</p>";
+    return;
+  }
+
+  const constructStrands = Array.isArray(construct.constructStrands) ? construct.constructStrands : [];
+  const subjectStrands = Array.isArray(construct.subjectStrandPreview) ? construct.subjectStrandPreview : [];
+  const linkedConstructs = Array.isArray(construct.linkedConstructs) ? construct.linkedConstructs : [];
+  const binders = Array.isArray(construct.binderPreview) ? construct.binderPreview : [];
+
+  graphMetaEl.textContent = `${constructStrands.length} construct strands, ${subjectStrands.length} subject strands, ${linkedConstructs.length} links, and ${binders.length} binder cues around "${construct.constructLabel}".`;
+  graphPanelEl.className = "trace-grid";
+  graphPanelEl.innerHTML = `
+    <section class="trace-lane">
+      <header><h3>Construct strands</h3></header>
+      <div class="trace-chip-row">
+        ${constructStrands.length
+          ? constructStrands.slice(0, 10).map((strand) => `
+              <article class="trace-chip">
+                <strong>${escapeHtml(strand.label ?? strand.strandKey ?? "strand")}</strong>
+                <span>${escapeHtml(`${strand.layer ?? "anchor"}/${strand.role ?? "feature"} · ${Number(strand.weight ?? 0).toFixed(2)}`)}</span>
+              </article>
+            `).join("")
+          : "<p class=\"trace-empty\">No construct strands are attached yet.</p>"}
+      </div>
+    </section>
+    <section class="trace-lane">
+      <header><h3>Top subject strands</h3></header>
+      <div class="trace-chip-row">
+        ${subjectStrands.length
+          ? subjectStrands.slice(0, 10).map((strand) => `
+              <article class="trace-chip">
+                <strong>${escapeHtml(strand.label ?? strand.strandKey ?? "strand")}</strong>
+                <span>${escapeHtml(`${strand.constructCount ?? 0} constructs · ${strand.usageCount ?? 0} recalls`)}</span>
+              </article>
+            `).join("")
+          : "<p class=\"trace-empty\">No subject strand summary is available yet.</p>"}
+      </div>
+    </section>
+    <section class="trace-lane">
+      <header><h3>Linked constructs</h3></header>
+      <div class="trace-chip-row">
+        ${linkedConstructs.length
+          ? linkedConstructs.slice(0, 8).map((item) => `
+              <article class="trace-chip">
+                <strong>${escapeHtml(item.constructLabel ?? item.relatedConstructId ?? "linked construct")}</strong>
+                <span>${escapeHtml(item.reason ?? `score ${Number(item.score ?? 0).toFixed(2)}`)}</span>
+              </article>
+            `).join("")
+          : "<p class=\"trace-empty\">No linked constructs are attached yet.</p>"}
+      </div>
+    </section>
+    <section class="trace-lane">
+      <header><h3>Binder reinforcement</h3></header>
+      <div class="trace-chip-row">
+        ${binders.length
+          ? binders.slice(0, 8).map((item) => `
+              <article class="trace-chip">
+                <strong>${escapeHtml(`${item.leftTerm ?? ""} + ${item.rightTerm ?? ""}`)}</strong>
+                <span>${escapeHtml(`weight ${Number(item.weight ?? 0).toFixed(2)} · ${item.reason ?? item.source ?? "binder"}`)}</span>
+              </article>
+            `).join("")
+          : "<p class=\"trace-empty\">No binder cues are available yet.</p>"}
+      </div>
+    </section>
+  `;
 }
 
 function previewPayload(construct) {
@@ -913,6 +1148,7 @@ async function loadAssistStatus() {
 
   subjectMetaEl.textContent = subjectMetaText();
   renderSpeedReport();
+  renderOllamaReport();
 }
 
 async function loadSystemHealth() {
@@ -922,6 +1158,236 @@ async function loadSystemHealth() {
   } catch {
     renderSystemStatusBadge(null);
   }
+}
+
+function syncOllamaModelOptions() {
+  if (!ollamaModelEl) {
+    return;
+  }
+
+  const models = Array.isArray(ollamaStatus.models) ? ollamaStatus.models : [];
+  const selectedValue = String(ollamaModelEl.value ?? "").trim()
+    || String(ollamaStatus.defaultModel ?? "").trim();
+
+  if (!models.length) {
+    ollamaModelEl.innerHTML = `<option value="">${escapeHtml(ollamaStatus.reachable ? "No local models installed" : "Ollama unavailable")}</option>`;
+    ollamaModelEl.disabled = true;
+    return;
+  }
+
+  ollamaModelEl.disabled = false;
+  ollamaModelEl.innerHTML = models.map((model) => `
+    <option value="${escapeHtml(model.name)}">${escapeHtml(model.name)}</option>
+  `).join("");
+
+  const exactMatch = models.find((model) => model.name === selectedValue);
+  ollamaModelEl.value = exactMatch?.name ?? models[0].name;
+}
+
+function renderOllamaOutput(text = "") {
+  const value = String(text ?? "").trim();
+  if (!value) {
+    return "<p class=\"meta\">No Ollama output was returned for this run.</p>";
+  }
+
+  return `<p class="ollama-output">${escapeHtml(value).replaceAll("\n", "<br />")}</p>`;
+}
+
+function renderOllamaStats(stats = null) {
+  if (!stats || typeof stats !== "object") {
+    return "";
+  }
+
+  const items = [
+    Number.isFinite(Number(stats.promptEvalCount)) && Number(stats.promptEvalCount) > 0
+      ? `${Math.round(Number(stats.promptEvalCount))} prompt eval`
+      : "",
+    Number.isFinite(Number(stats.evalCount)) && Number(stats.evalCount) > 0
+      ? `${Math.round(Number(stats.evalCount))} output eval`
+      : "",
+    Number.isFinite(Number(stats.totalDurationMs))
+      ? `${formatMilliseconds(stats.totalDurationMs)} total`
+      : ""
+  ].filter(Boolean);
+
+  return items.length
+    ? `<div class="speed-notes">${items.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>`
+    : "";
+}
+
+function renderOllamaReport() {
+  if (!ollamaMetaEl || !ollamaReportEl) {
+    return;
+  }
+
+  syncOllamaModelOptions();
+  const reachable = Boolean(ollamaStatus.reachable);
+  const prompt = activeOllamaPrompt();
+  const hasPrompt = Boolean(normalizePrompt(prompt));
+  const modelLabel = String(ollamaModelEl?.value ?? ollamaStatus.defaultModel ?? "").trim();
+  const isLoading = ollamaState.phase === "loading";
+  const loadingText = ollamaState.message || "Running Ollama...";
+
+  if (ollamaUseLastButton) {
+    ollamaUseLastButton.disabled = !activeBenchmarkQuestion();
+  }
+  if (ollamaGenerateButton) {
+    ollamaGenerateButton.disabled = !reachable || isLoading || !hasPrompt;
+    ollamaGenerateButton.textContent = isLoading ? "Running..." : "Run Ollama draft";
+  }
+  if (ollamaCompareButton) {
+    ollamaCompareButton.disabled = !reachable || isLoading || !hasPrompt;
+    ollamaCompareButton.textContent = isLoading ? "Comparing..." : "Compare local vs Ollama";
+  }
+
+  if (!reachable) {
+    ollamaMetaEl.textContent = ollamaStatus.reason || "Ollama is unavailable.";
+    ollamaReportEl.className = "speed-report empty";
+    ollamaReportEl.innerHTML = `
+      <p>${escapeHtml(ollamaStatus.reason || "Ollama is unavailable.")}</p>
+      <p>Expected local runtime: ${escapeHtml(ollamaStatus.baseUrl ?? "http://127.0.0.1:11434")}.</p>
+    `;
+    renderBenchmarkVariantLab();
+    return;
+  }
+
+  if (isLoading) {
+    ollamaMetaEl.textContent = loadingText;
+    ollamaReportEl.className = "speed-report loading";
+    ollamaReportEl.innerHTML = `
+      <div class="speed-summary">
+        <p><span class="spinner-inline" aria-hidden="true"></span>${escapeHtml(loadingText)}</p>
+        <p>Prompt: "${escapeHtml(previewQuestion(prompt || activeBenchmarkQuestion()))}"</p>
+      </div>
+    `;
+    renderBenchmarkVariantLab();
+    return;
+  }
+
+  if (ollamaState.phase === "error") {
+    ollamaMetaEl.textContent = ollamaState.message || "Ollama request failed.";
+    ollamaReportEl.className = "speed-report error";
+    ollamaReportEl.innerHTML = `
+      <div class="speed-summary speed-summary-error">
+        <p>${escapeHtml(ollamaState.message || "Ollama request failed.")}</p>
+      </div>
+    `;
+    renderBenchmarkVariantLab();
+    return;
+  }
+
+  if (!latestOllamaRun) {
+    ollamaMetaEl.textContent = hasPrompt
+      ? (ollamaStatus.reason || "Ollama is ready.")
+      : "Enter a backend prompt before running Ollama tests.";
+    ollamaReportEl.className = "speed-report empty";
+    ollamaReportEl.innerHTML = `
+      <p>Ready on ${escapeHtml(modelLabel || "the first local model")}.</p>
+      <p>${escapeHtml(prompt ? `Current prompt: "${previewQuestion(prompt)}"` : "Paste a prompt or load one from recall before running draft or compare mode.")}</p>
+    `;
+    renderBenchmarkVariantLab();
+    return;
+  }
+
+  const payload = latestOllamaRun.payload ?? {};
+  const local = payload.local ?? {};
+  const recall = payload.recall ?? {};
+  const ollama = payload.ollama ?? {};
+  const comparison = payload.comparison ?? {};
+  const grounded = Boolean(payload.grounded);
+  const modeLabel = latestOllamaRun.mode === "compare" ? "Compare mode" : "Draft mode";
+  const maxLatency = Math.max(Number(local.latencyMs ?? payload.recallLatencyMs ?? 0), Number(ollama.latencyMs ?? 0), 1);
+
+  ollamaMetaEl.textContent = grounded
+    ? `${modeLabel}. Ollama was grounded with the best local construct before answering.`
+    : `${modeLabel}. Ollama answered from the raw question only.`;
+
+  if (latestOllamaRun.mode === "generate") {
+    ollamaReportEl.className = "speed-report";
+    ollamaReportEl.innerHTML = `
+      <div class="speed-grid">
+        <article class="speed-card strandbase${recall.ready ? "" : " disabled"}">
+          <p class="assist-kicker">Local recall</p>
+          <h3>${escapeHtml(local.label ?? "Strandbase recall")}</h3>
+          <strong class="speed-latency">${escapeHtml(formatMilliseconds(payload.recallLatencyMs))}</strong>
+          <div class="speed-bar" aria-hidden="true">
+            <span class="speed-bar-fill strandbase" style="width:${latencyBarWidth(payload.recallLatencyMs, maxLatency)}%"></span>
+          </div>
+          <p>${escapeHtml(recall.matched?.constructLabel ?? recall.answer ?? "No stable local construct matched this prompt.")}</p>
+          <div class="speed-notes">
+            <span>${escapeHtml(recall.ready ? "Grounding available" : "No stable local grounding")}</span>
+            <span>${escapeHtml(`Route ${recall.routing?.mode ?? "unresolved"}`)}</span>
+          </div>
+        </article>
+        <article class="speed-card llm">
+          <p class="assist-kicker">Ollama output</p>
+          <h3>${escapeHtml(ollama.model ?? modelLabel ?? "Local model")}</h3>
+          <strong class="speed-latency">${escapeHtml(formatMilliseconds(ollama.latencyMs))}</strong>
+          <div class="speed-bar" aria-hidden="true">
+            <span class="speed-bar-fill llm" style="width:${latencyBarWidth(ollama.latencyMs, maxLatency)}%"></span>
+          </div>
+          ${renderOllamaOutput(ollama.output)}
+          ${renderOllamaStats(ollama.stats)}
+        </article>
+      </div>
+    `;
+    renderBenchmarkVariantLab();
+    return;
+  }
+
+  ollamaReportEl.className = "speed-report";
+  ollamaReportEl.innerHTML = `
+    <div class="speed-grid">
+      <article class="speed-card strandbase">
+        <p class="assist-kicker">Local path</p>
+        <h3>${escapeHtml(local.label ?? "Strandbase recall")}</h3>
+        <strong class="speed-latency">${escapeHtml(formatMilliseconds(local.latencyMs))}</strong>
+        <div class="speed-bar" aria-hidden="true">
+          <span class="speed-bar-fill strandbase" style="width:${latencyBarWidth(local.latencyMs, maxLatency)}%"></span>
+        </div>
+        <p>${escapeHtml(local.constructLabel ?? local.answer ?? "No stable construct matched.")}</p>
+        <div class="speed-notes">
+          <span>${escapeHtml(`Route ${local.route ?? "unresolved"}`)}</span>
+          <span>${escapeHtml(`Confidence ${formatPercent(local.confidence ?? 0)}`)}</span>
+        </div>
+      </article>
+      <article class="speed-card llm${ollama.error ? " disabled" : ""}">
+        <p class="assist-kicker">Ollama path</p>
+        <h3>${escapeHtml(ollama.model ?? modelLabel ?? "Local model")}</h3>
+        <strong class="speed-latency">${escapeHtml(formatMilliseconds(ollama.latencyMs))}</strong>
+        <div class="speed-bar" aria-hidden="true">
+          <span class="speed-bar-fill llm" style="width:${latencyBarWidth(ollama.latencyMs, maxLatency)}%"></span>
+        </div>
+        ${renderOllamaOutput(ollama.output || ollama.error || ollama.reason)}
+        ${renderOllamaStats(ollama.stats)}
+      </article>
+    </div>
+    <div class="speed-summary">
+      <p>${escapeHtml(comparison.summary ?? "Ollama comparison complete.")}</p>
+      <p>${escapeHtml(grounded ? "Grounding mode: local construct attached before generation." : "Grounding mode: raw question only.")}</p>
+    </div>
+  `;
+  renderBenchmarkVariantLab();
+}
+
+async function loadOllamaStatus() {
+  if (!ollamaMetaEl) {
+    return;
+  }
+
+  try {
+    const payload = await fetchJson("/api/ollama/status");
+    ollamaStatus = payload;
+  } catch (error) {
+    ollamaStatus = {
+      reachable: false,
+      models: [],
+      defaultModel: "",
+      reason: error instanceof Error ? error.message : "Unable to reach Ollama."
+    };
+  }
+
+  renderOllamaReport();
 }
 
 async function fetchJson(url, options = {}) {
@@ -1002,6 +1468,12 @@ function renderBackendOverview() {
   if (backendSoundCountEl) {
     backendSoundCountEl.textContent = String(counts.soundCount ?? 0);
   }
+  if (backendSubjectStrandCountEl) {
+    backendSubjectStrandCountEl.textContent = String(counts.subjectStrandCount ?? 0);
+  }
+  if (backendLinkCountEl) {
+    backendLinkCountEl.textContent = String(counts.constructLinkCount ?? 0);
+  }
   if (backendDbPathEl) {
     const dbPath = overview.database?.path ?? "Database path unavailable";
     const dbSize = formatBytes(overview.database?.sizeBytes ?? 0);
@@ -1035,6 +1507,77 @@ function renderBackendOverview() {
       <span>${escapeHtml(String(table.rowCount ?? 0))} rows</span>
     </button>
   `).join("");
+}
+
+function renderDatasetHealth() {
+  if (!datasetHealthPanelEl || !datasetHealthMetaEl) {
+    return;
+  }
+
+  const health = datasetHealth ?? backendOverview?.datasetHealth ?? null;
+  const releaseHealth = backendOverview?.releaseDatasetHealth ?? null;
+  if (!health) {
+    datasetHealthMetaEl.textContent = "Dataset health is unavailable right now.";
+    datasetHealthPanelEl.className = "dataset-health-panel empty";
+    datasetHealthPanelEl.innerHTML = "<p>Refresh the backend overview to inspect construct quality and release readiness.</p>";
+    return;
+  }
+
+  const flagged = Array.isArray(health.flaggedConstructs) ? health.flaggedConstructs : [];
+  const issueCounts = health.issueCounts ?? {};
+  const statusLabel = health.status === "release-ready"
+    ? "Release ready"
+    : health.status === "review"
+      ? "Needs review"
+      : health.status === "repair"
+        ? "Needs repair"
+        : "Empty dataset";
+  const releaseNotes = [];
+  const activeSeedScore = Number(releaseHealth?.activeSeedFile?.releaseReadinessScore ?? NaN);
+  const releaseSeedScore = Number(releaseHealth?.releaseSeedFile?.releaseReadinessScore ?? NaN);
+  if (Number.isFinite(activeSeedScore)) {
+    releaseNotes.push(`active seeds ${Math.round(activeSeedScore)}`);
+  }
+  if (Number.isFinite(releaseSeedScore)) {
+    releaseNotes.push(`release pack ${Math.round(releaseSeedScore)}`);
+  }
+
+  datasetHealthMetaEl.textContent = `${statusLabel}. ${health.constructCount ?? 0} constructs audited${releaseNotes.length ? ` | ${releaseNotes.join(" | ")}` : ""}.`;
+  datasetHealthPanelEl.className = "dataset-health-panel";
+  datasetHealthPanelEl.innerHTML = `
+    <div class="dataset-health-summary">
+      <article class="dataset-health-score">
+        <span class="detail-label">Readiness</span>
+        <strong>${escapeHtml(String(Math.round(Number(health.releaseReadinessScore ?? 0))))}/100</strong>
+        <small>Average relevance ${escapeHtml(String(Math.round(Number(health.averageRelevanceScore ?? 0))))}</small>
+      </article>
+      <div class="dataset-health-issues">
+        <span class="chip subtle">Missing target ${escapeHtml(String(issueCounts.missingTarget ?? 0))}</span>
+        <span class="chip subtle">Missing steps ${escapeHtml(String(issueCounts.missingSteps ?? 0))}</span>
+        <span class="chip subtle">Broken links ${escapeHtml(String(issueCounts.orphanRelatedIds ?? 0))}</span>
+        <span class="chip subtle">Thin constructs ${escapeHtml(String(issueCounts.thinConstructs ?? 0))}</span>
+      </div>
+    </div>
+    ${flagged.length
+      ? `
+        <div class="dataset-health-list">
+          ${flagged.slice(0, 5).map((item) => `
+            <article class="dataset-health-item">
+              <div class="dataset-health-copy">
+                <strong>${escapeHtml(item.constructLabel ?? "Construct")}</strong>
+                <span>${escapeHtml(item.target || item.objective || item.subjectLabel || "")}</span>
+                <small>Relevance ${escapeHtml(String(Math.round(Number(item.relevance?.score ?? 0))))} | ${escapeHtml((item.relevance?.anchors ?? []).slice(0, 4).join(" • ") || "Needs richer anchors")}</small>
+              </div>
+              <div class="dataset-health-actions">
+                <p>${escapeHtml((item.issues ?? []).slice(0, 2).join(" | "))}</p>
+                <button type="button" class="secondary-button subtle-button" data-construct-action="edit" data-construct-id="${escapeHtml(item.id ?? "")}">Open construct</button>
+              </div>
+            </article>
+          `).join("")}
+        </div>
+      `
+      : "<p>No major construct issues were flagged in the active subject dataset.</p>"}
+  `;
 }
 
 function renderBackendSchema() {
@@ -1163,6 +1706,7 @@ function syncSelectedBackendRow() {
 
 function renderBackendDbWorkspace() {
   renderBackendOverview();
+  renderDatasetHealth();
   renderBackendSchema();
   renderBackendRows();
   renderBackendEditor();
@@ -1176,6 +1720,7 @@ async function loadBackendOverview() {
   try {
     backendOverview = await fetchJson("/api/backend/overview");
     renderBackendOverview();
+    renderDatasetHealth();
 
     const availableTables = Array.isArray(backendOverview.tables) ? backendOverview.tables : [];
     const preferredTable = availableTables.some((table) => table.name === backendDbState.table)
@@ -1199,6 +1744,28 @@ async function loadBackendOverview() {
       backendDbTableListEl.className = "db-table-list empty";
       backendDbTableListEl.innerHTML = `<p>${escapeHtml(error instanceof Error ? error.message : "Unable to load backend overview.")}</p>`;
     }
+  }
+}
+
+async function loadDatasetHealth(subjectId = currentSubjectId) {
+  if (!datasetHealthPanelEl || !datasetHealthMetaEl) {
+    return;
+  }
+
+  const url = new URL("/api/subjectspace/dataset/health", window.location.origin);
+  if (subjectId) {
+    url.searchParams.set("subjectId", subjectId);
+  }
+
+  datasetHealthMetaEl.textContent = "Auditing constructs, anchors, related links, and release readiness...";
+  try {
+    const payload = await fetchJson(url.toString());
+    datasetHealth = payload.health ?? null;
+    renderDatasetHealth();
+  } catch (error) {
+    datasetHealthMetaEl.textContent = error instanceof Error ? error.message : "Unable to audit the dataset.";
+    datasetHealthPanelEl.className = "dataset-health-panel empty";
+    datasetHealthPanelEl.innerHTML = `<p>${escapeHtml(error instanceof Error ? error.message : "Unable to audit the dataset.")}</p>`;
   }
 }
 
@@ -1236,19 +1803,50 @@ async function loadBackendTable(tableName = backendDbState.table, { offset = 0, 
   renderBackendDbWorkspace();
 }
 
+async function handleDatasetClean() {
+  if (!datasetCleanButton) {
+    return;
+  }
+
+  const activeLabel = currentSubjectLabel();
+  datasetHealthMetaEl.textContent = `Cleaning ${activeLabel} dataset with safe normalization and relation repair...`;
+  setButtonBusy(datasetCleanButton, true, "Cleaning...");
+
+  try {
+    const payload = await postJson("/api/subjectspace/dataset/clean", {
+      subjectId: currentSubjectId
+    });
+    datasetHealth = payload.health ?? null;
+    datasetHealthMetaEl.textContent = `Cleaned ${payload.normalizedCount ?? 0} constructs and repaired ${payload.repairedRelatedCount ?? 0} broken related links in ${activeLabel}.`;
+    renderDatasetHealth();
+    await loadSubjects(currentSubjectId);
+    await loadBackendOverview();
+  } catch (error) {
+    datasetHealthMetaEl.textContent = error instanceof Error ? error.message : "Unable to clean the active dataset.";
+  } finally {
+    setButtonBusy(datasetCleanButton, false);
+  }
+}
+
 function resetTransientState({ clearAssist = true, clearComparison = true } = {}) {
   if (clearAssist) {
     latestAssist = null;
   }
   if (clearComparison) {
     latestComparison = null;
+    latestOllamaRun = null;
     benchmarkState = {
+      phase: "idle",
+      message: ""
+    };
+    ollamaState = {
       phase: "idle",
       message: ""
     };
   }
 
   renderSpeedReport();
+  renderOllamaReport();
 }
 
 function renderTrace(trace = null) {
@@ -1264,8 +1862,12 @@ function renderTrace(trace = null) {
     { title: "Trigger strands", items: trace.triggerStrands ?? [] },
     { title: "Alias cues", items: trace.aliasStrands ?? [] },
     { title: "Phrase cues", items: trace.phraseStrands ?? [] },
+    { title: "Activated strands", items: trace.activatedStrands ?? [] },
+    { title: "Persistent strands", items: trace.persistentStrands ?? [] },
     { title: "Anchor strands", items: trace.anchorStrands ?? [] },
     { title: "Composite constructs", items: trace.compositeStrands ?? [] },
+    { title: "Binder reinforcement", items: trace.binderStrands ?? [] },
+    { title: "Linked constructs", items: trace.linkedStrands ?? [] },
     { title: "Exclusion cues", items: trace.exclusionStrands ?? [] },
     { title: "Stabilized memory", items: trace.stabilizedMemory ?? [] }
   ].filter((lane) => Array.isArray(lane.items));
@@ -1347,10 +1949,12 @@ function renderWhyMatchedPanel(candidate = null, routing = {}, readiness = {}) {
   const aliasHits = Array.isArray(candidate?.aliasHits) ? candidate.aliasHits : [];
   const phraseHits = Array.isArray(candidate?.phraseHits) ? candidate.phraseHits : [];
   const excludedHits = Array.isArray(candidate?.excludedHits) ? candidate.excludedHits : [];
+  const binderHits = Array.isArray(candidate?.binderHits) ? candidate.binderHits : [];
+  const linkHits = Array.isArray(candidate?.linkHits) ? candidate.linkHits : [];
   const support = Array.isArray(candidate?.support) ? candidate.support : [];
   const routeLabel = String(routing?.label ?? "").trim() || "Scoring only";
 
-  if (!score && !matchedTokens.length && !aliasHits.length && !phraseHits.length && !excludedHits.length && !support.length) {
+  if (!score && !matchedTokens.length && !aliasHits.length && !phraseHits.length && !excludedHits.length && !binderHits.length && !linkHits.length && !support.length) {
     return "";
   }
 
@@ -1389,6 +1993,18 @@ function renderWhyMatchedPanel(candidate = null, routing = {}, readiness = {}) {
         <div class="why-block">
           <p class="answer-label">Excluded cues</p>
           ${renderHitChipRow(excludedHits, (item) => `${item.cue} (-${Number(item.penalty ?? 0).toFixed(1)})`)}
+        </div>
+      ` : ""}
+      ${binderHits.length ? `
+        <div class="why-block">
+          <p class="answer-label">Binder hits</p>
+          ${renderHitChipRow(binderHits, (item) => `${item.left} + ${item.right} (${Number(item.weight ?? 0) > 0 ? "+" : ""}${Number(item.weight ?? 0).toFixed(1)})`)}
+        </div>
+      ` : ""}
+      ${linkHits.length ? `
+        <div class="why-block">
+          <p class="answer-label">Linked constructs</p>
+          ${renderHitChipRow(linkHits, (item) => `${item.constructLabel} (${Number(item.reinforcement ?? 0) > 0 ? "+" : ""}${Number(item.reinforcement ?? 0).toFixed(1)})`)}
         </div>
       ` : ""}
       ${renderSupportBreakdown(support)}
@@ -1542,15 +2158,17 @@ function renderSpeedReport() {
   }
 
   const benchmarkQuestion = activeBenchmarkQuestion();
+  const hasBenchmarkPrompt = Boolean(normalizePrompt(benchmarkQuestion));
   if (speedCompareButton) {
-    speedCompareButton.disabled = benchmarkState.phase === "loading";
+    speedCompareButton.disabled = benchmarkState.phase === "loading" || !hasBenchmarkPrompt;
     speedCompareButton.textContent = benchmarkState.phase === "loading" ? "Running benchmark..." : "Compare local vs LLM";
   }
 
-  if (!benchmarkQuestion) {
+  if (!hasBenchmarkPrompt) {
     speedMetaEl.textContent = "Benchmark the last live recall prompt against the local field and the LLM path.";
     speedReportEl.className = "speed-report empty";
-    speedReportEl.innerHTML = "<p>Run a recall prompt first, then compare local Strandbase recall against the LLM assist round-trip.</p>";
+    speedReportEl.innerHTML = "<p>Enter a backend prompt or run recall first, then compare local Strandbase recall against the LLM assist round-trip.</p>";
+    renderBenchmarkVariantLab();
     return;
   }
 
@@ -1563,6 +2181,7 @@ function renderSpeedReport() {
         <p>Prompt: "${escapeHtml(previewQuestion(benchmarkQuestion))}"</p>
       </div>
     `;
+    renderBenchmarkVariantLab();
     return;
   }
 
@@ -1575,6 +2194,7 @@ function renderSpeedReport() {
         <p>Prompt: "${escapeHtml(previewQuestion(benchmarkQuestion))}"</p>
       </div>
     `;
+    renderBenchmarkVariantLab();
     return;
   }
 
@@ -1591,6 +2211,7 @@ function renderSpeedReport() {
         Use the benchmark button to time local Strandbase recall${assistStatus.enabled ? ` and the ${escapeHtml(assistStatus.model)} assist round-trip.` : "."}
       </p>
     `;
+    renderBenchmarkVariantLab();
     return;
   }
 
@@ -1668,6 +2289,58 @@ function renderSpeedReport() {
         : `<p>Prompt: "${escapeHtml(previewQuestion(benchmarkPrompt.question ?? benchmarkQuestion))}"</p>`}
     </div>
   `;
+  renderBenchmarkVariantLab();
+}
+
+function renderBenchmarkVariantLab() {
+  if (!benchmarkPreviewEl || !benchmarkVariantMetaEl) {
+    return;
+  }
+
+  const variant = buildBenchmarkVariantPrompt();
+  const hasBasePrompt = Boolean(variant.basePrompt);
+  const hasVariantPrompt = Boolean(normalizePrompt(variant.question));
+
+  if (benchmarkUseVariantButton) {
+    benchmarkUseVariantButton.disabled = !hasVariantPrompt;
+  }
+  if (benchmarkRunVariantButton) {
+    benchmarkRunVariantButton.disabled = !hasVariantPrompt || benchmarkState.phase === "loading";
+  }
+  if (benchmarkRunVariantOllamaButton) {
+    benchmarkRunVariantOllamaButton.disabled = !hasVariantPrompt || ollamaState.phase === "loading" || !Boolean(ollamaStatus.reachable);
+  }
+
+  if (!hasBasePrompt) {
+    benchmarkVariantMetaEl.textContent = "Run recall or a baseline comparison first, then generate variant prompts for testing.";
+    benchmarkPreviewEl.className = "speed-report empty";
+    benchmarkPreviewEl.innerHTML = "<p>Run recall or benchmark once so Strandspace has a prompt baseline to compress, expand, or repeat.</p>";
+    return;
+  }
+
+  benchmarkVariantMetaEl.textContent = variant.changed
+    ? `${variant.modeLabel} is ready from the current benchmark baseline.`
+    : "The generated variant still matches the base prompt, so increase compression or add a repeat cue to push it harder.";
+  benchmarkPreviewEl.className = "speed-report";
+  benchmarkPreviewEl.innerHTML = `
+    <div class="speed-prompt-grid">
+      <article class="speed-prompt-card">
+        <p class="assist-kicker">Base prompt</p>
+        <strong class="speed-latency">${escapeHtml(formatTokenCount(Math.max(1, Math.round((variant.basePrompt.split(/\s+/).filter(Boolean).length || 1) * 1.35)), { approximate: true }))}</strong>
+        <p>"${escapeHtml(previewQuestion(variant.basePrompt, 180))}"</p>
+      </article>
+      <article class="speed-prompt-card${variant.changed ? " optimized" : ""}">
+        <p class="assist-kicker">Variant prompt</p>
+        <strong class="speed-latency">${escapeHtml(formatTokenCount(variant.tokenEstimate, { approximate: true }))}</strong>
+        <p>"${escapeHtml(previewQuestion(variant.question, 180))}"</p>
+        <div class="speed-notes">
+          <span>${escapeHtml(`${variant.wordCount} words`)}</span>
+          <span>${escapeHtml(variant.modeLabel)}</span>
+          ${variant.repeatValue ? `<span>${escapeHtml(`repeat ${variant.repeatCount}x: ${variant.repeatValue}`)}</span>` : ""}
+        </div>
+      </article>
+    </div>
+  `;
 }
 
 function renderAnswer(payload = null) {
@@ -1682,7 +2355,9 @@ function renderAnswer(payload = null) {
       <p>Store one reusable scene and Strandspace will start recalling it from partial cues.</p>
     `;
     renderTrace(null);
+    renderGraph(null);
     renderSpeedReport();
+    renderOllamaReport();
     return;
   }
 
@@ -1719,8 +2394,10 @@ function renderAnswer(payload = null) {
         : ""}
     `;
     renderTrace(recall.trace ?? null);
+    renderGraph(topCandidate);
     animateFresh(answerPanelEl);
     renderSpeedReport();
+    renderOllamaReport();
     return;
   }
 
@@ -1730,6 +2407,7 @@ function renderAnswer(payload = null) {
   const sources = Array.isArray(construct.sources) ? construct.sources : [];
   const checkedReferences = Array.isArray(payload.checkedReferences) ? payload.checkedReferences : [];
   const buildChecks = Array.isArray(payload.buildChecks) ? payload.buildChecks : [];
+  const relevance = construct.relevance ?? null;
   const stableScore = Number(readiness.matchedScore ?? 0);
   const answerKicker = payload.source === "preview"
     ? "Stored construct preview"
@@ -1768,6 +2446,16 @@ function renderAnswer(payload = null) {
     ${renderRoutingPanel(routing, readiness)}
     ${renderWhyMatchedPanel(topCandidate, routing, readiness)}
     ${renderAssistResult()}
+    ${relevance && Array.isArray(relevance.anchors) && relevance.anchors.length
+      ? `
+        <div class="answer-relevance">
+          <p class="answer-label">Relevance anchors</p>
+          <div class="chip-row">
+            ${(relevance.anchors ?? []).slice(0, 6).map((anchor) => `<span class="chip subtle">${escapeHtml(anchor)}</span>`).join("")}
+          </div>
+        </div>
+      `
+      : ""}
     ${sources.length
       ? `
         <div class="answer-sources">
@@ -1850,8 +2538,10 @@ function renderAnswer(payload = null) {
   `;
 
   renderTrace(recall.trace ?? previewTrace(construct));
+  renderGraph(construct);
   animateFresh(answerPanelEl);
   renderSpeedReport();
+  renderOllamaReport();
 }
 
 function renderSubjectPicker() {
@@ -1936,6 +2626,7 @@ function renderLibrary() {
         <strong>${escapeHtml(construct.constructLabel)}</strong>
         <span>${escapeHtml(construct.target || construct.objective || construct.subjectLabel)}</span>
         <small>${escapeHtml(contextSummary(construct.context) || "Open to preview context")}</small>
+        <small>${escapeHtml((construct.relevance?.anchors ?? []).slice(0, 3).join(" • ") || "Needs richer anchors for stronger recall")}</small>
       </button>
     `)
     .join("");
@@ -1983,6 +2674,7 @@ async function loadSubjects(preferredSubjectId = "") {
   storeSubjectId(currentSubjectId);
   renderSubjectPicker();
   await loadLibrary();
+  await loadDatasetHealth(currentSubjectId);
 }
 
 async function handleRecallSubmit(event) {
@@ -2220,10 +2912,112 @@ async function saveApiAssist() {
   }
 }
 
+function syncOllamaPromptWithRecall() {
+  if (!ollamaPromptEl) {
+    return;
+  }
+
+  const prompt = activeBenchmarkQuestion();
+  if (prompt) {
+    ollamaPromptEl.value = prompt;
+  }
+  renderOllamaReport();
+}
+
+async function runOllamaDraft() {
+  const prompt = activeOllamaPrompt();
+  if (!normalizePrompt(prompt)) {
+    recallMetaEl.textContent = "Type a prompt or run recall before sending it to Ollama.";
+    renderOllamaReport();
+    return;
+  }
+
+  if (ollamaPromptEl && !ollamaPromptEl.value.trim()) {
+    ollamaPromptEl.value = prompt;
+  }
+
+  ollamaState = {
+    phase: "loading",
+    message: "Running Ollama with the current backend prompt..."
+  };
+  renderOllamaReport();
+
+  try {
+    latestOllamaRun = {
+      mode: "generate",
+      payload: await postJson("/api/ollama/generate", {
+        prompt,
+        subjectId: currentSubjectId,
+        model: ollamaModelEl?.value ?? "",
+        groundWithLocalRecall: Boolean(ollamaGroundingEl?.checked)
+      })
+    };
+    ollamaState = {
+      phase: "done",
+      message: "Ollama draft complete."
+    };
+    recallMetaEl.textContent = "Ollama draft complete.";
+  } catch (error) {
+    latestOllamaRun = null;
+    ollamaState = {
+      phase: "error",
+      message: error instanceof Error ? error.message : "Unable to run the Ollama draft."
+    };
+    recallMetaEl.textContent = "Ollama draft failed.";
+  }
+
+  renderOllamaReport();
+}
+
+async function runOllamaCompare() {
+  const question = activeOllamaPrompt();
+  if (!normalizePrompt(question)) {
+    recallMetaEl.textContent = "Type a prompt or run recall before comparing with Ollama.";
+    renderOllamaReport();
+    return;
+  }
+
+  if (ollamaPromptEl && !ollamaPromptEl.value.trim()) {
+    ollamaPromptEl.value = question;
+  }
+
+  ollamaState = {
+    phase: "loading",
+    message: "Comparing local Strandbase recall against Ollama..."
+  };
+  renderOllamaReport();
+
+  try {
+    latestOllamaRun = {
+      mode: "compare",
+      payload: await postJson("/api/ollama/compare", {
+        question,
+        subjectId: currentSubjectId,
+        model: ollamaModelEl?.value ?? "",
+        groundWithLocalRecall: Boolean(ollamaGroundingEl?.checked)
+      })
+    };
+    ollamaState = {
+      phase: "done",
+      message: latestOllamaRun.payload?.comparison?.summary ?? "Ollama comparison complete."
+    };
+    recallMetaEl.textContent = latestOllamaRun.payload?.comparison?.summary ?? "Ollama comparison complete.";
+  } catch (error) {
+    latestOllamaRun = null;
+    ollamaState = {
+      phase: "error",
+      message: error instanceof Error ? error.message : "Unable to compare with Ollama."
+    };
+    recallMetaEl.textContent = "Ollama comparison failed.";
+  }
+
+  renderOllamaReport();
+}
+
 async function runSpeedCompare() {
   const question = activeBenchmarkQuestion();
 
-  if (!question) {
+  if (!normalizePrompt(question)) {
     recallMetaEl.textContent = "Type a prompt or run recall before benchmarking.";
     renderSpeedReport();
     return;
@@ -2263,12 +3057,119 @@ async function runSpeedCompare() {
   renderSpeedReport();
 }
 
+function loadVariantIntoPrompts() {
+  const variant = buildBenchmarkVariantPrompt();
+  if (!variant.question) {
+    recallMetaEl.textContent = "Run recall first so Strandspace has a prompt to vary.";
+    renderBenchmarkVariantLab();
+    return;
+  }
+
+  if (recallQuestionInput) {
+    recallQuestionInput.value = variant.question;
+  }
+  if (ollamaPromptEl) {
+    ollamaPromptEl.value = variant.question;
+  }
+  lastQuestion = variant.question;
+  recallMetaEl.textContent = `${variant.modeLabel} loaded into recall and Ollama prompts for the next test pass.`;
+  renderSpeedReport();
+  renderOllamaReport();
+}
+
+async function runVariantSpeedCompare() {
+  const variant = buildBenchmarkVariantPrompt();
+  if (!normalizePrompt(variant.question)) {
+    recallMetaEl.textContent = "Run recall first so Strandspace has a prompt to vary.";
+    renderBenchmarkVariantLab();
+    return;
+  }
+
+  lastQuestion = variant.question;
+  benchmarkState = {
+    phase: "loading",
+    message: `Benchmarking the ${variant.modeLabel.toLowerCase()} variant against the LLM path...`
+  };
+  setButtonBusy(benchmarkRunVariantButton, true, "Benchmarking...");
+  renderSpeedReport();
+
+  try {
+    latestComparison = await postJson("/api/subjectspace/compare", {
+      subjectId: currentSubjectId,
+      question: variant.question
+    });
+    benchmarkState = {
+      phase: "done",
+      message: latestComparison.comparison?.summary ?? "Variant benchmark complete."
+    };
+    recallMetaEl.textContent = `${variant.modeLabel} benchmark complete.`;
+  } catch (error) {
+    latestComparison = null;
+    benchmarkState = {
+      phase: "error",
+      message: error instanceof Error ? error.message : "Unable to benchmark the variant prompt."
+    };
+    recallMetaEl.textContent = "Variant benchmark failed.";
+  }
+
+  setButtonBusy(benchmarkRunVariantButton, false);
+  renderSpeedReport();
+}
+
+async function runVariantOllamaCompare() {
+  const variant = buildBenchmarkVariantPrompt();
+  if (!normalizePrompt(variant.question)) {
+    recallMetaEl.textContent = "Run recall first so Strandspace has a prompt to vary.";
+    renderBenchmarkVariantLab();
+    return;
+  }
+
+  if (ollamaPromptEl) {
+    ollamaPromptEl.value = variant.question;
+  }
+
+  ollamaState = {
+    phase: "loading",
+    message: `Comparing the ${variant.modeLabel.toLowerCase()} variant against Ollama...`
+  };
+  setButtonBusy(benchmarkRunVariantOllamaButton, true, "Comparing...");
+  renderOllamaReport();
+
+  try {
+    latestOllamaRun = {
+      mode: "compare",
+      payload: await postJson("/api/ollama/compare", {
+        question: variant.question,
+        subjectId: currentSubjectId,
+        model: ollamaModelEl?.value ?? "",
+        groundWithLocalRecall: Boolean(ollamaGroundingEl?.checked)
+      })
+    };
+    ollamaState = {
+      phase: "done",
+      message: latestOllamaRun.payload?.comparison?.summary ?? "Variant Ollama comparison complete."
+    };
+    recallMetaEl.textContent = `${variant.modeLabel} Ollama comparison complete.`;
+  } catch (error) {
+    latestOllamaRun = null;
+    ollamaState = {
+      phase: "error",
+      message: error instanceof Error ? error.message : "Unable to compare the variant prompt with Ollama."
+    };
+    recallMetaEl.textContent = "Variant Ollama comparison failed.";
+  }
+
+  setButtonBusy(benchmarkRunVariantOllamaButton, false);
+  renderOllamaReport();
+}
+
 subjectSelect?.addEventListener("change", async () => {
   currentSubjectId = subjectSelect.value;
   storeSubjectId(currentSubjectId);
   resetTransientState();
   renderSubjectPicker();
   await loadLibrary();
+  await loadDatasetHealth(currentSubjectId);
 });
 
 recallForm?.addEventListener("submit", handleRecallSubmit);
@@ -2407,6 +3308,27 @@ answerPanelEl?.addEventListener("click", (event) => {
   }
 });
 
+datasetHealthPanelEl?.addEventListener("click", (event) => {
+  const button = event.target instanceof Element ? event.target.closest("[data-construct-action]") : null;
+  if (!button) {
+    return;
+  }
+
+  const constructId = button.getAttribute("data-construct-id");
+  const construct = library.find((item) => item.id === constructId);
+  if (!construct) {
+    return;
+  }
+
+  loadConstructIntoEditor(construct, {
+    mode: "saved",
+    focus: true
+  });
+  recallQuestionInput.value = buildRecallSearchQuery(construct);
+  recallMetaEl.textContent = "Construct title loaded as the search. Run recall to verify the local match.";
+  renderAnswer(previewPayload(construct));
+});
+
 subjectIdeasResultsEl?.addEventListener("click", (event) => {
   const button = event.target instanceof Element ? event.target.closest("[data-subject-idea-index]") : null;
   if (!button || !latestSubjectIdeas) {
@@ -2479,6 +3401,14 @@ backendDbRowsEl?.addEventListener("click", (event) => {
 
 backendDbRefreshButton?.addEventListener("click", () => {
   void loadBackendOverview();
+});
+
+datasetHealthRefreshButton?.addEventListener("click", () => {
+  void loadDatasetHealth(currentSubjectId);
+});
+
+datasetCleanButton?.addEventListener("click", () => {
+  void handleDatasetClean();
 });
 
 backendDbSearchInput?.addEventListener("keydown", (event) => {
@@ -2572,8 +3502,73 @@ speedCompareButton?.addEventListener("click", () => {
   void runSpeedCompare();
 });
 
+benchmarkUseVariantButton?.addEventListener("click", () => {
+  loadVariantIntoPrompts();
+});
+
+benchmarkRunVariantButton?.addEventListener("click", () => {
+  void runVariantSpeedCompare();
+});
+
+benchmarkRunVariantOllamaButton?.addEventListener("click", () => {
+  void runVariantOllamaCompare();
+});
+
+ollamaUseLastButton?.addEventListener("click", () => {
+  syncOllamaPromptWithRecall();
+});
+
+ollamaGenerateButton?.addEventListener("click", () => {
+  void runOllamaDraft();
+});
+
+ollamaCompareButton?.addEventListener("click", () => {
+  void runOllamaCompare();
+});
+
+ollamaModelEl?.addEventListener("change", () => {
+  renderOllamaReport();
+});
+
+ollamaGroundingEl?.addEventListener("change", () => {
+  renderOllamaReport();
+});
+
+ollamaPromptEl?.addEventListener("input", () => {
+  renderOllamaReport();
+});
+
+recallQuestionInput?.addEventListener("input", () => {
+  renderBenchmarkVariantLab();
+  renderOllamaReport();
+});
+
+benchmarkVariantModeEl?.addEventListener("change", renderBenchmarkVariantLab);
+benchmarkWordBudgetEl?.addEventListener("input", renderBenchmarkVariantLab);
+benchmarkRepeatValueEl?.addEventListener("input", renderBenchmarkVariantLab);
+benchmarkRepeatCountEl?.addEventListener("input", renderBenchmarkVariantLab);
+
 resetExamplesButton?.addEventListener("click", () => {
   void resetWithExamples();
+});
+
+document.addEventListener("click", (event) => {
+  const shortcutButton = event.target instanceof Element ? event.target.closest("[data-db-shortcut]") : null;
+  if (!shortcutButton) {
+    return;
+  }
+
+  const tableName = shortcutButton.getAttribute("data-db-shortcut") ?? "";
+  if (!tableName) {
+    return;
+  }
+
+  backendDbState.selectedRowId = "";
+  void loadBackendTable(tableName, {
+    offset: 0,
+    search: backendDbSearchInput?.value?.trim() ?? ""
+  });
+  window.location.hash = "#db-workspace";
 });
 
 themeToggleButton?.addEventListener("click", toggleTheme);
@@ -2598,3 +3593,4 @@ Promise.all([loadAssistStatus(), loadSubjects(), loadBackendOverview()])
     });
   });
 void loadSystemHealth();
+void loadOllamaStatus();

@@ -1,0 +1,153 @@
+[
+  {
+    "subjectLabel": "Music Engineering",
+    "constructLabel": "Karaoke gain staging full reset",
+    "target": "Wireless karaoke chain from mic receiver to mains and monitors",
+    "objective": "restore clean vocal headroom with stable gain before feedback",
+    "context": {
+      "workflow": "full-system reset",
+      "sources": "wireless handheld vocal mics",
+      "priority": "usable gain before feedback",
+      "environment": "small event or karaoke room"
+    },
+    "steps": [
+      "Mute the outputs, zero the channel processing, and confirm every device in the signal path is patched in the right order before you raise gain again.",
+      "Set wireless receiver output to a healthy nominal level first so the mixer trim is not doing all the work.",
+      "Bring channel gain up from the loudest expected vocal level, then verify compressor thresholds and output trims are not stealing headroom.",
+      "Raise monitors after the main path is stable and ring out only the repeatable feedback points.",
+      "Save the reset as a reusable baseline once both mains and monitors feel calm and repeatable."
+    ],
+    "notes": "This construct is meant to behave like a trusted recovery scene, not a one-off mix note.",
+    "tags": [
+      "karaoke",
+      "gain staging",
+      "wireless vocal",
+      "feedback control"
+    ]
+  },
+  {
+    "subjectLabel": "Python Engineering",
+    "constructLabel": "Python service configuration baseline",
+    "target": "Python application settings and environment loading",
+    "objective": "keep service configuration explicit, validated, and easy to audit",
+    "context": {
+      "runtime": "Python 3.12+",
+      "pattern": "settings object at process start",
+      "priority": "validation before business logic"
+    },
+    "steps": [
+      "Load environment values once at startup and map them into a typed settings object instead of scattering os.getenv calls through the codebase.",
+      "Validate required values and reject startup early when credentials, endpoints, or feature flags are malformed.",
+      "Expose one settings provider to the rest of the app so tests can swap configuration without monkeypatching every module.",
+      "Log safe configuration facts such as mode, region, or enabled adapters without leaking secrets.",
+      "Keep computed defaults close to the settings model so operational behavior stays predictable."
+    ],
+    "notes": "A stable config layer reduces repeated LLM explanation because the same pattern can be recalled and reused across new Python services.",
+    "tags": [
+      "python",
+      "configuration",
+      "validation",
+      "service baseline"
+    ]
+  },
+  {
+    "subjectLabel": "Python Engineering",
+    "constructLabel": "Python regression test harness habit",
+    "target": "Reusable test structure for Python modules and services",
+    "objective": "lock in behavior changes without overbuilding the test suite",
+    "context": {
+      "framework": "pytest",
+      "focus": "fast regression checks",
+      "priority": "business-rule confidence"
+    },
+    "steps": [
+      "Write one narrow happy-path example first so the expected behavior is visible before edge cases pile on.",
+      "Add parameterized cases for the business-rule boundaries that are easiest to regress.",
+      "Keep fixtures close to the domain language and hide setup noise in helpers instead of bloating every test.",
+      "Prefer deterministic data builders over random factories when the output needs to be explainable.",
+      "Name the failure condition in the assertion so a future recall can quickly tell what rule the test protects."
+    ],
+    "notes": "This construct is a starter memory for coding agents and local developers who want reusable, domain-literate Python testing patterns.",
+    "tags": [
+      "python",
+      "pytest",
+      "regression",
+      "testing habit"
+    ]
+  },
+  {
+    "subjectLabel": "Accounting Coding",
+    "constructLabel": "Journal entry validation service",
+    "target": "Posting accounting journal entries from an application service",
+    "objective": "reject invalid entries before they hit the ledger",
+    "context": {
+      "domain": "double-entry accounting",
+      "priority": "balanced postings",
+      "language": "Python service layer"
+    },
+    "steps": [
+      "Validate that the posting date, tenant, currency, and source document are present before line-level checks begin.",
+      "Confirm the debit and credit totals balance to the system precision before any write is attempted.",
+      "Reject inactive accounts, blocked periods, or mixed-entity postings before they can create downstream cleanup.",
+      "Return structured validation errors that point to the offending line item instead of one generic failure string.",
+      "Store the normalized payload used for validation so later audits and recalls can explain why the journal was accepted or rejected."
+    ],
+    "notes": "This is the kind of reusable construct that helps a Strandspace-backed coding bot specialize in accounting software over time.",
+    "tags": [
+      "accounting",
+      "journal entry",
+      "validation",
+      "ledger"
+    ]
+  },
+  {
+    "subjectLabel": "Accounting Coding",
+    "constructLabel": "Fiscal period close guardrail",
+    "target": "Application rule for blocking writes into closed accounting periods",
+    "objective": "protect historical periods while surfacing the next valid action",
+    "context": {
+      "domain": "period close",
+      "priority": "historical integrity",
+      "user flow": "transaction creation or edit"
+    },
+    "steps": [
+      "Resolve the accounting period from the effective transaction date before any mutation begins.",
+      "Check the organization close status and short-circuit writes into locked periods with a domain-specific error.",
+      "Return the next open period or escalation path so the user is not left with a dead-end message.",
+      "Log the blocked attempt with document identifiers and actor context for audit review.",
+      "Cover reopening and backdated-adjustment exceptions separately so the common guardrail stays simple."
+    ],
+    "notes": "Closed-period rules are a high-value memory because they repeat across invoices, journals, payments, and reconciliation flows.",
+    "tags": [
+      "accounting",
+      "period close",
+      "guardrail",
+      "audit"
+    ]
+  },
+  {
+    "subjectLabel": "Accounting Coding",
+    "constructLabel": "Currency rounding and reconciliation rule",
+    "target": "Handling fractional cents during posting and reconciliation",
+    "objective": "keep financial totals stable while making rounding behavior explainable",
+    "context": {
+      "domain": "multi-currency accounting",
+      "priority": "reconcilable totals",
+      "risk": "fractional cent drift"
+    },
+    "steps": [
+      "Round at the documented layer of the workflow and do not silently re-round the same value in later stages.",
+      "Track the rounding adjustment line or delta explicitly so the ledger stays explainable during reconciliation.",
+      "Use the accounting currency precision and not the display format when deciding whether a balance is acceptable.",
+      "Separate rate-conversion differences from simple arithmetic rounding so support and finance teams can diagnose the right problem.",
+      "Add tests around boundary values such as half-up, half-even, and multi-line allocation totals."
+    ],
+    "notes": "Rounding behavior becomes a reusable accounting strand because it shows up in billing, payments, taxes, and bank reconciliation.",
+    "tags": [
+      "accounting",
+      "currency",
+      "rounding",
+      "reconciliation"
+    ]
+  }
+]

@@ -7,6 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export const defaultSubjectSeedsPath = join(__dirname, "..", "data", "subject-seeds.json");
+export const releaseSubjectSeedsPath = join(__dirname, "..", "data", "release-subject-seeds.json");
 const READY_THRESHOLD = 34;
 const PARTIAL_READY_MULTIPLIER = 0.55;
 const LINK_SIMILARITY_THRESHOLD = 0.2;
@@ -132,6 +133,22 @@ const BUILDER_STEPS_SECTION_KEYS = new Set([
   "checklist",
   "procedure",
   "process"
+]);
+
+const RELEVANCE_STOPWORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "for",
+  "from",
+  "in",
+  "into",
+  "of",
+  "on",
+  "or",
+  "the",
+  "to",
+  "with"
 ]);
 
 function safeJsonParse(value, fallback) {
@@ -334,6 +351,222 @@ function normalizeConstruct(payload = {}) {
     relatedConstructIds,
     provenance
   };
+}
+
+function collectConstructAnchorTerms(construct = {}) {
+  const record = normalizeConstruct(construct);
+  const anchorCandidates = [
+    record.constructLabel,
+    record.target,
+    record.objective,
+    record.notes,
+    ...normalizeArray(record.tags),
+    ...Object.entries(record.context ?? {}).flatMap(([key, value]) => [key, value, `${key} ${value}`]),
+    ...normalizeArray(record.strands).map((strand) => humanize(String(strand ?? "").replace(/[:_]/g, " ")))
+  ];
+
+  return uniqueValues(anchorCandidates)
+    .map((item) => ({
+      raw: String(item ?? "").trim(),
+      normalized: normalizeText(item)
+    }))
+    .filter((item) => item.raw && item.normalized)
+    .filter((item) => item.normalized.split(/\s+/).some((token) => token && !RELEVANCE_STOPWORDS.has(token)));
+}
+
+export function buildConstructRelevanceSummary(construct = {}) {
+  const record = normalizeConstruct(construct);
+  const contextCount = Object.keys(record.context ?? {}).length;
+  const stepsCount = normalizeArray(record.steps).length;
+  const tagsCount = normalizeArray(record.tags).length;
+  const strandsCount = normalizeArray(record.strands).length;
+  const relatedCount = normalizeArray(record.relatedConstructIds).length;
+  const anchors = collectConstructAnchorTerms(record)
+    .slice(0, 10)
+    .map((item) => item.raw);
+  const uniqueAnchorCount = anchors.length;
+
+  let score = 0;
+  score += record.constructLabel ? 12 : 0;
+  score += record.target ? 12 : 0;
+  score += record.objective ? 12 : 0;
+  score += Math.min(24, stepsCount * 4.5);
+  score += Math.min(14, contextCount * 3.5);
+  score += Math.min(12, tagsCount * 3);
+  score += Math.min(8, uniqueAnchorCount * 1.4);
+  score += Math.min(6, relatedCount * 2);
+  score += record.notes ? 10 : 0;
+  score = Number(clamp(score, 0, 100).toFixed(1));
+
+  const issues = [];
+  const strengths = [];
+  if (!record.target) {
+    issues.push("Missing target");
+  } else {
+    strengths.push("clear target");
+  }
+  if (!record.objective) {
+    issues.push("Missing objective");
+  } else {
+    strengths.push("clear objective");
+  }
+  if (!stepsCount) {
+    issues.push("No working steps");
+  } else if (stepsCount < 3) {
+    issues.push("Thin step coverage");
+    strengths.push("has working steps");
+  } else {
+    strengths.push("strong step coverage");
+  }
+  if (!contextCount) {
+    issues.push("No context fields");
+  } else {
+    strengths.push("context attached");
+  }
+  if (!tagsCount) {
+    issues.push("No tags");
+  } else {
+    strengths.push("tagged for recall");
+  }
+  if (!record.notes) {
+    issues.push("No notes");
+  }
+  if (uniqueAnchorCount < 4) {
+    issues.push("Low semantic anchor variety");
+  } else {
+    strengths.push("good semantic anchors");
+  }
+  if (relatedCount > 0) {
+    strengths.push("linked to related constructs");
+  }
+
+  return {
+    score,
+    status: score >= 78 ? "strong" : score >= 58 ? "usable" : "thin",
+    coverageRatio: Number((score / 100).toFixed(2)),
+    anchors: anchors.slice(0, 8),
+    counts: {
+      context: contextCount,
+      steps: stepsCount,
+      tags: tagsCount,
+      strands: strandsCount,
+      related: relatedCount
+    },
+    issues: uniqueValues(issues),
+    strengths: uniqueValues(strengths).slice(0, 5)
+  };
+}
+
+function buildSubjectStrandId(subjectId = "", strandKey = "") {
+  return `strand:${subjectId || "global"}:${strandKey}`;
+}
+
+function clampConfidence(value, fallback = 0.72) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Number(clamp(parsed, 0.05, 0.99).toFixed(2));
+}
+
+function classifyStrandDescriptor(strandKey = "", label = "") {
+  const normalizedKey = String(strandKey ?? "").trim().toLowerCase();
+  const normalizedLabel = normalizeText(label);
+
+  if (normalizedKey.startsWith("construct:")) {
+    return { layer: "construct", role: "identity", weight: 1.45, confidence: 0.92 };
+  }
+  if (normalizedKey.startsWith("subject:")) {
+    return { layer: "task", role: "subject", weight: 1.15, confidence: 0.88 };
+  }
+  if (normalizedKey.startsWith("target:")) {
+    return { layer: "composite", role: "target", weight: 1.25, confidence: 0.82 };
+  }
+  if (normalizedKey.startsWith("objective:")) {
+    return { layer: "task", role: "objective", weight: 1.12, confidence: 0.8 };
+  }
+  if (normalizedKey.startsWith("context:")) {
+    return { layer: "context", role: "context", weight: 0.92, confidence: 0.76 };
+  }
+  if (normalizedKey.startsWith("tag:")) {
+    return { layer: "anchor", role: "tag", weight: 0.84, confidence: 0.72 };
+  }
+  if (normalizedKey.startsWith("feature:")) {
+    return normalizedLabel.includes(" ")
+      ? { layer: "composite", role: "feature", weight: 1.04, confidence: 0.74 }
+      : { layer: "anchor", role: "feature", weight: 0.9, confidence: 0.72 };
+  }
+  if (normalizedKey.includes(":")) {
+    return { layer: "composite", role: "relation", weight: 1.02, confidence: 0.74 };
+  }
+
+  return normalizedLabel.includes(" ")
+    ? { layer: "composite", role: "feature", weight: 1.0, confidence: 0.72 }
+    : { layer: "anchor", role: "feature", weight: 0.86, confidence: 0.7 };
+}
+
+function createStrandDescriptor(subjectId = "", strandKey = "", label = "", meta = {}) {
+  const normalizedSubjectId = String(subjectId ?? "").trim();
+  const normalizedStrandKey = String(strandKey ?? "").trim();
+  const normalizedLabel = String(label ?? "").trim() || humanize(normalizedStrandKey.replace(/[:_]/g, " "));
+  const classification = classifyStrandDescriptor(normalizedStrandKey, normalizedLabel);
+
+  return {
+    id: buildSubjectStrandId(normalizedSubjectId, normalizedStrandKey),
+    subjectId: normalizedSubjectId,
+    strandKey: normalizedStrandKey,
+    label: normalizedLabel,
+    normalizedLabel: normalizeText(normalizedLabel),
+    layer: String(meta.layer ?? classification.layer),
+    role: String(meta.role ?? classification.role),
+    weight: Number(clamp(Number(meta.weight ?? classification.weight), -12, 12).toFixed(2)),
+    confidence: clampConfidence(meta.confidence ?? classification.confidence),
+    source: String(meta.source ?? "derived").trim() || "derived",
+    provenance: meta.provenance && typeof meta.provenance === "object" ? meta.provenance : null
+  };
+}
+
+function derivePersistentStrandDescriptors(record = {}, options = {}) {
+  const normalizedSubjectId = String(record.subjectId ?? "").trim();
+  const descriptors = [];
+  const seen = new Set();
+  const limit = Number(options.limit ?? 18) || 18;
+
+  function pushDescriptor(descriptor) {
+    if (!descriptor?.strandKey || seen.has(descriptor.strandKey) || descriptors.length >= limit) {
+      return;
+    }
+
+    seen.add(descriptor.strandKey);
+    descriptors.push(descriptor);
+  }
+
+  for (const strandKey of normalizeArray(record.strands)) {
+    pushDescriptor(createStrandDescriptor(
+      normalizedSubjectId,
+      strandKey,
+      humanize(String(strandKey ?? "").replace(/[:_]/g, " "))
+    ));
+  }
+
+  for (const term of extractConstructConcepts(record, { limit: 8 })) {
+    const normalizedTerm = String(term ?? "").trim();
+    if (!normalizedTerm) {
+      continue;
+    }
+
+    pushDescriptor(createStrandDescriptor(
+      normalizedSubjectId,
+      `feature:${slugify(normalizedTerm).replace(/-/g, "_")}`,
+      normalizedTerm,
+      {
+        source: "derived-concept"
+      }
+    ));
+  }
+
+  return descriptors;
 }
 
 function lineLooksLikeListItem(value = "") {
@@ -749,6 +982,55 @@ function linkFromRow(row) {
     score: Number(row.score ?? 0),
     reason: row.reason || "",
     detail: safeJsonParse(row.detailJson, {}),
+    updatedAt: row.updatedAt
+  };
+}
+
+function subjectStrandFromRow(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    subjectId: row.subjectId,
+    strandKey: row.strandKey,
+    label: row.label,
+    normalizedLabel: row.normalizedLabel,
+    layer: row.layer,
+    role: row.role,
+    weight: Number(row.weight ?? 0),
+    confidence: Number(row.confidence ?? 0),
+    source: row.source || "derived",
+    usageCount: Number(row.usageCount ?? 0),
+    constructCount: Number(row.constructCount ?? 0),
+    lastUsedAt: row.lastUsedAt || null,
+    provenance: safeJsonParse(row.provenanceJson, null),
+    updatedAt: row.updatedAt
+  };
+}
+
+function constructStrandFromRow(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    constructId: row.constructId,
+    subjectId: row.subjectId,
+    strandId: row.strandId,
+    strandKey: row.strandKey,
+    label: row.label || humanize(String(row.strandKey ?? "").replace(/[:_]/g, " ")),
+    normalizedLabel: row.normalizedLabel || normalizeText(row.label || row.strandKey),
+    layer: row.layer,
+    role: row.role,
+    weight: Number(row.weight ?? 0),
+    confidence: Number(row.confidence ?? 0),
+    source: row.source || "derived",
+    usageCount: Number(row.usageCount ?? 0),
+    constructCount: Number(row.constructCount ?? 0),
+    lastUsedAt: row.lastUsedAt || null,
     updatedAt: row.updatedAt
   };
 }
@@ -1677,6 +1959,8 @@ function buildTrace(record, parsed, candidates = []) {
   const phrasePreview = (record?.phraseHits ?? []).slice(0, 4);
   const binderPreview = (record?.binderHits ?? []).slice(0, 4);
   const linkPreview = (record?.linkHits ?? []).slice(0, 4);
+  const persistentStrands = (record?.constructStrands ?? []).slice(0, 8);
+  const activatedStrands = (record?.activatedStrands ?? []).slice(0, 8);
   const exclusionPreview = [
     ...((parsed.exclusions ?? []).map((entry) => ({
       cue: entry.cue,
@@ -1777,6 +2061,16 @@ function buildTrace(record, parsed, candidates = []) {
       kind: "link",
       name: entry.constructLabel,
       value: `reinforced by ${entry.reinforcement.toFixed(2)} from a ${entry.reason || "related"} construct`
+    })),
+    persistentStrands: persistentStrands.map((entry) => ({
+      kind: "persistent",
+      name: entry.label,
+      value: `${entry.layer}/${entry.role} weight ${Number(entry.weight ?? 0).toFixed(2)}`
+    })),
+    activatedStrands: activatedStrands.map((entry) => ({
+      kind: "activated",
+      name: entry.label,
+      value: entry.reason || `${entry.layer}/${entry.role} strand activated`
     })),
     expressionField: record
       ? `Triggers from the question docked into ${record.constructLabel}, using ${record.subjectLabel} anchors to emit a reusable answer construct.`
@@ -2118,6 +2412,40 @@ export function ensureSubjectspaceTables(db) {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_construct_links_pair ON construct_links(sourceConstructId, relatedConstructId);
     CREATE INDEX IF NOT EXISTS idx_construct_links_source ON construct_links(sourceConstructId, score DESC);
+    CREATE TABLE IF NOT EXISTS subject_strands (
+      id TEXT PRIMARY KEY,
+      subjectId TEXT NOT NULL,
+      strandKey TEXT NOT NULL,
+      label TEXT NOT NULL,
+      normalizedLabel TEXT NOT NULL,
+      layer TEXT NOT NULL DEFAULT 'anchor',
+      role TEXT NOT NULL DEFAULT 'feature',
+      weight REAL NOT NULL DEFAULT 1,
+      confidence REAL NOT NULL DEFAULT 0.72,
+      source TEXT NOT NULL DEFAULT 'derived',
+      usageCount INTEGER NOT NULL DEFAULT 0,
+      constructCount INTEGER NOT NULL DEFAULT 0,
+      lastUsedAt TEXT,
+      provenanceJson TEXT,
+      updatedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_subject_strands_subject_key ON subject_strands(subjectId, strandKey);
+    CREATE INDEX IF NOT EXISTS idx_subject_strands_subject_usage ON subject_strands(subjectId, usageCount DESC, constructCount DESC, updatedAt DESC);
+    CREATE TABLE IF NOT EXISTS construct_strands (
+      id TEXT PRIMARY KEY,
+      constructId TEXT NOT NULL,
+      subjectId TEXT NOT NULL,
+      strandId TEXT NOT NULL,
+      strandKey TEXT NOT NULL,
+      layer TEXT NOT NULL DEFAULT 'anchor',
+      role TEXT NOT NULL DEFAULT 'feature',
+      weight REAL NOT NULL DEFAULT 1,
+      source TEXT NOT NULL DEFAULT 'derived',
+      updatedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_construct_strands_pair ON construct_strands(constructId, strandId);
+    CREATE INDEX IF NOT EXISTS idx_construct_strands_construct ON construct_strands(constructId, weight DESC, updatedAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_construct_strands_subject ON construct_strands(subjectId, updatedAt DESC);
     CREATE TABLE IF NOT EXISTS chat_conversations (
       id TEXT PRIMARY KEY,
       subjectId TEXT,
@@ -2201,6 +2529,48 @@ export function listSubjectConstructs(db, subjectId = "") {
 export function getSubjectConstruct(db, id) {
   ensureSubjectspaceTables(db);
   return fromRow(db.prepare("SELECT * FROM subject_constructs WHERE id = ?").get(String(id)));
+}
+
+export function listSubjectStrands(db, subjectId = "", options = {}) {
+  ensureSubjectspaceTables(db);
+  const normalizedSubjectId = String(subjectId ?? "").trim();
+  const limit = Number(options.limit ?? 100) || 100;
+  const rows = normalizedSubjectId
+    ? db.prepare(`
+      SELECT * FROM subject_strands
+      WHERE subjectId = ?
+      ORDER BY usageCount DESC, constructCount DESC, updatedAt DESC, label ASC
+      LIMIT ?
+    `).all(normalizedSubjectId, limit)
+    : db.prepare(`
+      SELECT * FROM subject_strands
+      ORDER BY subjectId ASC, usageCount DESC, constructCount DESC, updatedAt DESC, label ASC
+      LIMIT ?
+    `).all(limit);
+  return rows.map(subjectStrandFromRow);
+}
+
+export function listConstructStrands(db, constructId = "", options = {}) {
+  ensureSubjectspaceTables(db);
+  const normalizedConstructId = String(constructId ?? "").trim();
+  const limit = Number(options.limit ?? 100) || 100;
+  const rows = normalizedConstructId
+    ? db.prepare(`
+      SELECT cs.*, ss.label, ss.normalizedLabel, ss.confidence, ss.usageCount, ss.constructCount, ss.lastUsedAt, ss.provenanceJson
+      FROM construct_strands cs
+      LEFT JOIN subject_strands ss ON ss.id = cs.strandId
+      WHERE cs.constructId = ?
+      ORDER BY cs.weight DESC, cs.updatedAt DESC, cs.layer ASC
+      LIMIT ?
+    `).all(normalizedConstructId, limit)
+    : db.prepare(`
+      SELECT cs.*, ss.label, ss.normalizedLabel, ss.confidence, ss.usageCount, ss.constructCount, ss.lastUsedAt, ss.provenanceJson
+      FROM construct_strands cs
+      LEFT JOIN subject_strands ss ON ss.id = cs.strandId
+      ORDER BY cs.updatedAt DESC, cs.weight DESC
+      LIMIT ?
+    `).all(limit);
+  return rows.map(constructStrandFromRow);
 }
 
 export function listStrandBinders(db, subjectId = "", options = {}) {
@@ -2295,6 +2665,242 @@ export function listConstructLinks(db, constructId = "") {
   return rows.map(linkFromRow);
 }
 
+function createDatasetIssueCounter() {
+  return {
+    missingTarget: 0,
+    missingObjective: 0,
+    missingSteps: 0,
+    missingContext: 0,
+    missingTags: 0,
+    missingNotes: 0,
+    lowAnchorVariety: 0,
+    orphanRelatedIds: 0,
+    duplicateLabels: 0,
+    thinConstructs: 0
+  };
+}
+
+function computeDatasetAuditFromConstructs(constructs = [], options = {}) {
+  const rows = Array.isArray(constructs) ? constructs.map((construct) => normalizeConstruct(construct)) : [];
+  const byId = new Map(rows.map((construct) => [construct.id, construct]));
+  const labelBuckets = new Map();
+  const issueCounts = createDatasetIssueCounter();
+  const maxIssues = Math.max(3, Number(options.maxIssues ?? 10) || 10);
+
+  for (const construct of rows) {
+    const labelKey = `${construct.subjectId}::${normalizeText(construct.constructLabel)}`;
+    const bucket = labelBuckets.get(labelKey) ?? [];
+    bucket.push(construct.id);
+    labelBuckets.set(labelKey, bucket);
+  }
+
+  const duplicateIds = new Set(
+    [...labelBuckets.values()]
+      .filter((bucket) => bucket.length > 1)
+      .flatMap((bucket) => bucket)
+  );
+
+  const constructsWithIssues = rows.map((construct) => {
+    const relevance = buildConstructRelevanceSummary(construct);
+    const issues = [...(relevance.issues ?? [])];
+    const orphanRelatedIds = normalizeRelatedConstructIds(construct.relatedConstructIds, construct.id)
+      .filter((relatedId) => !byId.has(relatedId));
+
+    if (!construct.target) {
+      issueCounts.missingTarget += 1;
+    }
+    if (!construct.objective) {
+      issueCounts.missingObjective += 1;
+    }
+    if (!construct.steps?.length) {
+      issueCounts.missingSteps += 1;
+    }
+    if (!Object.keys(construct.context ?? {}).length) {
+      issueCounts.missingContext += 1;
+    }
+    if (!construct.tags?.length) {
+      issueCounts.missingTags += 1;
+    }
+    if (!construct.notes) {
+      issueCounts.missingNotes += 1;
+    }
+    if ((relevance.anchors ?? []).length < 4) {
+      issueCounts.lowAnchorVariety += 1;
+    }
+    if (relevance.status === "thin") {
+      issueCounts.thinConstructs += 1;
+    }
+    if (orphanRelatedIds.length) {
+      issueCounts.orphanRelatedIds += orphanRelatedIds.length;
+      issues.push(`Broken related links: ${orphanRelatedIds.join(", ")}`);
+    }
+    if (duplicateIds.has(construct.id)) {
+      issueCounts.duplicateLabels += 1;
+      issues.push("Duplicate construct label inside the same subject");
+    }
+
+    return {
+      id: construct.id,
+      subjectId: construct.subjectId,
+      subjectLabel: construct.subjectLabel,
+      constructLabel: construct.constructLabel,
+      target: construct.target,
+      objective: construct.objective,
+      relevance,
+      orphanRelatedIds,
+      issues: uniqueValues(issues)
+    };
+  });
+
+  const totalScore = constructsWithIssues.reduce((sum, construct) => sum + Number(construct.relevance?.score ?? 0), 0);
+  const averageRelevanceScore = rows.length ? Number((totalScore / rows.length).toFixed(1)) : 0;
+  const issuePenalty = Math.min(
+    55,
+    (issueCounts.missingTarget * 3)
+      + (issueCounts.missingObjective * 3)
+      + (issueCounts.missingSteps * 5)
+      + (issueCounts.missingContext * 4)
+      + (issueCounts.missingTags * 3)
+      + (issueCounts.missingNotes * 2)
+      + (issueCounts.lowAnchorVariety * 2)
+      + (issueCounts.orphanRelatedIds * 2)
+      + (issueCounts.duplicateLabels * 4)
+      + (issueCounts.thinConstructs * 3)
+  );
+  const releaseReadinessScore = rows.length
+    ? Number(clamp(Math.round(averageRelevanceScore - (issuePenalty / Math.max(rows.length, 1))), 0, 100))
+    : 0;
+
+  return {
+    subjectId: String(options.subjectId ?? "").trim() || null,
+    constructCount: rows.length,
+    averageRelevanceScore,
+    releaseReadinessScore,
+    status: rows.length === 0
+      ? "empty"
+      : releaseReadinessScore >= 75
+        ? "release-ready"
+        : releaseReadinessScore >= 55
+          ? "review"
+          : "repair",
+    issueCounts,
+    flaggedConstructs: constructsWithIssues
+      .filter((construct) => construct.issues.length)
+      .sort((left, right) => {
+        const issueDelta = right.issues.length - left.issues.length;
+        if (issueDelta !== 0) {
+          return issueDelta;
+        }
+        return Number(left.relevance?.score ?? 0) - Number(right.relevance?.score ?? 0);
+      })
+      .slice(0, maxIssues)
+  };
+}
+
+export function auditSubjectDataset(db, { subjectId = "", maxIssues = 10 } = {}) {
+  ensureSubjectspaceTables(db);
+  const normalizedSubjectId = String(subjectId ?? "").trim();
+  const constructs = listSubjectConstructs(db, normalizedSubjectId);
+  return computeDatasetAuditFromConstructs(constructs, {
+    subjectId: normalizedSubjectId,
+    maxIssues
+  });
+}
+
+export function auditSubjectSeedFile(filePath = defaultSubjectSeedsPath, options = {}) {
+  const raw = JSON.parse(readFileSync(filePath, "utf8"));
+  const constructs = Array.isArray(raw) ? raw : [];
+  return {
+    filePath,
+    ...computeDatasetAuditFromConstructs(constructs, {
+      subjectId: String(options.subjectId ?? "").trim(),
+      maxIssues: options.maxIssues ?? 8
+    })
+  };
+}
+
+export function cleanSubjectDataset(db, { subjectId = "", maxIssues = 10 } = {}) {
+  ensureSubjectspaceTables(db);
+  const normalizedSubjectId = String(subjectId ?? "").trim();
+  const constructs = listSubjectConstructs(db, normalizedSubjectId);
+  const knownIds = new Set(constructs.map((construct) => construct.id));
+  const startedAt = new Date().toISOString();
+  let normalizedCount = 0;
+  let repairedRelatedCount = 0;
+
+  for (const construct of constructs) {
+    const cleanedRelatedIds = normalizeRelatedConstructIds(construct.relatedConstructIds, construct.id)
+      .filter((relatedId) => knownIds.has(relatedId));
+    const cleaned = normalizeConstruct({
+      ...construct,
+      relatedConstructIds: cleanedRelatedIds,
+      provenance: {
+        ...(construct.provenance ?? {}),
+        datasetCleanedAt: startedAt,
+        datasetCleaned: true
+      }
+    });
+
+    const changed = JSON.stringify({
+      subjectLabel: cleaned.subjectLabel,
+      constructLabel: cleaned.constructLabel,
+      target: cleaned.target,
+      objective: cleaned.objective,
+      context: cleaned.context,
+      steps: cleaned.steps,
+      notes: cleaned.notes,
+      tags: cleaned.tags,
+      strands: cleaned.strands,
+      relatedConstructIds: cleaned.relatedConstructIds
+    }) !== JSON.stringify({
+      subjectLabel: construct.subjectLabel,
+      constructLabel: construct.constructLabel,
+      target: construct.target,
+      objective: construct.objective,
+      context: construct.context ?? {},
+      steps: construct.steps ?? [],
+      notes: construct.notes ?? "",
+      tags: construct.tags ?? [],
+      strands: construct.strands ?? [],
+      relatedConstructIds: construct.relatedConstructIds ?? []
+    });
+
+    if (construct.relatedConstructIds?.length !== cleanedRelatedIds.length) {
+      repairedRelatedCount += Math.max(0, Number(construct.relatedConstructIds?.length ?? 0) - cleanedRelatedIds.length);
+    }
+
+    if (!changed) {
+      refreshSubjectConstructRelations(db, construct.id);
+      continue;
+    }
+
+    upsertSubjectConstruct(db, {
+      ...construct,
+      ...cleaned,
+      provenance: {
+        ...(construct.provenance ?? {}),
+        ...(cleaned.provenance ?? {}),
+        datasetCleanedAt: startedAt,
+        datasetCleaned: true
+      }
+    });
+    normalizedCount += 1;
+  }
+
+  return {
+    ok: true,
+    subjectId: normalizedSubjectId || null,
+    cleanedAt: startedAt,
+    normalizedCount,
+    repairedRelatedCount,
+    constructCount: constructs.length,
+    health: auditSubjectDataset(db, {
+      subjectId: normalizedSubjectId,
+      maxIssues
+    })
+  };
+}
+
 function saveConstructLink(db, payload = {}) {
   ensureSubjectspaceTables(db);
   const sourceConstructId = String(payload.sourceConstructId ?? "").trim();
@@ -2326,6 +2932,205 @@ function saveConstructLink(db, payload = {}) {
   );
 
   return linkFromRow(db.prepare("SELECT * FROM construct_links WHERE id = ?").get(id));
+}
+
+function syncPersistentStrandsForConstruct(db, construct = null) {
+  const record = normalizeConstruct(construct ?? {});
+  if (!record?.id || !record.subjectId) {
+    return [];
+  }
+
+  const updatedAt = new Date().toISOString();
+  const descriptors = derivePersistentStrandDescriptors(record, {
+    limit: 24
+  });
+
+  db.prepare("DELETE FROM construct_strands WHERE constructId = ?").run(record.id);
+
+  for (const descriptor of descriptors) {
+    const existing = db.prepare(`
+      SELECT * FROM subject_strands
+      WHERE subjectId = ? AND strandKey = ?
+    `).get(record.subjectId, descriptor.strandKey);
+
+    const nextLabel = String(existing?.label ?? descriptor.label ?? "").trim() || humanize(descriptor.strandKey);
+    const nextWeight = Number(Math.max(
+      Number(existing?.weight ?? 0),
+      Number(descriptor.weight ?? 0)
+    ).toFixed(2));
+    const nextConfidence = clampConfidence(
+      Math.max(
+        Number(existing?.confidence ?? 0),
+        Number(descriptor.confidence ?? 0)
+      ),
+      descriptor.confidence
+    );
+    const nextLayer = String(existing?.source ?? "") === "manual"
+      ? String(existing?.layer ?? descriptor.layer ?? "anchor")
+      : String(descriptor.layer ?? existing?.layer ?? "anchor");
+    const nextRole = String(existing?.source ?? "") === "manual"
+      ? String(existing?.role ?? descriptor.role ?? "feature")
+      : String(descriptor.role ?? existing?.role ?? "feature");
+    const nextSource = String(existing?.source ?? descriptor.source ?? "derived").trim() || "derived";
+    const nextProvenance = {
+      ...(safeJsonParse(existing?.provenanceJson, {}) ?? {}),
+      ...(descriptor.provenance ?? {})
+    };
+
+    db.prepare(`
+      INSERT INTO subject_strands (
+        id, subjectId, strandKey, label, normalizedLabel, layer, role, weight, confidence,
+        source, usageCount, constructCount, lastUsedAt, provenanceJson, updatedAt
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        subjectId = excluded.subjectId,
+        strandKey = excluded.strandKey,
+        label = excluded.label,
+        normalizedLabel = excluded.normalizedLabel,
+        layer = excluded.layer,
+        role = excluded.role,
+        weight = excluded.weight,
+        confidence = excluded.confidence,
+        source = excluded.source,
+        usageCount = COALESCE(subject_strands.usageCount, 0),
+        constructCount = COALESCE(subject_strands.constructCount, 0),
+        lastUsedAt = COALESCE(subject_strands.lastUsedAt, excluded.lastUsedAt),
+        provenanceJson = excluded.provenanceJson,
+        updatedAt = excluded.updatedAt
+    `).run(
+      descriptor.id,
+      record.subjectId,
+      descriptor.strandKey,
+      nextLabel,
+      normalizeText(nextLabel),
+      nextLayer,
+      nextRole,
+      nextWeight,
+      nextConfidence,
+      nextSource,
+      Number(existing?.usageCount ?? 0),
+      Number(existing?.constructCount ?? 0),
+      existing?.lastUsedAt ?? null,
+      Object.keys(nextProvenance).length ? JSON.stringify(nextProvenance) : null,
+      updatedAt
+    );
+
+    db.prepare(`
+      INSERT INTO construct_strands (
+        id, constructId, subjectId, strandId, strandKey, layer, role, weight, source, updatedAt
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        constructId = excluded.constructId,
+        subjectId = excluded.subjectId,
+        strandId = excluded.strandId,
+        strandKey = excluded.strandKey,
+        layer = excluded.layer,
+        role = excluded.role,
+        weight = excluded.weight,
+        source = excluded.source,
+        updatedAt = excluded.updatedAt
+    `).run(
+      `construct-strand:${record.id}:${slugify(descriptor.strandKey)}`,
+      record.id,
+      record.subjectId,
+      descriptor.id,
+      descriptor.strandKey,
+      descriptor.layer,
+      descriptor.role,
+      Number(descriptor.weight ?? 1),
+      String(descriptor.source ?? "derived").trim() || "derived",
+      updatedAt
+    );
+  }
+
+  db.prepare(`
+    UPDATE subject_strands
+    SET constructCount = (
+      SELECT COUNT(*)
+      FROM construct_strands
+      WHERE construct_strands.strandId = subject_strands.id
+    )
+    WHERE subjectId = ?
+  `).run(record.subjectId);
+
+  db.prepare(`
+    DELETE FROM subject_strands
+    WHERE subjectId = ?
+      AND source = 'derived'
+      AND COALESCE(constructCount, 0) <= 0
+  `).run(record.subjectId);
+
+  return listConstructStrands(db, record.id);
+}
+
+function touchConstructStrands(db, constructId = "") {
+  const normalizedConstructId = String(constructId ?? "").trim();
+  if (!normalizedConstructId) {
+    return;
+  }
+
+  const updatedAt = new Date().toISOString();
+  db.prepare(`
+    UPDATE subject_strands
+    SET usageCount = COALESCE(usageCount, 0) + 1,
+        lastUsedAt = ?,
+        updatedAt = ?
+    WHERE id IN (
+      SELECT strandId
+      FROM construct_strands
+      WHERE constructId = ?
+    )
+  `).run(updatedAt, updatedAt, normalizedConstructId);
+}
+
+function buildActivatedStrands(record = null, parsed = null) {
+  const constructStrands = Array.isArray(record?.constructStrands) ? record.constructStrands : [];
+  if (!constructStrands.length) {
+    return [];
+  }
+
+  const needles = [...new Set([
+    ...((parsed?.keywords ?? []).map((item) => normalizeText(item))),
+    ...((parsed?.phrases ?? []).map((item) => normalizeText(item))),
+    ...((parsed?.aliasTerms ?? []).flatMap((entry) => [
+      normalizeText(entry.source),
+      normalizeText(entry.term)
+    ]))
+  ])].filter(Boolean);
+
+  const hits = [];
+  for (const strand of constructStrands) {
+    const haystack = normalizeText(`${strand.strandKey ?? ""} ${strand.label ?? ""}`);
+    const reasons = [];
+    for (const needle of needles) {
+      const exactPhrase = needle.includes(" ") && haystack.includes(needle);
+      const exactToken = !needle.includes(" ") && haystack.split(/\s+/).includes(needle);
+      if (exactPhrase || exactToken) {
+        reasons.push(needle);
+      }
+    }
+
+    if (!reasons.length && (strand.layer === "construct" || strand.role === "identity")) {
+      reasons.push("identity strand");
+    }
+
+    if (!reasons.length) {
+      continue;
+    }
+
+    hits.push({
+      ...strand,
+      reason: reasons[0] === "identity strand"
+        ? "activated as the construct identity"
+        : `activated by ${reasons.slice(0, 2).join(", ")}`
+    });
+  }
+
+  return hits
+    .sort((left, right) => Number(right.weight ?? 0) - Number(left.weight ?? 0))
+    .slice(0, 8);
 }
 
 function syncDerivedBindersForConstruct(db, record = {}) {
@@ -2404,6 +3209,7 @@ export function refreshSubjectConstructRelations(db, constructOrId = null) {
   }
 
   syncDerivedBindersForConstruct(db, record);
+  syncPersistentStrandsForConstruct(db, record);
   syncConstructLinksForRecord(db, record);
   return getSubjectConstruct(db, record.id);
 }
@@ -2619,7 +3425,18 @@ export function recallSubjectSpace(db, { question = "", subjectId = "" } = {}) {
 
   const matched = ranked[0] ?? null;
   const ready = Boolean(matched && matched.score >= READY_THRESHOLD);
-  const relatedConstructs = ready && matched ? fetchRelatedSubjectConstructs(db, matched) : [];
+  const enrichedMatched = ready && matched
+    ? {
+      ...matched,
+      constructStrands: listConstructStrands(db, matched.id, { limit: 18 })
+    }
+    : null;
+  const activatedStrands = enrichedMatched ? buildActivatedStrands(enrichedMatched, parsed) : [];
+  if (enrichedMatched) {
+    enrichedMatched.activatedStrands = activatedStrands;
+    touchConstructStrands(db, enrichedMatched.id);
+  }
+  const relatedConstructs = ready && enrichedMatched ? fetchRelatedSubjectConstructs(db, enrichedMatched) : [];
   const routing = buildRouting(parsed, ranked, constructs);
   const candidates = ranked.slice(0, 5).map((item) => ({
     id: item.id,
@@ -2644,11 +3461,11 @@ export function recallSubjectSpace(db, { question = "", subjectId = "" } = {}) {
     question: parsed.raw,
     parsed,
     ready,
-    matched: ready ? matched : null,
+    matched: ready ? enrichedMatched : null,
     relatedConstructs,
     candidates,
-    answer: ready && matched
-      ? buildRecallAnswer(matched)
+    answer: ready && enrichedMatched
+      ? buildRecallAnswer(enrichedMatched)
       : buildUnresolvedAnswer(parsed, candidates, constructs.length),
     recommendation: ready ? "use_strandspace" : "teach_or_refine",
     readiness: {
@@ -2661,6 +3478,6 @@ export function recallSubjectSpace(db, { question = "", subjectId = "" } = {}) {
       libraryCount: constructs.length
     },
     routing,
-    trace: buildTrace(ready ? matched : (ranked[0] ?? null), parsed, candidates)
+    trace: buildTrace(ready ? enrichedMatched : (ranked[0] ?? null), parsed, candidates)
   };
 }

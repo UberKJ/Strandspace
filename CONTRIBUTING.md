@@ -39,11 +39,15 @@ npm run dev
 npm run start
 npm run test
 npm run clean
+npm run dataset:health
+npm run dataset:clean
 npm run kill
 npm run restart
 ```
 
 - `clean` removes the local SQLite database files and common local server logs.
+- `dataset:health` audits stored constructs and the packaged seed files for release readiness.
+- `dataset:clean` safely normalizes stored constructs and repairs broken related IDs.
 - `kill` stops project-related `node` or `npm` processes.
 - `restart` runs the kill helper and starts the dev server again.
 
@@ -76,10 +80,14 @@ The test runner covers:
 
 The UI includes a `Reset with Examples` action that restores the bundled examples for both subjectspace and the music-engineering memory set. Use that when verifying seeded demos or reproducing UI behavior.
 
+The repo also includes `data/release-subject-seeds.json`, a cleaner future-release starter pack that demonstrates broader subjects such as Python engineering and accounting coding.
+
 ## Docs
 
 - Main overview: [README.md](./README.md)
 - Backend workspace guide: [docs/backend-workspace.md](./docs/backend-workspace.md)
+- Dataset health guide: [docs/dataset-health.md](./docs/dataset-health.md)
+- Theory guide: [docs/THEORY_OF_STRANDSPACE.md](./docs/THEORY_OF_STRANDSPACE.md)
 - White paper PDF: [strandspace-white-paper.pdf](./strandspace-white-paper.pdf)
 - White paper summary: [docs/white-paper-summary.md](./docs/white-paper-summary.md)
 

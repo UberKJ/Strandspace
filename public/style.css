@@ -793,6 +793,21 @@ h3 {
   line-height: 1.6;
 }
 
+.graph-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.graph-summary-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(248, 236, 223, 0.08);
+  border: 1px solid rgba(248, 236, 223, 0.1);
+}
+
 .answer-steps ol {
   margin: 8px 0 0;
   padding-left: 20px;
@@ -1108,8 +1123,42 @@ h3 {
   margin-top: 18px;
 }
 
+.ollama-panel {
+  margin-top: 18px;
+}
+
 .recall-panel {
   margin-top: 18px;
+}
+
+.ollama-form-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.ollama-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(71, 48, 31, 0.1);
+  background: rgba(255, 252, 247, 0.72);
+}
+
+.ollama-toggle input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.ollama-output {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.7;
 }
 
 .speed-actions {
@@ -1122,6 +1171,50 @@ h3 {
 
 .speed-actions .meta {
   max-width: 760px;
+}
+
+.benchmark-variant-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.benchmark-variant-grid label,
+.ollama-panel label {
+  display: grid;
+  gap: 8px;
+}
+
+.benchmark-variant-grid label > span,
+.ollama-panel label > span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.benchmark-variant-grid input,
+.benchmark-variant-grid select,
+.ollama-panel textarea,
+.ollama-panel select {
+  width: 100%;
+  border: 1px solid rgba(71, 48, 31, 0.18);
+  border-radius: 18px;
+  padding: 14px 16px;
+  color: var(--ink);
+  background: rgba(255, 253, 249, 0.9);
+  resize: vertical;
+  transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+}
+
+.benchmark-variant-grid input:focus,
+.benchmark-variant-grid select:focus,
+.ollama-panel textarea:focus,
+.ollama-panel select:focus {
+  outline: none;
+  border-color: rgba(181, 109, 54, 0.45);
+  box-shadow: 0 0 0 4px rgba(181, 109, 54, 0.12);
 }
 
 .speed-report {
@@ -1341,9 +1434,11 @@ h3 {
     min-height: auto;
   }
 
+  .ollama-form-grid,
   .speed-prompt-grid,
   .workspace-grid,
   .speed-grid,
+  .benchmark-variant-grid,
   .architecture-band {
     grid-template-columns: 1fr;
   }
@@ -1357,6 +1452,10 @@ h3 {
 
   .page-switch {
     padding-top: 14px;
+  }
+
+  .ollama-toggle {
+    align-items: flex-start;
   }
 
   .status-badge {
@@ -1712,6 +1811,63 @@ body.backend-page {
   word-break: break-word;
 }
 
+.dataset-health-panel,
+.dataset-health-summary,
+.dataset-health-list,
+.dataset-health-item,
+.dataset-health-copy,
+.dataset-health-actions,
+.dataset-health-issues,
+.answer-relevance {
+  display: grid;
+  gap: 12px;
+}
+
+.dataset-health-panel.empty {
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px dashed rgba(71, 48, 31, 0.14);
+  background: rgba(255, 253, 249, 0.62);
+}
+
+.dataset-health-summary {
+  grid-template-columns: minmax(0, 0.42fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+.dataset-health-score,
+.dataset-health-item {
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(71, 48, 31, 0.1);
+  background: rgba(255, 252, 247, 0.72);
+}
+
+.dataset-health-score strong {
+  font-size: 1.4rem;
+}
+
+.dataset-health-issues {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+}
+
+.dataset-health-item {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.dataset-health-copy span,
+.dataset-health-copy small,
+.dataset-health-actions p {
+  color: var(--muted);
+}
+
+.dataset-health-actions {
+  justify-items: end;
+  max-width: 220px;
+}
+
 .detail-label {
   color: var(--muted);
   font-size: 0.74rem;
@@ -1987,6 +2143,12 @@ body.backend-page {
   }
 
   .admin-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dataset-health-summary,
+  .dataset-health-item,
+  .dataset-health-issues {
     grid-template-columns: 1fr;
   }
 

@@ -1,7 +1,7 @@
 # Strandspace
 
 [![Node 20+](https://img.shields.io/badge/node-20%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![License: not specified](https://img.shields.io/badge/license-not_specified-lightgrey)](#license-status)
+[![License: MIT](https://img.shields.io/badge/license-MIT-339933)](#license-status)
 [![Local-first](https://img.shields.io/badge/runtime-local--first-126b73)](#why-strandspace)
 
 Strandspace is a local-first recall workspace for reusable knowledge constructs. It ships with two focused modes:
@@ -32,6 +32,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - Topic view: `/subject?subjectId=music-engineering`
 - SQLite editor and DB size display live inside the backend data browser
 - Recall Lab in the backend now loads a cleaner construct-title search and fills the matched construct back into the editor
+- Dataset health now audits construct quality, semantic anchors, broken related IDs, and release readiness from the backend
 
 If you do not set `OPENAI_API_KEY`, the app runs in local-only mode. Recall, library browsing, seed data, and construct editing still work; OpenAI assist and benchmark assist calls are simply disabled.
 
@@ -130,6 +131,8 @@ npm run dev
 npm run start
 npm run test
 npm run clean
+npm run dataset:health
+npm run dataset:clean
 npm run kill
 npm run restart
 ```
@@ -137,6 +140,8 @@ npm run restart
 What they do:
 
 - `clean` removes the local Strandspace SQLite files and common local server logs
+- `dataset:health` audits the stored subjectspace dataset plus the bundled seed packs
+- `dataset:clean` safely normalizes the active dataset, repairs broken related IDs, and refreshes local relations
 - `kill` stops project-related `node` / `npm` dev processes
 - `restart` stops the current dev process and starts the server again
 
@@ -149,6 +154,14 @@ The bundled examples include:
 
 Use the `Reset with Examples` button in the UI to restore the demo library.
 
+The repository also includes a broader release-oriented starter pack in [data/release-subject-seeds.json](./data/release-subject-seeds.json) with cleaner examples for:
+
+- music engineering
+- Python engineering
+- accounting coding
+
+That release pack is intended to show how Strandspace can evolve into a domain chatbot that learns locally over time and needs less model help as its construct field grows.
+
 ## Development Notes
 
 - Local runtime state is stored in SQLite and ignored by Git.
@@ -159,11 +172,13 @@ Use the `Reset with Examples` button in the UI to restore the demo library.
 ## Project Docs
 
 - Backend workspace guide: [docs/backend-workspace.md](./docs/backend-workspace.md)
+- Dataset health and release prep: [docs/dataset-health.md](./docs/dataset-health.md)
+- Theory of Strandspace: [docs/THEORY_OF_STRANDSPACE.md](./docs/THEORY_OF_STRANDSPACE.md)
 - White paper summary: [docs/white-paper-summary.md](./docs/white-paper-summary.md)
 - White paper PDF: [docs/strandspace-white-paper.pdf](./docs/strandspace-white-paper.pdf)
 
-The backend workspace guide covers the construct builder, AI subject mapper, Recall Lab, SQLite editor, and the live database size indicator shown in the data browser header.
+The backend workspace guide covers the construct builder, AI subject mapper, Recall Lab, SQLite editor, and the live database size indicator shown in the data browser header. The dataset health doc covers the new audit and clean workflow for keeping construct data ready for future release packs.
 
 ## License Status
 
-This repository does not currently declare a license file. The README badge is intentionally marked as `not specified` until that changes.
+This repository is released under the MIT License. See [LICENSE](./LICENSE) for details.

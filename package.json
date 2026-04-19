@@ -7,6 +7,8 @@
     "dev": "node server.mjs",
     "start": "node server.mjs",
     "clean": "node scripts/cleanup.js",
+    "dataset:health": "node scripts/dataset-health.js",
+    "dataset:clean": "node scripts/dataset-clean.js",
     "kill": "node scripts/kill-dev.js",
     "restart": "node scripts/restart-dev.js",
     "test": "node test/run-tests.mjs",

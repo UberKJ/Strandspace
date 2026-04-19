@@ -16,7 +16,8 @@ The backend page combines five workflows into one place:
 2. AI subject mapping
 3. Construct builder and editor
 4. Recall Lab and benchmark tools
-5. SQLite data browser
+5. Dataset health and release cleanup
+6. SQLite data browser
 
 The goal is to keep memory building, memory recall, and low-level row inspection in the same workspace instead of splitting them across disconnected screens.
 
@@ -78,6 +79,20 @@ It is useful for showing:
 - token savings from compact prompts
 - when local recall is already strong enough
 - how much slower assisted generation is compared with direct memory recall
+
+## Dataset Health
+
+The backend now includes a dataset health panel that audits the active subject field.
+
+It reports:
+
+- release-readiness score
+- average construct relevance
+- missing target, steps, tags, context, and notes
+- broken related construct IDs
+- thin constructs that need richer anchors
+
+The clean action is intentionally safe. It normalizes stored construct fields, removes broken related IDs, and refreshes links and strands without rebuilding the database.
 
 ## SQLite Data Browser
 

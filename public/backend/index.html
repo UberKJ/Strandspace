@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Strandspace Backend</title>
-    <link rel="stylesheet" href="/style.css?v=2026-04-17-landing-01" />
-    <script type="module" src="/app.js?v=2026-04-17-landing-01" defer></script>
+    <link rel="stylesheet" href="/style.css?v=2026-04-18-backend-ollama-01" />
+    <script type="module" src="/app.js?v=2026-04-18-backend-ollama-01" defer></script>
   </head>
   <body class="builder-page backend-page">
     <header class="page-switch backend-topbar">
@@ -80,10 +80,37 @@
               <strong id="backend-sound-count">0</strong>
               <p class="meta">Rows in music-engineering sound memory</p>
             </article>
+            <article class="admin-summary-card">
+              <span class="detail-label">Subject Strands</span>
+              <strong id="backend-subject-strand-count">0</strong>
+              <p class="meta">Persistent semantic strands</p>
+            </article>
+            <article class="admin-summary-card">
+              <span class="detail-label">Construct Links</span>
+              <strong id="backend-link-count">0</strong>
+              <p class="meta">Local relationship graph edges</p>
+            </article>
           </div>
           <div class="admin-db-path">
             <span class="detail-label">SQLite path</span>
             <code id="backend-db-path">Loading database path...</code>
+          </div>
+        </section>
+
+        <section class="panel admin-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow small">Dataset Health</p>
+              <h2>Release Readiness</h2>
+            </div>
+            <div class="section-actions">
+              <button id="dataset-health-refresh" type="button" class="secondary-button subtle-button">Refresh health</button>
+              <button id="dataset-clean-button" type="button" class="secondary-button">Clean active dataset</button>
+            </div>
+          </div>
+          <p id="dataset-health-meta" class="meta">Checking the active subject dataset and starter release packs.</p>
+          <div id="dataset-health-panel" class="dataset-health-panel empty">
+            <p>Dataset health details will appear here once the backend overview loads.</p>
           </div>
         </section>
       </aside>
@@ -95,8 +122,8 @@
             <h2>Build, review, benchmark, and edit data without leaving the backend.</h2>
           </div>
           <p class="meta">
-            Use the builder to draft structured constructs, review the activation field in the answer panel, and drop
-            into the SQLite editor when you need row-level control.
+            Use the builder to draft structured constructs, review the activation field in the answer panel, benchmark
+            local recall against OpenAI or Ollama, and drop into the SQLite editor when you need row-level control.
           </p>
         </section>
 
@@ -258,6 +285,24 @@
                 <p>Builder drafts and saved constructs show the strands that stabilized them.</p>
               </div>
             </section>
+
+            <section class="panel trace-panel">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow small">Graph</p>
+                  <h2>Strand graph view</h2>
+                </div>
+                <p id="graph-meta" class="meta">Inspect the current construct as strands, binders, and linked memories, then jump into the editable graph tables.</p>
+              </div>
+              <div class="action-row">
+                <button type="button" class="secondary-button subtle-button" data-db-shortcut="subject_strands">Open strands</button>
+                <button type="button" class="secondary-button subtle-button" data-db-shortcut="strand_binders">Open binders</button>
+                <button type="button" class="secondary-button subtle-button" data-db-shortcut="construct_links">Open links</button>
+              </div>
+              <div id="graph-panel" class="trace-grid empty">
+                <p>Load or recall a construct to see its local strand graph.</p>
+              </div>
+            </section>
           </section>
         </section>
 
@@ -303,6 +348,89 @@
             </div>
             <div id="speed-report" class="speed-report empty">
               <p>Run a recall prompt first, then compare local Strandbase recall against the LLM assist round-trip.</p>
+            </div>
+          </section>
+
+          <section class="panel benchmark-variant-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow small">Prompt Stress Lab</p>
+                <h2>Try less, more, or repetitive cue density</h2>
+              </div>
+              <p id="benchmark-variant-meta" class="meta">Use the current prompt or the compact benchmark prompt, then stress-test how much wording the local field and the model actually need.</p>
+            </div>
+            <div class="benchmark-variant-grid">
+              <label>
+                <span>Variant mode</span>
+                <select id="benchmark-variant-mode">
+                  <option value="fewer">Fewer cue words</option>
+                  <option value="more">More context words</option>
+                  <option value="repetitive">Repeat a cue value</option>
+                  <option value="mixed">Fewer words plus repeat cue</option>
+                  <option value="default">Use the base prompt</option>
+                </select>
+              </label>
+              <label>
+                <span>Target words</span>
+                <input id="benchmark-word-budget" type="number" min="3" max="48" step="1" value="8" />
+              </label>
+              <label>
+                <span>Repeat value</span>
+                <input id="benchmark-repeat-value" type="text" placeholder="Example: warm practicals" />
+              </label>
+              <label>
+                <span>Repeat count</span>
+                <input id="benchmark-repeat-count" type="number" min="0" max="8" step="1" value="3" />
+              </label>
+            </div>
+            <div class="action-row">
+              <button id="benchmark-use-variant-button" type="button" class="secondary-button subtle-button">Load variant into recall</button>
+              <button id="benchmark-run-variant-button" type="button" class="secondary-button">Compare variant vs LLM</button>
+              <button id="benchmark-run-variant-ollama-button" type="button" class="secondary-button">Compare variant vs Ollama</button>
+            </div>
+            <div id="benchmark-preview" class="speed-report empty">
+              <p>Pick a mode and Strandspace will generate a shorter, denser, or repetitive test prompt here before you run another benchmark.</p>
+            </div>
+          </section>
+
+          <section class="panel ollama-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow small">Ollama Lab</p>
+                <h2>Test the local model against Strandbase</h2>
+              </div>
+              <p id="ollama-meta" class="meta">Checking the local Ollama runtime now.</p>
+            </div>
+            <div class="ollama-form-grid">
+              <label>
+                <span>Model</span>
+                <select id="ollama-model">
+                  <option value="">Detecting local models...</option>
+                </select>
+              </label>
+              <label class="ollama-toggle">
+                <input id="ollama-grounding" type="checkbox" checked />
+                <span>Ground Ollama with the best local construct before generating</span>
+              </label>
+            </div>
+            <label>
+              <span>Prompt for Ollama</span>
+              <textarea
+                id="ollama-prompt"
+                rows="5"
+                placeholder="Use the last recall prompt or paste a new test prompt here."
+              ></textarea>
+            </label>
+            <div class="speed-actions">
+              <div class="action-row">
+                <button id="ollama-use-last-button" type="button" class="secondary-button subtle-button">Use last recall prompt</button>
+                <button id="ollama-generate-button" type="button" class="secondary-button">Run Ollama draft</button>
+                <button id="ollama-compare-button" type="button" class="secondary-button">Compare local vs Ollama</button>
+              </div>
+              <p class="meta">The compare flow keeps the same question in both paths and shows whether Ollama was grounded with the matched construct.</p>
+            </div>
+            <div id="ollama-report" class="speed-report empty">
+              <p>Once Ollama is reachable, run a draft or compare test here without leaving the backend.</p>
             </div>
           </section>
         </section>

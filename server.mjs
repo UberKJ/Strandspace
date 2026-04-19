@@ -2,7 +2,7 @@ import http from "node:http";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { basename, dirname, extname, isAbsolute, join, normalize } from "node:path";
 import { readdirSync } from "node:fs";
-import { access, readFile, readdir, stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -15,19 +15,27 @@ import {
 } from "./strandspace/soundspace.js";
 import { buildSoundConstructFromQuestion } from "./strandspace/sound-llm.js";
 import {
+  auditSubjectDataset,
+  auditSubjectSeedFile,
+  buildConstructRelevanceSummary,
   buildSubjectBenchmarkQuestionCandidates,
   buildSubjectConstructDraftFromInput,
+  defaultSubjectSeedsPath,
   estimateTextTokens,
   ensureSubjectspaceTables,
   getSubjectConstruct,
   ingestConversationToConstructs,
   listConstructLinks,
+  listConstructStrands,
   mergeSubjectConstruct,
   listStrandBinders,
   listSubjectConstructs,
+  listSubjectStrands,
   listSubjectSpaces,
   recallSubjectSpace,
+  releaseSubjectSeedsPath,
   refreshSubjectConstructRelations,
+  cleanSubjectDataset,
   seedSubjectspace,
   upsertSubjectConstruct
 } from "./strandspace/subjectspace.js";
@@ -40,14 +48,27 @@ import {
   generateOpenAiSubjectSuggestions,
   getOpenAiAssistStatus
 } from "./strandspace/openai-assist.js";
+import {
+  assertLocalhostRequest,
+  getThreatModel,
+  isRemoteAccessAllowed
+} from "./server/security.mjs";
+import {
+  migrateLegacyDatabase,
+  resolveDatabasePath
+} from "./server/persistence.mjs";
+import {
+  generateWithOllama,
+  getOllamaConfig,
+  getOllamaStatus
+} from "./server/ollama.mjs";
+export { migrateLegacyDatabase } from "./server/persistence.mjs";
+export { sanitizeLegacyProvenance } from "./server/persistence.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const publicDir = join(__dirname, "public");
 const docsDir = join(__dirname, "docs");
-const configuredDatabasePath = String(process.env.STRANDSPACE_DB_PATH ?? "").trim();
-const dataDir = join(__dirname, "data");
-const preferredDatabasePath = join(__dirname, "data", "strandspace.sqlite");
 const docFileExtensions = new Set([".pdf", ".docx", ".patch", ".txt", ".md"]);
 const builderReferenceStopwords = new Set([
   "a",
@@ -92,6 +113,7 @@ const mimeTypes = {
 
 const DEFAULT_API_TIMEOUT_MS = 15000;
 const EXTENDED_API_TIMEOUT_MS = 22000;
+const LOCAL_MODEL_API_TIMEOUT_MS = 65000;
 const SHUTDOWN_GRACE_MS = 10000;
 const LOG_LEVELS = {
   debug: 10,
@@ -104,14 +126,19 @@ const API_TIMEOUTS_MS = new Map([
   ["/api/backend/db/tables", DEFAULT_API_TIMEOUT_MS],
   ["/api/backend/db/table", DEFAULT_API_TIMEOUT_MS],
   ["/api/backend/db/row", DEFAULT_API_TIMEOUT_MS],
-  ["/api/chat", EXTENDED_API_TIMEOUT_MS],
+  ["/api/chat", LOCAL_MODEL_API_TIMEOUT_MS],
   ["/api/chat/conversations", DEFAULT_API_TIMEOUT_MS],
   ["/api/chat/history", DEFAULT_API_TIMEOUT_MS],
   ["/api/chat/delete", DEFAULT_API_TIMEOUT_MS],
+  ["/api/ollama/status", DEFAULT_API_TIMEOUT_MS],
+  ["/api/ollama/generate", LOCAL_MODEL_API_TIMEOUT_MS],
+  ["/api/ollama/compare", LOCAL_MODEL_API_TIMEOUT_MS],
   ["/api/tts", EXTENDED_API_TIMEOUT_MS],
   ["/api/stats", DEFAULT_API_TIMEOUT_MS],
   ["/api/subjectspace/subject-ideas", EXTENDED_API_TIMEOUT_MS],
   ["/api/subjectspace/build", EXTENDED_API_TIMEOUT_MS],
+  ["/api/subjectspace/dataset/health", DEFAULT_API_TIMEOUT_MS],
+  ["/api/subjectspace/dataset/clean", EXTENDED_API_TIMEOUT_MS],
   ["/api/subjectspace/ingest-conversation", EXTENDED_API_TIMEOUT_MS],
   ["/api/subjectspace/assist", EXTENDED_API_TIMEOUT_MS],
   ["/api/subjectspace/compare", EXTENDED_API_TIMEOUT_MS],
@@ -235,6 +262,59 @@ const BACKEND_TABLES = {
     ],
     orderBy: "updatedAt DESC, score DESC"
   },
+  subject_strands: {
+    label: "Subject Strands",
+    primaryKey: "id",
+    editableColumns: [
+      "subjectId",
+      "strandKey",
+      "label",
+      "normalizedLabel",
+      "layer",
+      "role",
+      "weight",
+      "confidence",
+      "source",
+      "usageCount",
+      "constructCount",
+      "lastUsedAt",
+      "provenanceJson"
+    ],
+    searchColumns: [
+      "subjectId",
+      "strandKey",
+      "label",
+      "normalizedLabel",
+      "layer",
+      "role",
+      "source"
+    ],
+    orderBy: "subjectId ASC, usageCount DESC, constructCount DESC, updatedAt DESC"
+  },
+  construct_strands: {
+    label: "Construct Strand Membership",
+    primaryKey: "id",
+    editableColumns: [
+      "constructId",
+      "subjectId",
+      "strandId",
+      "strandKey",
+      "layer",
+      "role",
+      "weight",
+      "source"
+    ],
+    searchColumns: [
+      "constructId",
+      "subjectId",
+      "strandId",
+      "strandKey",
+      "layer",
+      "role",
+      "source"
+    ],
+    orderBy: "updatedAt DESC, weight DESC"
+  },
   chat_conversations: {
     label: "Chat Conversations",
     primaryKey: "id",
@@ -324,6 +404,7 @@ function buildApiErrorPayload(error, fallback = "Internal server error") {
 
 function buildSystemHealthPayload() {
   const assistStatus = getOpenAiAssistStatus();
+  const ollamaConfig = getOllamaConfig();
   return {
     ok: true,
     mode: assistStatus.enabled ? "assist-enabled" : "local-only",
@@ -338,7 +419,13 @@ function buildSystemHealthPayload() {
       model: assistStatus.model ?? "",
       timeoutMs: assistStatus.timeoutMs ?? null,
       reason: assistStatus.reason ?? ""
-    }
+    },
+    ollama: {
+      baseUrl: ollamaConfig.baseUrl,
+      timeoutMs: ollamaConfig.timeoutMs,
+      defaultModel: ollamaConfig.defaultModel
+    },
+    remoteAllowed: isRemoteAccessAllowed()
   };
 }
 
@@ -422,126 +509,6 @@ async function runTimed(label, task, meta = {}) {
   }
 }
 
-
-export function sanitizeLegacyProvenance(provenance = null) {
-  if (!provenance || typeof provenance !== "object" || Array.isArray(provenance)) {
-    return null;
-  }
-
-  const sanitized = Object.fromEntries(
-    Object.entries(provenance)
-      .filter(([, value]) => value !== null && value !== undefined && value !== "")
-      .filter(([key, value]) => !(key === "audience" && String(value).trim().toLowerCase() === "gardener"))
-  );
-
-  return Object.keys(sanitized).length ? sanitized : null;
-}
-
-function upsertMigratedSubjectConstruct(targetDb, construct = {}) {
-  ensureSubjectspaceTables(targetDb);
-  const provenance = sanitizeLegacyProvenance(construct.provenance);
-
-  targetDb.prepare(`
-    INSERT INTO subject_constructs (
-      id, subjectId, subjectLabel, constructLabel, target, objective, contextJson,
-      stepsJson, notes, tagsJson, strandsJson, provenanceJson, relatedConstructIdsJson, learnedCount, updatedAt
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      subjectId = excluded.subjectId,
-      subjectLabel = excluded.subjectLabel,
-      constructLabel = excluded.constructLabel,
-      target = excluded.target,
-      objective = excluded.objective,
-      contextJson = excluded.contextJson,
-      stepsJson = excluded.stepsJson,
-      notes = excluded.notes,
-      tagsJson = excluded.tagsJson,
-      strandsJson = excluded.strandsJson,
-      provenanceJson = excluded.provenanceJson,
-      relatedConstructIdsJson = excluded.relatedConstructIdsJson,
-      learnedCount = excluded.learnedCount,
-      updatedAt = excluded.updatedAt
-  `).run(
-    String(construct.id ?? ""),
-    String(construct.subjectId ?? ""),
-    String(construct.subjectLabel ?? ""),
-    String(construct.constructLabel ?? ""),
-    construct.target ? String(construct.target) : null,
-    construct.objective ? String(construct.objective) : null,
-    JSON.stringify(construct.context ?? {}),
-    JSON.stringify(Array.isArray(construct.steps) ? construct.steps : []),
-    construct.notes ? String(construct.notes) : null,
-    JSON.stringify(Array.isArray(construct.tags) ? construct.tags : []),
-    JSON.stringify(Array.isArray(construct.strands) ? construct.strands : []),
-    provenance ? JSON.stringify(provenance) : null,
-    Array.isArray(construct.relatedConstructIds) && construct.relatedConstructIds.length
-      ? JSON.stringify(construct.relatedConstructIds)
-      : null,
-    Math.max(Number(construct.learnedCount ?? 1) || 1, 1),
-    String(construct.updatedAt ?? new Date().toISOString())
-  );
-}
-
-function upsertMigratedSoundConstruct(targetDb, construct = {}) {
-  ensureSoundspaceTables(targetDb);
-  const provenance = sanitizeLegacyProvenance(construct.provenance);
-
-  targetDb.prepare(`
-    INSERT INTO sound_constructs (
-      id, name, deviceBrand, deviceModel, deviceType, sourceType, sourceBrand, sourceModel, presetSystem, presetCategory, presetName, goal, venueSize,
-      eventType, speakerConfig, setupJson, tagsJson, strandsJson, llmSummary,
-      provenanceJson, learnedCount, updatedAt
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      name = excluded.name,
-      deviceBrand = excluded.deviceBrand,
-      deviceModel = excluded.deviceModel,
-      deviceType = excluded.deviceType,
-      sourceType = excluded.sourceType,
-      sourceBrand = excluded.sourceBrand,
-      sourceModel = excluded.sourceModel,
-      presetSystem = excluded.presetSystem,
-      presetCategory = excluded.presetCategory,
-      presetName = excluded.presetName,
-      goal = excluded.goal,
-      venueSize = excluded.venueSize,
-      eventType = excluded.eventType,
-      speakerConfig = excluded.speakerConfig,
-      setupJson = excluded.setupJson,
-      tagsJson = excluded.tagsJson,
-      strandsJson = excluded.strandsJson,
-      llmSummary = excluded.llmSummary,
-      provenanceJson = excluded.provenanceJson,
-      learnedCount = excluded.learnedCount,
-      updatedAt = excluded.updatedAt
-  `).run(
-    String(construct.id ?? ""),
-    String(construct.name ?? ""),
-    construct.deviceBrand ? String(construct.deviceBrand) : null,
-    construct.deviceModel ? String(construct.deviceModel) : null,
-    construct.deviceType ? String(construct.deviceType) : null,
-    construct.sourceType ? String(construct.sourceType) : null,
-    construct.sourceBrand ? String(construct.sourceBrand) : null,
-    construct.sourceModel ? String(construct.sourceModel) : null,
-    construct.presetSystem ? String(construct.presetSystem) : null,
-    construct.presetCategory ? String(construct.presetCategory) : null,
-    construct.presetName ? String(construct.presetName) : null,
-    construct.goal ? String(construct.goal) : null,
-    construct.venueSize ? String(construct.venueSize) : null,
-    construct.eventType ? String(construct.eventType) : null,
-    construct.speakerConfig ? String(construct.speakerConfig) : null,
-    JSON.stringify(construct.setup ?? {}),
-    JSON.stringify(Array.isArray(construct.tags) ? construct.tags : []),
-    JSON.stringify(Array.isArray(construct.strands) ? construct.strands : []),
-    construct.llmSummary ? String(construct.llmSummary) : null,
-    provenance ? JSON.stringify(provenance) : null,
-    Math.max(Number(construct.learnedCount ?? 1) || 1, 1),
-    String(construct.updatedAt ?? new Date().toISOString())
-  );
-}
-
 function countConstructs(db) {
   ensureSubjectspaceTables(db);
   ensureSoundspaceTables(db);
@@ -550,6 +517,8 @@ function countConstructs(db) {
   const soundCount = Number(db.prepare("SELECT COUNT(*) as count FROM sound_constructs").get().count ?? 0);
   const binderCount = Number(db.prepare("SELECT COUNT(*) as count FROM strand_binders").get().count ?? 0);
   const constructLinkCount = Number(db.prepare("SELECT COUNT(*) as count FROM construct_links").get().count ?? 0);
+  const subjectStrandCount = Number(db.prepare("SELECT COUNT(*) as count FROM subject_strands").get().count ?? 0);
+  const constructStrandCount = Number(db.prepare("SELECT COUNT(*) as count FROM construct_strands").get().count ?? 0);
   const conversationCount = Number(db.prepare("SELECT COUNT(*) as count FROM chat_conversations").get().count ?? 0);
   const chatMessageCount = Number(db.prepare("SELECT COUNT(*) as count FROM chat_messages").get().count ?? 0);
 
@@ -558,6 +527,8 @@ function countConstructs(db) {
     soundCount,
     binderCount,
     constructLinkCount,
+    subjectStrandCount,
+    constructStrandCount,
     conversationCount,
     chatMessageCount
   };
@@ -832,6 +803,8 @@ async function buildBackendOverviewPayload(db) {
   const counts = countConstructs(db);
   const subjects = listSubjectSpaces(db);
   const tables = listBackendTableSummaries(db);
+  const datasetHealth = auditSubjectDataset(db, { maxIssues: 6 });
+  let releaseDatasetHealth = null;
   let databaseSizeBytes = null;
 
   try {
@@ -839,6 +812,15 @@ async function buildBackendOverviewPayload(db) {
     databaseSizeBytes = Number(metadata.size ?? 0);
   } catch {
     databaseSizeBytes = null;
+  }
+
+  try {
+    releaseDatasetHealth = {
+      activeSeedFile: auditSubjectSeedFile(defaultSubjectSeedsPath, { maxIssues: 4 }),
+      releaseSeedFile: auditSubjectSeedFile(releaseSubjectSeedsPath, { maxIssues: 4 })
+    };
+  } catch {
+    releaseDatasetHealth = null;
   }
 
   return {
@@ -853,80 +835,11 @@ async function buildBackendOverviewPayload(db) {
       ...counts,
       subjectSpaceCount: subjects.length
     },
+    datasetHealth,
+    releaseDatasetHealth,
     tables,
     subjects: subjects.slice(0, 8)
   };
-}
-
-async function listLegacyDatabaseCandidates() {
-  try {
-    return (await readdir(dataDir))
-      .filter((name) => name.endsWith(".sqlite") && name !== "strandspace.sqlite")
-      .sort((left, right) => {
-        const leftLower = left.toLowerCase();
-        const rightLower = right.toLowerCase();
-        const leftPenalty = Number(/backup|copy|test|tmp/.test(leftLower));
-        const rightPenalty = Number(/backup|copy|test|tmp/.test(rightLower));
-
-        return leftPenalty - rightPenalty
-          || left.length - right.length
-          || left.localeCompare(right);
-      });
-  } catch {
-    return [];
-  }
-}
-
-export function migrateLegacyDatabase(sourcePath, targetPath = preferredDatabasePath) {
-  const sourceDb = new DatabaseSync(sourcePath);
-  const targetDb = new DatabaseSync(targetPath);
-
-  try {
-    targetDb.exec("PRAGMA journal_mode = WAL;");
-    ensureSubjectspaceTables(targetDb);
-    ensureSoundspaceTables(targetDb);
-
-    const subjectConstructs = listSubjectConstructs(sourceDb);
-    const soundConstructs = listSoundConstructs(sourceDb);
-
-    targetDb.exec("BEGIN");
-
-    try {
-      for (const construct of subjectConstructs) {
-        upsertMigratedSubjectConstruct(targetDb, construct);
-      }
-
-      for (const construct of soundConstructs) {
-        upsertMigratedSoundConstruct(targetDb, construct);
-      }
-
-      targetDb.exec("COMMIT");
-    } catch (error) {
-      try {
-        targetDb.exec("ROLLBACK");
-      } catch {
-        // Best effort rollback.
-      }
-      throw error;
-    }
-
-    return {
-      subjectCount: subjectConstructs.length,
-      soundCount: soundConstructs.length
-    };
-  } finally {
-    try {
-      sourceDb.close();
-    } catch {
-      // Database may already be closed.
-    }
-
-    try {
-      targetDb.close();
-    } catch {
-      // Database may already be closed.
-    }
-  }
 }
 
 function sendJson(res, statusCode, payload) {
@@ -1071,13 +984,107 @@ function hydrateSubjectConstructWithRelations(db, construct = null) {
       ? hydrated.relatedConstructIds.map((relatedId) => getSubjectConstruct(db, relatedId)).filter(Boolean)
       : []
   );
+  const linkedConstructs = listConstructLinks(db, hydrated.id)
+    .slice(0, 6)
+    .map((link) => {
+      const related = getSubjectConstruct(db, link.relatedConstructId);
+      return {
+        ...link,
+        constructLabel: related?.constructLabel ?? link.relatedConstructId,
+        subjectLabel: related?.subjectLabel ?? hydrated.subjectLabel
+      };
+    });
 
   return {
     ...hydrated,
     relatedConstructs,
-    linkedConstructs: listConstructLinks(db, hydrated.id).slice(0, 6),
-    binderPreview: listStrandBinders(db, hydrated.subjectId).slice(0, 6)
+    linkedConstructs,
+    binderPreview: listStrandBinders(db, hydrated.subjectId).slice(0, 6),
+    constructStrands: listConstructStrands(db, hydrated.id, { limit: 12 }),
+    subjectStrandPreview: listSubjectStrands(db, hydrated.subjectId, { limit: 12 })
   };
+}
+
+function intersectionCount(left = [], right = []) {
+  const leftSet = new Set((Array.isArray(left) ? left : []).filter(Boolean));
+  const rightSet = new Set((Array.isArray(right) ? right : []).filter(Boolean));
+  let count = 0;
+  for (const value of leftSet) {
+    if (rightSet.has(value)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function chooseChatEnrichmentBase(db, recall = {}, suggestedConstruct = null) {
+  if (!suggestedConstruct || typeof suggestedConstruct !== "object") {
+    return null;
+  }
+
+  const draftTokens = extractReferenceTokens(normalizeConstructText(suggestedConstruct));
+  const draftStrands = new Set([
+    ...(Array.isArray(suggestedConstruct.strands) ? suggestedConstruct.strands : []),
+    ...(Array.isArray(suggestedConstruct.tags) ? suggestedConstruct.tags : [])
+  ].map((value) => String(value ?? "").trim()).filter(Boolean));
+  const candidateIds = [
+    recall.matched?.id,
+    ...(recall.candidates ?? []).map((candidate) => candidate.id)
+  ].filter(Boolean);
+
+  let strongest = null;
+  for (const id of candidateIds.slice(0, 3)) {
+    const construct = getSubjectConstruct(db, id);
+    if (!construct) {
+      continue;
+    }
+
+    const candidateTokens = extractReferenceTokens(normalizeConstructText(construct));
+    const candidateStrands = listConstructStrands(db, construct.id, { limit: 20 });
+    const strandKeys = candidateStrands.flatMap((strand) => [
+      String(strand.strandKey ?? "").trim(),
+      String(strand.label ?? "").trim()
+    ]).filter(Boolean);
+    const tokenOverlap = intersectionCount(draftTokens, candidateTokens);
+    const strandOverlap = intersectionCount(Array.from(draftStrands), strandKeys);
+    const recallEntry = construct.id === recall.matched?.id
+      ? recall.matched
+      : (recall.candidates ?? []).find((candidate) => candidate.id === construct.id);
+    const lexicalScore = Number(recallEntry?.score ?? 0);
+    const totalScore = tokenOverlap + (strandOverlap * 1.4) + (lexicalScore / 12);
+
+    if (totalScore < 2.35) {
+      continue;
+    }
+
+    if (!strongest || totalScore > strongest.totalScore) {
+      strongest = {
+        construct,
+        totalScore,
+        tokenOverlap,
+        strandOverlap
+      };
+    }
+  }
+
+  return strongest;
+}
+
+function mergeChatConstructIntoLocalBase(baseConstruct = null, suggestedConstruct = null, meta = {}) {
+  if (!baseConstruct?.id) {
+    return suggestedConstruct;
+  }
+
+  return mergeSubjectConstruct(baseConstruct, suggestedConstruct, {
+    preserveId: true,
+    provenance: {
+      ...(baseConstruct.provenance ?? {}),
+      ...(suggestedConstruct?.provenance ?? {}),
+      ...meta,
+      enrichedBaseConstructId: baseConstruct.id,
+      enrichedFromChat: true
+    }
+  });
 }
 
 function buildConversationId() {
@@ -1336,6 +1343,7 @@ function hydrateConstructForClient(construct = null) {
 
   return {
     ...construct,
+    relevance: buildConstructRelevanceSummary(construct),
     provenanceSource: String(construct.provenance?.source ?? "").trim() || null,
     isManualReference: isManualConstruct(construct),
     sources: buildConstructSources(construct)
@@ -1677,58 +1685,283 @@ function buildSubjectspaceBenchmark(localLatencyMs, llm = {}, prompts = null) {
   };
 }
 
-async function resolveDatabasePath() {
-  if (databasePath) {
-    return databasePath;
+function buildRecallGroundingBlock(recall = {}) {
+  const matched = recall?.matched ?? null;
+  if (!matched) {
+    return "";
   }
 
-  if (configuredDatabasePath) {
-    databasePath = isAbsolute(configuredDatabasePath)
-      ? configuredDatabasePath
-      : join(__dirname, configuredDatabasePath);
-    return databasePath;
+  const contextLines = Object.entries(matched.context ?? {})
+    .filter(([key, value]) => key && value)
+    .slice(0, 5)
+    .map(([key, value]) => `- ${key}: ${value}`);
+  const steps = Array.isArray(matched.steps) ? matched.steps.filter(Boolean).slice(0, 4) : [];
+  const tags = Array.isArray(matched.tags) ? matched.tags.filter(Boolean).slice(0, 8) : [];
+
+  return [
+    "Local Strandspace recall context:",
+    `- construct: ${matched.constructLabel || "Untitled construct"}`,
+    matched.subjectLabel ? `- subject: ${matched.subjectLabel}` : "",
+    matched.target ? `- target: ${matched.target}` : "",
+    matched.objective ? `- objective: ${matched.objective}` : "",
+    contextLines.length ? `Context:\n${contextLines.join("\n")}` : "",
+    steps.length ? `Steps:\n${steps.map((step, index) => `${index + 1}. ${step}`).join("\n")}` : "",
+    tags.length ? `Tags:\n- ${tags.join("\n- ")}` : ""
+  ].filter(Boolean).join("\n\n");
+}
+
+function buildOllamaPrompt({
+  question = "",
+  subjectLabel = "",
+  recall = null,
+  groundWithLocalRecall = true
+} = {}) {
+  const normalizedQuestion = normalizePromptText(question);
+  if (!groundWithLocalRecall || !recall?.matched) {
+    return {
+      prompt: normalizedQuestion,
+      promptMode: "question-only",
+      grounded: false
+    };
   }
 
-  let preferredExists = false;
-  try {
-    await access(preferredDatabasePath);
-    preferredExists = true;
-  } catch {
-    preferredExists = false;
+  const grounding = buildRecallGroundingBlock(recall);
+  return {
+    prompt: [
+      "You are helping test a local-first Strandspace memory system.",
+      "Answer the user's question using the local recall context when it is present.",
+      "If the local memory does not contain an exact value, say that clearly instead of inventing one.",
+      subjectLabel ? `Subject: ${subjectLabel}` : "",
+      `User question: ${normalizedQuestion}`,
+      grounding
+    ].filter(Boolean).join("\n\n"),
+    promptMode: "local-grounded",
+    grounded: true
+  };
+}
+
+function buildRecallCandidateGroundingBlock(recall = {}) {
+  const candidates = Array.isArray(recall?.candidates)
+    ? recall.candidates.filter((candidate) => candidate && candidate.id).slice(0, 3)
+    : [];
+  if (!candidates.length) {
+    return "";
   }
 
-  const legacyCandidates = await listLegacyDatabaseCandidates();
-  const legacyPath = legacyCandidates[0] ? join(dataDir, legacyCandidates[0]) : "";
+  return [
+    "Top local Strandspace candidates:",
+    ...candidates.map((candidate, index) => {
+      const contextEntries = Object.entries(candidate.context ?? {})
+        .filter(([key, value]) => key && value)
+        .slice(0, 2)
+        .map(([key, value]) => `    - ${key}: ${value}`);
+      const stepPreview = Array.isArray(candidate.steps)
+        ? candidate.steps.filter(Boolean).slice(0, 2).map((step) => `    - ${step}`)
+        : [];
+      const tagPreview = Array.isArray(candidate.tags)
+        ? candidate.tags.filter(Boolean).slice(0, 4)
+        : [];
 
-  if (preferredExists) {
-    try {
-      const preferredDb = new DatabaseSync(preferredDatabasePath);
-      const counts = countConstructs(preferredDb);
-      preferredDb.close();
+      return [
+        `${index + 1}. ${candidate.constructLabel || "Untitled construct"} (score ${Number(candidate.score ?? 0).toFixed(2)})`,
+        candidate.target ? `   target: ${candidate.target}` : "",
+        candidate.objective ? `   objective: ${candidate.objective}` : "",
+        contextEntries.length ? `   context:\n${contextEntries.join("\n")}` : "",
+        stepPreview.length ? `   steps:\n${stepPreview.join("\n")}` : "",
+        tagPreview.length ? `   tags: ${tagPreview.join(", ")}` : ""
+      ].filter(Boolean).join("\n");
+    })
+  ].join("\n\n");
+}
 
-      if (counts.subjectCount === 0 && counts.soundCount === 0 && legacyPath) {
-        const migrated = migrateLegacyDatabase(legacyPath, preferredDatabasePath);
-        console.log(
-          `Migrated Strandspace data to ${preferredDatabasePath} from ${legacyPath} (${migrated.subjectCount} subject, ${migrated.soundCount} sound).`
-        );
+function buildLocalChatConstructLabel(message = "", matchedConstruct = null) {
+  if (matchedConstruct?.constructLabel) {
+    return matchedConstruct.constructLabel;
+  }
+
+  const normalized = normalizePromptText(message)
+    .replace(/^(what|how|why|when|where|can|could|would|should|tell me|give me|show me)\b/i, "")
+    .replace(/^[\s:,-]+/, "")
+    .replace(/[?!.]+$/g, "")
+    .trim();
+
+  if (!normalized) {
+    return "Local chat recall";
+  }
+
+  const label = normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  return `${label} recall`.slice(0, 120);
+}
+
+function buildFallbackLocalConstructBlock({
+  message = "",
+  answer = "",
+  subjectLabel = "",
+  recall = null
+} = {}) {
+  const matched = recall?.matched ?? null;
+  const contextLines = Object.entries(matched?.context ?? {})
+    .filter(([key, value]) => key && value)
+    .slice(0, 3)
+    .map(([key, value]) => `- ${key}: ${value}`);
+  const stepLines = Array.isArray(matched?.steps)
+    ? matched.steps.filter(Boolean).slice(0, 3).map((step) => `- ${step}`)
+    : [];
+  const tagLines = Array.isArray(matched?.tags)
+    ? matched.tags.filter(Boolean).slice(0, 5).map((tag) => `- ${tag}`)
+    : [];
+
+  return [
+    `Subject: ${subjectLabel || matched?.subjectLabel || "General Recall"}`,
+    `Construct Label: ${buildLocalChatConstructLabel(message, matched)}`,
+    matched?.target ? `Target: ${matched.target}` : `Target: ${normalizePromptText(message).slice(0, 180)}`,
+    matched?.objective ? `Objective: ${matched.objective}` : "",
+    contextLines.length ? `Context:\n${contextLines.join("\n")}` : "",
+    stepLines.length ? `Steps:\n${stepLines.join("\n")}` : "",
+    answer ? `Notes: ${String(answer ?? "").trim().replace(/\s+/g, " ")}` : "",
+    tagLines.length ? `Tags:\n${tagLines.join("\n")}` : ""
+  ].filter(Boolean).join("\n");
+}
+
+function parseLocalChatAssistOutput(output = "", {
+  message = "",
+  subjectId = "",
+  subjectLabel = "",
+  recall = null
+} = {}) {
+  const raw = String(output ?? "").replace(/\r\n/g, "\n").trim();
+  const answerMatch = raw.match(/(?:^|\n)ANSWER:\s*([\s\S]*?)(?=\nCONSTRUCT:\s*|$)/i);
+  const constructMatch = raw.match(/(?:^|\n)CONSTRUCT:\s*([\s\S]*)$/i);
+  const answer = String(answerMatch?.[1] ?? raw).trim() || String(raw).trim();
+  const constructBlock = String(
+    constructMatch?.[1]
+    ?? buildFallbackLocalConstructBlock({
+      message,
+      answer,
+      subjectLabel,
+      recall
+    })
+  ).trim();
+  const drafts = ingestConversationToConstructs({
+    subjectId,
+    subjectLabel,
+    messages: [
+      {
+        role: "user",
+        content: message
+      },
+      {
+        role: "assistant",
+        content: constructBlock
       }
-    } catch {
-      // If inspection fails, keep the preferred database path and let normal startup surface any issue.
-    }
+    ]
+  });
+  const draft = drafts[0] ?? buildSubjectConstructDraftFromInput(constructBlock, {
+    subjectId,
+    subjectLabel
+  });
 
-    databasePath = preferredDatabasePath;
-    return databasePath;
+  return {
+    answer,
+    constructBlock,
+    draft
+  };
+}
+
+function buildOllamaChatPrompt({
+  message = "",
+  subjectLabel = "",
+  recall = null
+} = {}) {
+  const promptPlan = buildOllamaPrompt({
+    question: message,
+    subjectLabel,
+    recall,
+    groundWithLocalRecall: true
+  });
+  const candidateGrounding = buildRecallCandidateGroundingBlock(recall);
+
+  return {
+    ...promptPlan,
+    prompt: [
+      "You are the local Strandspace assistant running on a local LLM.",
+      "Read the local Strandspace memory below before answering.",
+      "If the memory is partial, fill the gap with a practical reusable construct draft instead of repeating that more information is needed.",
+      "Return exactly two sections in this order.",
+      "ANSWER:",
+      "Provide a direct user-facing reply in plain text.",
+      "",
+      "CONSTRUCT:",
+      `Subject: ${subjectLabel || recall?.matched?.subjectLabel || "General Recall"}`,
+      "Construct Label: concise reusable construct name",
+      "Target: what this construct covers",
+      "Objective: why the construct matters",
+      "Context:",
+      "- key: value",
+      "Steps:",
+      "- reusable step",
+      "Notes: concise summary",
+      "Tags:",
+      "- keyword",
+      "",
+      promptPlan.prompt,
+      candidateGrounding
+    ].filter(Boolean).join("\n\n")
+  };
+}
+
+function buildOllamaBenchmark(localLatencyMs, ollama = {}, promptMode = "question-only") {
+  const promptNote = promptMode === "local-grounded"
+    ? " Ollama was grounded with the local construct before generating its reply."
+    : " Ollama answered from the raw question only.";
+
+  if (!ollama.enabled) {
+    return {
+      available: false,
+      faster: "strandbase",
+      speedup: null,
+      deltaMs: null,
+      summary: `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. ${ollama.reason}${promptNote}`.trim()
+    };
   }
 
-  if (legacyPath) {
-    const migrated = migrateLegacyDatabase(legacyPath, preferredDatabasePath);
-    console.log(
-      `Migrated Strandspace data to ${preferredDatabasePath} from ${legacyPath} (${migrated.subjectCount} subject, ${migrated.soundCount} sound).`
-    );
+  if (ollama.error) {
+    return {
+      available: false,
+      faster: "strandbase",
+      speedup: null,
+      deltaMs: Number.isFinite(ollama.latencyMs) ? toLatencyMs(Math.abs(Number(ollama.latencyMs) - localLatencyMs)) : null,
+      summary: Number.isFinite(ollama.latencyMs)
+        ? `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. Ollama failed after ${Number(ollama.latencyMs).toFixed(3)} ms: ${ollama.error}${promptNote}`
+        : `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. Ollama failed: ${ollama.error}${promptNote}`
+    };
   }
 
-  databasePath = preferredDatabasePath;
-  return databasePath;
+  if (!Number.isFinite(ollama.latencyMs)) {
+    return {
+      available: false,
+      faster: "strandbase",
+      speedup: null,
+      deltaMs: null,
+      summary: `Strandbase recall answered in ${localLatencyMs.toFixed(3)} ms. Ollama did not return a measurable latency.${promptNote}`
+    };
+  }
+
+  const faster = localLatencyMs <= ollama.latencyMs ? "strandbase" : "ollama";
+  const fasterLatency = faster === "strandbase" ? localLatencyMs : ollama.latencyMs;
+  const slowerLatency = faster === "strandbase" ? ollama.latencyMs : localLatencyMs;
+  const speedup = Number((slowerLatency / Math.max(fasterLatency, 0.001)).toFixed(1));
+  const deltaMs = toLatencyMs(slowerLatency - fasterLatency);
+
+  return {
+    available: true,
+    faster,
+    speedup,
+    deltaMs,
+    summary: faster === "strandbase"
+      ? `Strandbase recall was ${speedup}x faster than Ollama for this prompt.${promptNote}`
+      : `Ollama was ${speedup}x faster than Strandbase recall for this prompt.${promptNote}`
+  };
 }
 
 function resolvePublicPath(pathname = "") {
@@ -2248,6 +2481,20 @@ async function handleApi(req, res) {
     return;
   }
 
+  if (url.pathname === "/api/system/threat-model") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      ...getThreatModel()
+    });
+    return;
+  }
+
   if (url.pathname === "/api/stats") {
     if (req.method !== "GET") {
       res.writeHead(405, { Allow: "GET" });
@@ -2260,9 +2507,235 @@ async function handleApi(req, res) {
       ok: true,
       database: overview.database,
       counts: overview.counts,
+      datasetHealth: overview.datasetHealth,
+      releaseDatasetHealth: overview.releaseDatasetHealth,
       tables: overview.tables,
       subjects: overview.subjects,
-      openai: buildSystemHealthPayload().openai
+      openai: buildSystemHealthPayload().openai,
+      ollama: buildSystemHealthPayload().ollama
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/ollama/status") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    const status = await runTimed("Ollama status check", () => getOllamaStatus(), {
+      route: url.pathname
+    });
+    sendJson(res, 200, status);
+    return;
+  }
+
+  if (url.pathname === "/api/ollama/generate") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const prompt = normalizePromptText(payload.prompt ?? payload.question ?? "");
+    const subjectId = String(payload.subjectId ?? payload.subject ?? "").trim();
+    const system = String(payload.system ?? "").trim();
+    const model = String(payload.model ?? "").trim();
+    const groundWithLocalRecall = payload.groundWithLocalRecall !== false;
+
+    if (!prompt) {
+      sendJson(res, 400, {
+        ok: false,
+        code: "PROMPT_REQUIRED",
+        error: "prompt is required"
+      });
+      return;
+    }
+
+    const recallRun = measureSync(() => recallSubjectSpace(db, {
+      question: prompt,
+      subjectId
+    }));
+    const recall = recallRun.result;
+    const subjectLabel = resolveSubjectspaceLabel(db, subjectId, recall);
+    const promptPlan = buildOllamaPrompt({
+      question: prompt,
+      subjectLabel,
+      recall,
+      groundWithLocalRecall
+    });
+
+    let result;
+    let latencyMs = null;
+    const started = performance.now();
+    try {
+      result = await runTimed("Ollama generate", () => generateWithOllama({
+        prompt: promptPlan.prompt,
+        model,
+        system
+      }), {
+        route: url.pathname,
+        subjectId: subjectId || recall.matched?.subjectId || "",
+        promptMode: promptPlan.promptMode,
+        question: previewQuestionForLogs(prompt)
+      });
+      latencyMs = toLatencyMs(performance.now() - started);
+    } catch (error) {
+      const normalizedError = buildApiErrorPayload(error, "Unable to generate a local Ollama response.");
+      sendJson(res, normalizedError.statusCode, {
+        ...normalizedError.payload,
+        prompt,
+        promptMode: promptPlan.promptMode,
+        grounded: promptPlan.grounded,
+        recall,
+        recallLatencyMs: recallRun.latencyMs
+      });
+      return;
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      provider: "ollama",
+      prompt,
+      promptMode: promptPlan.promptMode,
+      grounded: promptPlan.grounded,
+      subjectId: recall.matched?.subjectId ?? subjectId,
+      subjectLabel,
+      recall,
+      recallLatencyMs: recallRun.latencyMs,
+      ollama: {
+        enabled: true,
+        label: "Ollama local model",
+        model: result.model,
+        latencyMs,
+        output: result.output,
+        doneReason: result.doneReason,
+        stats: result.stats
+      }
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/ollama/compare") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const { question, subjectId } = readSubjectspaceParams(payload);
+    const system = String(payload.system ?? "").trim();
+    const model = String(payload.model ?? "").trim();
+    const groundWithLocalRecall = payload.groundWithLocalRecall !== false;
+
+    if (!question) {
+      sendJson(res, 400, {
+        ok: false,
+        code: "QUESTION_REQUIRED",
+        error: "question is required"
+      });
+      return;
+    }
+
+    const localRun = measureSync(() => recallSubjectSpace(db, {
+      question,
+      subjectId
+    }));
+    const recall = localRun.result;
+    const subjectLabel = resolveSubjectspaceLabel(db, subjectId, recall);
+    const promptPlan = buildOllamaPrompt({
+      question,
+      subjectLabel,
+      recall,
+      groundWithLocalRecall
+    });
+    let ollama = {
+      label: "Ollama local model",
+      enabled: true,
+      model: model || getOllamaConfig().defaultModel,
+      latencyMs: null,
+      promptMode: promptPlan.promptMode,
+      output: "",
+      reason: "",
+      error: null,
+      stats: null
+    };
+
+    const started = performance.now();
+    try {
+      const result = await runTimed("Ollama compare generate", () => generateWithOllama({
+        prompt: promptPlan.prompt,
+        model,
+        system
+      }), {
+        route: url.pathname,
+        subjectId: subjectId || recall.matched?.subjectId || "",
+        promptMode: promptPlan.promptMode,
+        question: previewQuestionForLogs(question)
+      });
+      ollama = {
+        ...ollama,
+        model: result.model,
+        latencyMs: toLatencyMs(performance.now() - started),
+        output: result.output,
+        stats: result.stats
+      };
+    } catch (error) {
+      ollama = {
+        ...ollama,
+        latencyMs: toLatencyMs(performance.now() - started),
+        error: error?.payload?.error ?? (error instanceof Error ? error.message : String(error)),
+        reason: error?.payload?.detail ?? ""
+      };
+    }
+
+    logEvent("info", "Ollama compare completed", {
+      route: url.pathname,
+      localLatencyMs: localRun.latencyMs,
+      ollamaLatencyMs: ollama.latencyMs,
+      promptMode: promptPlan.promptMode,
+      question: previewQuestionForLogs(question),
+      subjectId: recall.matched?.subjectId ?? subjectId ?? "",
+      localReady: recall.ready
+    });
+
+    sendJson(res, 200, {
+      ok: true,
+      question,
+      subjectId: recall.matched?.subjectId ?? subjectId,
+      subjectLabel,
+      local: {
+        label: "Strandbase recall",
+        latencyMs: localRun.latencyMs,
+        ready: recall.ready,
+        route: recall.routing?.mode ?? null,
+        confidence: Number(recall.readiness?.confidence ?? 0),
+        candidateCount: Number(recall.candidates?.length ?? 0),
+        constructLabel: recall.matched?.constructLabel ?? null,
+        answer: recall.answer
+      },
+      ollama,
+      comparison: buildOllamaBenchmark(localRun.latencyMs, ollama, promptPlan.promptMode),
+      promptMode: promptPlan.promptMode,
+      grounded: promptPlan.grounded,
+      recall
     });
     return;
   }
@@ -2276,6 +2749,53 @@ async function handleApi(req, res) {
     }
 
     sendJson(res, 200, await buildBackendOverviewPayload(db));
+    return;
+  }
+
+  if (url.pathname === "/api/subjectspace/dataset/health") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    const subjectId = String(url.searchParams.get("subjectId") ?? url.searchParams.get("subject") ?? "").trim();
+    sendJson(res, 200, {
+      ok: true,
+      subjectId: subjectId || null,
+      health: auditSubjectDataset(db, {
+        subjectId,
+        maxIssues: Number(url.searchParams.get("maxIssues") ?? 10) || 10
+      })
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/subjectspace/dataset/clean") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const subjectId = String(payload.subjectId ?? payload.subject ?? "").trim();
+    const result = cleanSubjectDataset(db, {
+      subjectId,
+      maxIssues: Number(payload.maxIssues ?? 10) || 10
+    });
+
+    sendJson(res, 200, {
+      ok: true,
+      ...result
+    });
     return;
   }
 
@@ -2497,7 +3017,11 @@ async function handleApi(req, res) {
       || "Custom Subject";
 
     if (!input) {
-      sendJson(res, 400, { error: "input is required" });
+      sendJson(res, 400, {
+        ok: false,
+        code: "INPUT_REQUIRED",
+        error: "input is required"
+      });
       return;
     }
 
@@ -3023,6 +3547,136 @@ async function handleApi(req, res) {
       return;
     }
 
+    const allowLocalModel = payload.useLocalModel !== false;
+    const requestedLocalModel = String(payload.localModel ?? payload.model ?? "").trim();
+    if (allowLocalModel) {
+      const ollamaStatus = await getOllamaStatus();
+      if (ollamaStatus.reachable && Array.isArray(ollamaStatus.models) && ollamaStatus.models.length) {
+        const promptPlan = buildOllamaChatPrompt({
+          message,
+          subjectLabel,
+          recall
+        });
+
+        try {
+          const ollamaResult = await runTimed("Subjectspace chat local assist", () => generateWithOllama({
+            prompt: promptPlan.prompt,
+            model: requestedLocalModel,
+            system: "Return the exact ANSWER and CONSTRUCT sections requested in the prompt."
+          }), {
+            route: url.pathname,
+            provider: "ollama",
+            subjectId: subjectId || recall.matched?.subjectId || "",
+            promptMode: promptPlan.promptMode,
+            question: previewQuestionForLogs(message)
+          });
+          const parsedLocalAssist = parseLocalChatAssistOutput(ollamaResult.output, {
+            message,
+            subjectId: subjectId || recall.matched?.subjectId || "",
+            subjectLabel,
+            recall
+          });
+          const chatMergeBase = chooseChatEnrichmentBase(db, recall, parsedLocalAssist.draft);
+          const chatDraft = mergeChatConstructIntoLocalBase(chatMergeBase?.construct, parsedLocalAssist.draft, {
+            source: "chatbot-derived-ollama",
+            provider: "ollama",
+            model: ollamaResult.model,
+            conversationId,
+            chatbotDerived: true,
+            groundedWithLocalRecall: promptPlan.grounded,
+            promptMode: promptPlan.promptMode,
+            learnedFromQuestion: message,
+            enrichmentScore: Number(chatMergeBase?.totalScore ?? 0),
+            enrichmentTokenOverlap: Number(chatMergeBase?.tokenOverlap ?? 0),
+            enrichmentStrandOverlap: Number(chatMergeBase?.strandOverlap ?? 0)
+          });
+          const savedConstruct = upsertSubjectConstruct(db, mergeSubjectConstruct(chatDraft, {
+            provenance: {
+              ...(chatDraft?.provenance ?? {}),
+              source: "chatbot-derived-ollama",
+              provider: "ollama",
+              model: ollamaResult.model,
+              conversationId,
+              chatbotDerived: true,
+              groundedWithLocalRecall: promptPlan.grounded,
+              promptMode: promptPlan.promptMode,
+              learnedFromQuestion: message
+            }
+          }, {
+            preserveId: false,
+            provenance: {
+              ...(chatDraft?.provenance ?? {}),
+              source: "chatbot-derived-ollama",
+              provider: "ollama",
+              model: ollamaResult.model,
+              conversationId,
+              chatbotDerived: true,
+              groundedWithLocalRecall: promptPlan.grounded,
+              promptMode: promptPlan.promptMode,
+              learnedFromQuestion: message
+            }
+          }));
+          const refreshedRecall = recallSubjectSpace(db, {
+            question: message,
+            subjectId: savedConstruct.subjectId
+          });
+          const answer = refreshedRecall.ready
+            ? refreshedRecall.answer
+            : (parsedLocalAssist.answer || recall.answer);
+
+          appendChatMessage(db, {
+            conversationId,
+            role: "assistant",
+            content: answer,
+            subjectId: savedConstruct.subjectId,
+            constructId: savedConstruct.id,
+            metadata: {
+              source: "chatbot-derived-ollama",
+              provider: "ollama",
+              model: ollamaResult.model,
+              promptMode: promptPlan.promptMode
+            }
+          });
+
+          sendJson(res, 200, {
+            ok: true,
+            source: "chatbot-derived-ollama",
+            conversationId,
+            answer,
+            recall: refreshedRecall,
+            recallLatencyMs: initialRecall.latencyMs,
+            savedConstruct: hydrateSubjectConstructWithRelations(db, savedConstruct),
+            ollama: {
+              enabled: true,
+              provider: "ollama",
+              model: ollamaResult.model,
+              output: ollamaResult.output,
+              doneReason: ollamaResult.doneReason,
+              stats: ollamaResult.stats,
+              promptMode: promptPlan.promptMode,
+              grounded: promptPlan.grounded
+            },
+            config: {
+              provider: "ollama",
+              enabled: true,
+              model: ollamaResult.model,
+              timeoutMs: ollamaStatus.timeoutMs,
+              baseUrl: ollamaStatus.baseUrl
+            }
+          });
+          return;
+        } catch (error) {
+          logEvent("warn", "Subjectspace chat local assist unavailable", {
+            route: url.pathname,
+            provider: "ollama",
+            subjectId: subjectId || recall.matched?.subjectId || "",
+            question: previewQuestionForLogs(message),
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
+    }
+
     const config = getOpenAiAssistStatus();
     if (!config.enabled) {
       appendChatMessage(db, {
@@ -3076,9 +3730,20 @@ async function handleApi(req, res) {
       question: message,
       routingMode: recall.routing?.mode ?? ""
     });
-    const savedConstruct = upsertSubjectConstruct(db, mergeSubjectConstruct(suggestedConstruct, {
+    const chatMergeBase = chooseChatEnrichmentBase(db, recall, suggestedConstruct);
+    const chatDraft = mergeChatConstructIntoLocalBase(chatMergeBase?.construct, suggestedConstruct, {
+      source: "chatbot-derived",
+      conversationId,
+      chatbotDerived: true,
+      responseId: assistResult.responseId,
+      learnedFromQuestion: message,
+      enrichmentScore: Number(chatMergeBase?.totalScore ?? 0),
+      enrichmentTokenOverlap: Number(chatMergeBase?.tokenOverlap ?? 0),
+      enrichmentStrandOverlap: Number(chatMergeBase?.strandOverlap ?? 0)
+    });
+    const savedConstruct = upsertSubjectConstruct(db, mergeSubjectConstruct(chatDraft, {
       provenance: {
-        ...(suggestedConstruct.provenance ?? {}),
+        ...(chatDraft.provenance ?? {}),
         source: "chatbot-derived",
         conversationId,
         chatbotDerived: true
@@ -3086,7 +3751,7 @@ async function handleApi(req, res) {
     }, {
       preserveId: false,
       provenance: {
-        ...(suggestedConstruct.provenance ?? {}),
+        ...(chatDraft.provenance ?? {}),
         source: "chatbot-derived",
         conversationId,
         chatbotDerived: true
@@ -3233,6 +3898,11 @@ async function handleApi(req, res) {
     }
 
     try {
+      const conversation = db.prepare(`
+        SELECT id, subjectId, title, createdAt, lastMessageAt
+        FROM chat_conversations
+        WHERE id = ?
+      `).get(conversationId) ?? null;
       const messages = db.prepare(`
         SELECT 
           id, 
@@ -3256,6 +3926,7 @@ async function handleApi(req, res) {
       sendJson(res, 200, {
         ok: true,
         conversationId,
+        conversation,
         messages: messages.map(msg => ({
           ...msg,
           metadata: msg.metadataJson ? JSON.parse(msg.metadataJson) : null,
@@ -3582,16 +4253,23 @@ function registerGracefulShutdown(server) {
 }
 
 export async function createApp() {
-  await resolveDatabasePath();
+  databasePath = await resolveDatabasePath();
   openMemoryDatabase();
   const assistStatus = getOpenAiAssistStatus();
+  const ollamaConfig = getOllamaConfig();
   logEvent("info", "Database path selected", {
-    databasePath
+    databasePath,
+    remoteAllowed: isRemoteAccessAllowed()
   });
   logEvent(assistStatus.enabled ? "info" : "warn", assistStatus.enabled ? "OpenAI assist enabled" : "OpenAI assist disabled", {
     model: assistStatus.model,
     timeoutMs: assistStatus.timeoutMs,
     reason: assistStatus.reason
+  });
+  logEvent("info", "Ollama test path configured", {
+    baseUrl: ollamaConfig.baseUrl,
+    timeoutMs: ollamaConfig.timeoutMs,
+    defaultModel: ollamaConfig.defaultModel || ""
   });
 
   const server = http.createServer(async (req, res) => {
@@ -3601,6 +4279,7 @@ export async function createApp() {
         return;
       }
 
+      assertLocalhostRequest(req);
       const url = new URL(req.url, "http://localhost");
 
       if (url.pathname.startsWith("/api/")) {
@@ -3639,8 +4318,8 @@ export async function createApp() {
     }
   });
 
-  server.requestTimeout = EXTENDED_API_TIMEOUT_MS + 3000;
-  server.headersTimeout = EXTENDED_API_TIMEOUT_MS + 5000;
+  server.requestTimeout = LOCAL_MODEL_API_TIMEOUT_MS + 5000;
+  server.headersTimeout = LOCAL_MODEL_API_TIMEOUT_MS + 7000;
   server.keepAliveTimeout = 5000;
 
   return server;
