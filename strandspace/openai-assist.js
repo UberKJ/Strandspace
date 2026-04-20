@@ -141,7 +141,70 @@ function contextObject(entries = []) {
   );
 }
 
-function recallSnapshot(recall = {}) {
+function trimText(value = "", limit = 240) {
+  const text = String(value ?? "");
+  if (!text) {
+    return "";
+  }
+  const trimmed = text.trim().replace(/\s+/g, " ");
+  if (trimmed.length <= limit) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, Math.max(0, limit - 1)).trim()}…`;
+}
+
+function limitObject(value = null, limit = 6) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, item]) => [String(key ?? "").trim(), trimText(item, 120)])
+      .filter(([key, item]) => key && item)
+      .slice(0, limit)
+  );
+}
+
+function estimateTokens(text = "") {
+  const normalized = String(text ?? "");
+  return Math.max(0, Math.ceil(normalized.length / 4));
+}
+
+function shouldLogAssistPayloadMetrics() {
+  return String(process.env.STRANDSPACE_LOG_ASSIST_PAYLOAD_METRICS ?? "").trim() === "1";
+}
+
+function logAssistPayloadDelta({
+  kind = "subject-assist",
+  model = DEFAULT_MODEL,
+  instructions = "",
+  verboseInput = "",
+  compactInput = ""
+} = {}) {
+  if (!shouldLogAssistPayloadMetrics()) {
+    return;
+  }
+
+  const verboseChars = verboseInput.length + instructions.length;
+  const compactChars = compactInput.length + instructions.length;
+  const verboseTokens = estimateTokens(`${instructions}\n\n${verboseInput}`);
+  const compactTokens = estimateTokens(`${instructions}\n\n${compactInput}`);
+
+  console.info("[assist-payload-metrics]", {
+    kind,
+    model,
+    instructionsChars: instructions.length,
+    verbose: { chars: verboseChars, estimatedTokens: verboseTokens },
+    compact: { chars: compactChars, estimatedTokens: compactTokens },
+    estimatedSavings: {
+      chars: Math.max(0, verboseChars - compactChars),
+      tokens: Math.max(0, verboseTokens - compactTokens)
+    }
+  });
+}
+
+function recallSnapshotVerbose(recall = {}) {
   const matched = recall.matched ?? null;
   return {
     routing: recall.routing ?? {},
@@ -164,6 +227,45 @@ function recallSnapshot(recall = {}) {
       support: candidate.support ?? []
     })),
     readiness: recall.readiness ?? {}
+  };
+}
+
+function recallSnapshotCompact(recall = {}) {
+  const matched = recall.matched ?? null;
+  const routing = recall.routing ?? {};
+
+  return {
+    routing: {
+      mode: String(routing.mode ?? "").trim(),
+      confidence: Number.isFinite(Number(routing.confidence)) ? Number(routing.confidence) : null,
+      margin: Number.isFinite(Number(routing.margin)) ? Number(routing.margin) : null,
+      matchedRatio: Number.isFinite(Number(routing.matchedRatio)) ? Number(routing.matchedRatio) : null
+    },
+    matched: matched
+      ? {
+        id: matched.id,
+        constructLabel: matched.constructLabel,
+        target: matched.target,
+        objective: matched.objective,
+        context: limitObject(matched.context, 6),
+        steps: Array.isArray(matched.steps) ? matched.steps.slice(0, 6) : [],
+        notes: trimText(matched.notes, 260),
+        tags: Array.isArray(matched.tags) ? matched.tags.slice(0, 8) : [],
+        parentConstructId: matched.parentConstructId ?? null,
+        variantType: matched.variantType ?? null
+      }
+      : null,
+    candidates: (recall.candidates ?? []).slice(0, 2).map((candidate) => ({
+      id: candidate.id,
+      constructLabel: candidate.constructLabel,
+      target: candidate.target,
+      objective: candidate.objective,
+      score: candidate.score,
+      support: Array.isArray(candidate.support) ? candidate.support.slice(0, 2) : []
+    })),
+    readiness: {
+      libraryCount: Number.isFinite(Number(recall.readiness?.libraryCount)) ? Number(recall.readiness.libraryCount) : null
+    }
   };
 }
 
@@ -382,13 +484,23 @@ function buildInstructions() {
   ].join(" ");
 }
 
-function buildInput({ question, subjectId, subjectLabel, recall }) {
+function buildInputVerbose({ question, subjectId, subjectLabel, recall }) {
   return [
     `Subject id: ${subjectId || "new-subject"}`,
     `Subject label: ${subjectLabel}`,
     `User question: ${question}`,
     `Routing decision: ${JSON.stringify(recall?.routing ?? {}, null, 2)}`,
-    `Local recall snapshot: ${JSON.stringify(recallSnapshot(recall), null, 2)}`,
+    `Local recall snapshot: ${JSON.stringify(recallSnapshotVerbose(recall), null, 2)}`,
+    "Produce a validated or expanded construct that the app can optionally learn into local memory."
+  ].join("\n\n");
+}
+
+function buildInputCompact({ question, subjectId, subjectLabel, recall }) {
+  return [
+    `Subject id: ${subjectId || "new-subject"}`,
+    `Subject label: ${subjectLabel}`,
+    `User question: ${question}`,
+    `Local recall: ${JSON.stringify(recallSnapshotCompact(recall))}`,
     "Produce a validated or expanded construct that the app can optionally learn into local memory."
   ].join("\n\n");
 }
@@ -530,20 +642,19 @@ function summarizeBuilderReferences(references = []) {
     constructLabel: reference.constructLabel ?? "",
     target: reference.target ?? "",
     objective: reference.objective ?? "",
-    notes: reference.notes ?? "",
-    tags: Array.isArray(reference.tags) ? reference.tags.slice(0, 8) : [],
-    context: reference.context ?? {},
+    notes: trimText(reference.notes ?? "", 200),
+    tags: Array.isArray(reference.tags) ? reference.tags.slice(0, 6) : [],
+    context: limitObject(reference.context ?? {}, 6),
     sources: Array.isArray(reference.sources)
-      ? reference.sources.map((source) => ({
+      ? reference.sources.slice(0, 3).map((source) => ({
         label: source.label ?? "",
-        fileName: source.fileName ?? "",
-        url: source.url ?? ""
+        fileName: source.fileName ?? ""
       }))
       : []
   }));
 }
 
-function buildBuilderInput({
+function buildBuilderInputVerbose({
   input = "",
   subjectId = "",
   subjectLabel = "General Recall",
@@ -564,6 +675,31 @@ function buildBuilderInput({
       tags: seedDraft.tags ?? []
     }, null, 2)}`,
     `Checked references: ${JSON.stringify(summarizeBuilderReferences(references), null, 2)}`,
+    "Produce the strongest reusable Strandspace construct draft you can derive from these notes."
+  ].join("\n\n");
+}
+
+function buildBuilderInputCompact({
+  input = "",
+  subjectId = "",
+  subjectLabel = "General Recall",
+  seedDraft = {},
+  references = []
+} = {}) {
+  return [
+    `Subject id: ${subjectId || "new-subject"}`,
+    `Subject label: ${subjectLabel}`,
+    `Builder input: ${input}`,
+    `Heuristic draft: ${JSON.stringify({
+      constructLabel: seedDraft.constructLabel ?? "",
+      target: seedDraft.target ?? "",
+      objective: seedDraft.objective ?? "",
+      context: limitObject(seedDraft.context ?? {}, 6),
+      steps: Array.isArray(seedDraft.steps) ? seedDraft.steps.slice(0, 6) : [],
+      notes: trimText(seedDraft.notes ?? "", 220),
+      tags: Array.isArray(seedDraft.tags) ? seedDraft.tags.slice(0, 8) : []
+    })}`,
+    `Checked references: ${JSON.stringify(summarizeBuilderReferences(references))}`,
     "Produce the strongest reusable Strandspace construct draft you can derive from these notes."
   ].join("\n\n");
 }
@@ -705,42 +841,83 @@ function buildSoundBuilderInstructions() {
   ].join(" ");
 }
 
-function buildSoundBuilderInput({ question = "", recall = {}, seedConstruct = {} } = {}) {
+function buildSoundBuilderInputVerbose({ question = "", recall = {}, seedConstruct = {} } = {}) {
+  const verboseSnapshot = {
+    parsed: recall?.parsed ?? {},
+    recommendation: recall?.recommendation ?? "",
+    matched: recall?.matched
+      ? {
+        id: recall.matched.id,
+        name: recall.matched.name,
+        sourceType: recall.matched.sourceType,
+        sourceBrand: recall.matched.sourceBrand,
+        sourceModel: recall.matched.sourceModel,
+        presetSystem: recall.matched.presetSystem,
+        presetCategory: recall.matched.presetCategory,
+        presetName: recall.matched.presetName,
+        setup: soundSetupObject(recall.matched.setup)
+      }
+      : null,
+    combined: Array.isArray(recall?.combined?.matches)
+      ? recall.combined.matches.map((match) => ({
+        id: match.id,
+        name: match.name,
+        deviceBrand: match.deviceBrand,
+        deviceModel: match.deviceModel,
+        sourceType: match.sourceType,
+        focusedSetup: soundSetupObject(match.focusedSetup)
+      }))
+      : []
+  };
+
   return [
     `User question: ${question}`,
-    `Sound recall snapshot: ${JSON.stringify({
-      parsed: recall?.parsed ?? {},
-      recommendation: recall?.recommendation ?? "",
-      matched: recall?.matched
-        ? {
-          id: recall.matched.id,
-          name: recall.matched.name,
-          sourceType: recall.matched.sourceType,
-          sourceBrand: recall.matched.sourceBrand,
-          sourceModel: recall.matched.sourceModel,
-          presetSystem: recall.matched.presetSystem,
-          presetCategory: recall.matched.presetCategory,
-          presetName: recall.matched.presetName,
-          setup: soundSetupObject(recall.matched.setup)
-        }
-        : null,
-      combined: Array.isArray(recall?.combined?.matches)
-        ? recall.combined.matches.map((match) => ({
-          id: match.id,
-          name: match.name,
-          deviceBrand: match.deviceBrand,
-          deviceModel: match.deviceModel,
-          sourceType: match.sourceType,
-          focusedSetup: soundSetupObject(match.focusedSetup)
-        }))
-        : []
-    }, null, 2)}`,
+    `Sound recall snapshot: ${JSON.stringify(verboseSnapshot, null, 2)}`,
     `Seed construct: ${JSON.stringify({
       ...seedConstruct,
       setup: soundSetupObject(seedConstruct.setup),
       tags: normalizeArray(seedConstruct.tags, 16),
       strands: normalizeArray(seedConstruct.strands, 20)
     }, null, 2)}`,
+    "Improve the seed construct only where the question adds useful new detail.",
+    "If the user named multiple devices, preserve the primary device in the construct fields and describe the wider rig in setup.system, setup.monitor, setup.placement, and setup.notes."
+  ].join("\n\n");
+}
+
+function buildSoundBuilderInputCompact({ question = "", recall = {}, seedConstruct = {} } = {}) {
+  const compactSnapshot = {
+    recommendation: recall?.recommendation ?? "",
+    matched: recall?.matched
+      ? {
+        id: recall.matched.id,
+        name: recall.matched.name,
+        deviceModel: recall.matched.deviceModel,
+        sourceType: recall.matched.sourceType,
+        presetSystem: recall.matched.presetSystem,
+        presetCategory: recall.matched.presetCategory,
+        presetName: recall.matched.presetName,
+        setup: soundSetupObject(recall.matched.setup)
+      }
+      : null,
+    combined: Array.isArray(recall?.combined?.matches)
+      ? recall.combined.matches.slice(0, 2).map((match) => ({
+        id: match.id,
+        name: match.name,
+        deviceModel: match.deviceModel,
+        sourceType: match.sourceType
+      }))
+      : []
+  };
+
+  return [
+    `User question: ${question}`,
+    `Sound recall snapshot: ${JSON.stringify(compactSnapshot)}`,
+    `Seed construct: ${JSON.stringify({
+      ...seedConstruct,
+      setup: soundSetupObject(seedConstruct.setup),
+      tags: normalizeArray(seedConstruct.tags, 12),
+      strands: normalizeArray(seedConstruct.strands, 16)
+    })}`,
     "Improve the seed construct only where the question adds useful new detail.",
     "If the user named multiple devices, preserve the primary device in the construct fields and describe the wider rig in setup.system, setup.monitor, setup.placement, and setup.notes."
   ].join("\n\n");
@@ -846,18 +1023,35 @@ export async function generateOpenAiSubjectAssist({
     });
   }
 
+  const instructions = buildInstructions();
+  const verboseInput = buildInputVerbose({
+    question,
+    subjectId,
+    subjectLabel,
+    recall
+  });
+  const compactInput = buildInputCompact({
+    question,
+    subjectId,
+    subjectLabel,
+    recall
+  });
+
+  logAssistPayloadDelta({
+    kind: "subject-assist",
+    model: selectedModel,
+    instructions,
+    verboseInput,
+    compactInput
+  });
+
   const openai = getClient();
   const response = await runOpenAiRequest((requestOptions) => (
     openai.responses.create({
       model: selectedModel,
       store: false,
-      instructions: buildInstructions(),
-      input: buildInput({
-        question,
-        subjectId,
-        subjectLabel,
-        recall
-      }),
+      instructions,
+      input: compactInput,
       text: {
         format: {
           type: "json_schema",
@@ -909,19 +1103,37 @@ export async function generateOpenAiSubjectConstructBuilder({
     });
   }
 
+  const instructions = buildBuilderInstructions();
+  const verboseInput = buildBuilderInputVerbose({
+    input,
+    subjectId,
+    subjectLabel,
+    seedDraft,
+    references
+  });
+  const compactInput = buildBuilderInputCompact({
+    input,
+    subjectId,
+    subjectLabel,
+    seedDraft,
+    references
+  });
+
+  logAssistPayloadDelta({
+    kind: "subject-builder",
+    model: DEFAULT_MODEL,
+    instructions,
+    verboseInput,
+    compactInput
+  });
+
   const openai = getClient();
   const response = await runOpenAiRequest((requestOptions) => (
     openai.responses.create({
       model: DEFAULT_MODEL,
       store: false,
-      instructions: buildBuilderInstructions(),
-      input: buildBuilderInput({
-        input,
-        subjectId,
-        subjectLabel,
-        seedDraft,
-        references
-      }),
+      instructions,
+      input: compactInput,
       text: {
         format: {
           type: "json_schema",
@@ -1034,17 +1246,33 @@ export async function generateOpenAiSoundConstructBuilder({
     };
   }
 
+  const instructions = buildSoundBuilderInstructions();
+  const verboseInput = buildSoundBuilderInputVerbose({
+    question,
+    recall,
+    seedConstruct
+  });
+  const compactInput = buildSoundBuilderInputCompact({
+    question,
+    recall,
+    seedConstruct
+  });
+
+  logAssistPayloadDelta({
+    kind: "sound-builder",
+    model: DEFAULT_MODEL,
+    instructions,
+    verboseInput,
+    compactInput
+  });
+
   const openai = getClient();
   const response = await runOpenAiRequest((requestOptions) => (
     openai.responses.create({
       model: DEFAULT_MODEL,
       store: false,
-      instructions: buildSoundBuilderInstructions(),
-      input: buildSoundBuilderInput({
-        question,
-        recall,
-        seedConstruct
-      }),
+      instructions,
+      input: compactInput,
       text: {
         format: {
           type: "json_schema",
