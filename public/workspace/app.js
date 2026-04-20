@@ -534,7 +534,7 @@ function bindEvents() {
       return;
     }
 
-    if (action === "continue-intake") {
+    if (action === "intake-guide") {
       state.intake.stepIndex = Math.min(stepSequence(state).length - 1, 1);
       renderEditor();
       renderBottomDisabledStates();
@@ -542,13 +542,52 @@ function bindEvents() {
       return;
     }
 
-    if (action === "jump-to-match") {
+    if (action === "intake-search") {
       const steps = stepSequence(state);
       const idx = steps.indexOf("reuse_match");
       if (idx >= 0) state.intake.stepIndex = idx;
       else state.intake.stepIndex = Math.min(steps.length - 1, 1);
       renderEditor();
       renderBottomDisabledStates();
+      persist();
+      return;
+    }
+
+    if (action === "intake-fresh") {
+      startFreshFromTopic();
+      return;
+    }
+
+    if (action === "intake-auto-build") {
+      const analysis = state.ui?.intake?.analysis ?? null;
+      const matchReady = Boolean(analysis?.recall?.ready && analysis?.recall?.matched?.id);
+      if (matchReady && !state.ui.intake.ignoreStrongMatch) {
+        const steps = stepSequence(state);
+        const idx = steps.indexOf("reuse_match");
+        state.intake.stepIndex = idx >= 0 ? idx : Math.min(steps.length - 1, 1);
+        renderEditor();
+        renderBottomDisabledStates();
+        persist();
+        return;
+      }
+
+      const inference = analysis?.inference ?? null;
+      if (!String(state.draft.construct_type ?? "").trim() && String(inference?.construct_type ?? "").trim()) {
+        state.draft.construct_type = String(inference.construct_type).trim();
+      }
+      if (!String(state.draft.purpose ?? "").trim() && String(inference?.purpose ?? "").trim()) {
+        state.draft.purpose = String(inference.purpose).trim();
+      }
+      if (!(Array.isArray(state.draft.core_entities) && state.draft.core_entities.length) && Array.isArray(inference?.core_entities) && inference.core_entities.length) {
+        state.draft.core_entities = inference.core_entities.slice(0, 10).map((item) => String(item ?? "").trim()).filter(Boolean);
+      }
+
+      state.ui.intake.typeConfirmed = true;
+      state.ui.intake.typePickerOpen = false;
+      hydrateLookupEditor(state);
+      state.intake.stepIndex = Math.min(stepSequence(state).length - 1, 1);
+      renderAll();
+      scheduleRecall();
       persist();
       return;
     }
@@ -1178,6 +1217,29 @@ function wipeDraft() {
   if (queryEl) queryEl.value = "";
   state.ui.queryText = "";
   renderAll();
+}
+
+function startFreshFromTopic() {
+  const topic = String(state.draft.topic ?? "").trim();
+  state.draft = createEmptyDraft();
+  state.draft.topic = topic;
+  state.savedSnapshot = "";
+  state.intake.stepIndex = 0;
+
+  state.ui.attributesRows = [{ key: "", value: "" }];
+  state.ui.lookup = { sections: [{ name: "", rows: [{ key: "", value: "" }] }] };
+  applyLookupSectionsToDraft(state);
+  state.ui.diagnostic = { symptoms: [""], causes: [""], checks: [""] };
+  state.ui.specification = { rows: [{ key: "", value: "", unit: "" }] };
+
+  state.ui.intake.ignoreStrongMatch = true;
+  state.ui.intake.typeConfirmed = false;
+  state.ui.intake.typePickerOpen = false;
+
+  renderAll();
+  scheduleIntake();
+  scheduleRecall();
+  persist();
 }
 
 function setTheme(theme) {

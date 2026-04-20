@@ -229,18 +229,36 @@ export function renderEditorMarkup(state) {
 
   if (key === "topic") {
     const nextQuestion = String(inference?.next_question ?? "").trim();
-    const showNext = Boolean(nextQuestion && String(state.draft.topic ?? "").trim());
+    const showNext = Boolean(String(state.draft.topic ?? "").trim());
+    const error = String(state.ui?.intake?.error ?? "").trim();
+    const suggestedType = String(inference?.construct_type ?? "").trim();
+    const suggestedPurpose = String(inference?.purpose ?? "").trim();
+    const suggestedEntities = Array.isArray(inference?.core_entities) ? inference.core_entities.filter(Boolean) : [];
+    const confidence = Number(inference?.confidence ?? NaN);
+    const confidenceLabel = Number.isFinite(confidence)
+      ? confidence >= 0.75 ? "high" : confidence >= 0.55 ? "medium" : "low"
+      : "";
+    const matchReady = Boolean(analysis?.recall?.ready && analysis?.recall?.matched?.id);
     return `
       <label class="ss-label" for="ss-field-topic">Topic</label>
       <input id="ss-field-topic" class="ss-input ss-input-lg" type="text" placeholder="Enter a topic..." value="${escapeHtml(state.draft.topic ?? "")}" data-field="topic" />
       ${showNext ? `
         <div class="ss-next-card">
-          <div class="ss-next-kicker ss-muted">Next question</div>
-          <div class="ss-next-question">${escapeHtml(nextQuestion)}</div>
-          <div class="ss-next-actions">
-            <button class="ss-button ss-button-primary" data-action="continue-intake">Continue</button>
-            ${analysis?.recall?.matched?.id ? `<button class="ss-button ss-button-secondary" data-action="jump-to-match">View possible fit</button>` : ""}
+          <div class="ss-next-kicker ss-muted">What I think this is</div>
+          <div class="ss-next-question">
+            ${suggestedType ? `This looks like a ${escapeHtml(typeLabel(suggestedType))} topic${confidenceLabel ? ` (${escapeHtml(confidenceLabel)} confidence)` : ""}.` : "Analyzing the topic..."}
           </div>
+          ${suggestedPurpose ? `<div class="ss-muted" style="margin-top:8px;">Prefill: ${escapeHtml(suggestedPurpose)}</div>` : ""}
+          ${suggestedEntities.length ? `<div class="ss-muted" style="margin-top:6px;">Key things: ${escapeHtml(suggestedEntities.slice(0, 6).join(", "))}</div>` : ""}
+          ${matchReady ? `<div class="ss-muted" style="margin-top:6px;">Similar saved construct found.</div>` : ""}
+          <div class="ss-next-actions">
+            <button class="ss-button ss-button-primary" data-action="intake-auto-build">Auto-build what you can</button>
+            <button class="ss-button ss-button-secondary" data-action="intake-guide">Guide me step by step</button>
+            <button class="ss-button ss-button-secondary" data-action="intake-search">Search existing first</button>
+            <button class="ss-button ss-button-secondary" data-action="intake-fresh">Start fresh</button>
+          </div>
+          <div class="ss-muted" style="margin-top:10px;">Next: ${escapeHtml(nextQuestion || "Give me a moment to pick the best follow-up question.")}</div>
+          ${error ? `<div class="ss-error" style="margin-top:10px;">${escapeHtml(error)}</div>` : ""}
         </div>
       ` : ""}
     `;
@@ -680,7 +698,7 @@ export function renderMatchPanel(state) {
 
   if (!question) {
     return {
-      status: "Type to see matches.",
+      status: "As you capture details, I'll look for similar saved constructs.",
       list: ""
     };
   }
@@ -731,7 +749,7 @@ export function renderMatchPanel(state) {
   }).join("");
 
   const ready = Boolean(recall?.ready);
-  const status = ready ? "Stable local fit found." : "Partial match — keep adding structure.";
+  const status = ready ? "Similar saved construct found." : "Partial memory available — keep adding details.";
   return { status, list };
 }
 
