@@ -198,8 +198,8 @@ await check("GET / serves the public Strandspace landing page", async () => {
     assert.equal(response.status, 200);
     const html = await response.text();
     assert.match(html, /<title>Strandspace<\/title>/);
-    assert.match(html, /Build a construct, pick a topic, then work the memory like a live field/i);
-    assert.match(html, /Open A Local Strandspace Topic/i);
+    assert.match(html, /Structured construct workspace/i);
+    assert.match(html, /The first question is always: What is the topic\?/i);
   });
 });
 

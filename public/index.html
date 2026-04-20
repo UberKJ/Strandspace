@@ -4,162 +4,58 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Strandspace</title>
-    <link rel="stylesheet" href="/style.css?v=2026-04-17-landing-01" />
-    <script type="module" src="/landing.js?v=2026-04-17-landing-01" defer></script>
+    <link rel="stylesheet" href="/style.css?v=2026-04-20-workspace-01" />
+    <script type="module" src="/workspace/app.js?v=2026-04-20-workspace-01" defer></script>
   </head>
-  <body class="landing-page">
-    <header class="page-switch">
-      <a class="brand-mark" href="/">Strandspace</a>
-      <div class="page-switch-controls">
-        <nav class="page-nav" aria-label="Workspace switcher">
-          <a class="switch-link is-active" href="/" aria-current="page">Home</a>
-          <a class="switch-link" href="/subject?subjectId=music-engineering">Music Engineering</a>
-          <a class="switch-link" href="/chat">Chat</a>
-          <a class="switch-link" href="/backend">Backend</a>
+  <body class="workspace-page" data-theme="dark">
+    <header class="ss-header" aria-label="Strandspace header">
+      <div class="ss-header-left">
+        <a class="ss-brand" href="/" aria-label="Strandspace home">
+          <span class="ss-mark" aria-hidden="true"></span>
+          <span class="ss-title">Strandspace</span>
+        </a>
+        <nav class="ss-nav" aria-label="Workspace navigation">
+          <a class="ss-nav-link is-active" href="/" aria-current="page">Workspace</a>
+          <a class="ss-nav-link" href="/subject?subjectId=music-engineering">Topic View</a>
+          <a class="ss-nav-link" href="/backend">Backend</a>
         </nav>
-        <span id="landing-status-badge" class="status-badge">Loading status...</span>
-        <button id="theme-toggle" type="button" class="secondary-button theme-toggle">Dark Mode</button>
+      </div>
+
+      <div class="ss-header-center">
+        <div class="ss-topic-pill" title="Current topic">
+          <span class="ss-pill-label">Topic</span>
+          <span id="ss-current-topic" class="ss-pill-value">What is the topic?</span>
+        </div>
+      </div>
+
+      <div class="ss-header-right">
+        <span id="ss-status-badge" class="ss-badge">Loading status...</span>
+        <span id="ss-mode-badge" class="ss-badge ss-badge-accent">Draft</span>
+        <button id="ss-theme-toggle" type="button" class="ss-button ss-button-secondary">Theme</button>
       </div>
     </header>
 
-    <main class="studio-shell landing-shell">
-      <section class="hero landing-hero">
-        <div class="hero-copy">
-          <p class="eyebrow">Strandspace</p>
-          <h1>Build a construct, pick a topic, then work the memory like a live field.</h1>
-          <p class="lede">
-            The landing page now gives you two paths at once: draft a construct with AI-assisted shaping, or open a
-            local subject page built from Strandspace subject constructs.
-          </p>
-          <div class="landing-stat-row">
-            <article class="landing-stat-card">
-              <span class="detail-label">Topics</span>
-              <strong id="landing-topic-count">0</strong>
-              <p id="landing-topic-summary" class="meta">Loading local Strandspace topics...</p>
-            </article>
-            <article class="landing-stat-card">
-              <span class="detail-label">Default Topic</span>
-              <strong id="landing-default-topic">Loading...</strong>
-              <p class="meta">Most recently active subject space</p>
-            </article>
-            <article class="landing-stat-card">
-              <span class="detail-label">Workflow</span>
-              <strong>Local first</strong>
-              <p id="landing-assist-summary" class="meta">Checking AI assist availability...</p>
-            </article>
-          </div>
-          <div class="action-row landing-actions">
-            <a class="secondary-button landing-link-button" href="#landing-topics">Browse topics</a>
-            <a class="secondary-button landing-link-button" href="/backend">Open backend</a>
-          </div>
+    <div class="ss-shell" aria-label="Strandspace workspace shell">
+      <aside id="ss-sidebar-left" class="ss-sidebar ss-sidebar-left" aria-label="Left sidebar">
+        <div class="ss-panel ss-panel-skeleton">
+          <div class="ss-panel-title">Library</div>
+          <p class="ss-muted">Loading...</p>
         </div>
-
-        <section class="hero-stage landing-chat-stage">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow small">Guided Intake</p>
-              <h2>Start With The Topic</h2>
-            </div>
-            <p id="landing-builder-meta" class="meta landing-meta-light">
-              Strandspace captures a topic first, then collects just enough structure to save a partial or complete construct.
-            </p>
-          </div>
-
-          <form id="landing-intake-form" class="landing-builder-form">
-            <div class="builder-form-label">
-              <span id="landing-intake-prompt">What is the topic?</span>
-              <select id="landing-intake-type" aria-label="Choose a construct type" class="is-hidden">
-                <option value="">Choose a construct type...</option>
-                <option value="reference_lookup">reference_lookup</option>
-                <option value="procedure">procedure</option>
-                <option value="configuration">configuration</option>
-                <option value="profile">profile</option>
-                <option value="comparison">comparison</option>
-                <option value="diagnostic">diagnostic</option>
-                <option value="specification">specification</option>
-                <option value="timeline">timeline</option>
-                <option value="classification">classification</option>
-                <option value="hybrid">hybrid</option>
-              </select>
-              <textarea
-                id="landing-intake-input"
-                rows="6"
-                placeholder="Enter a topic (example: resistor color code, studio key light setup, camera tripod quick reference)."
-              ></textarea>
-              <p id="landing-intake-hint" class="meta landing-meta-light"></p>
-            </div>
-
-            <div class="action-row landing-actions intake-controls">
-              <button id="landing-intake-back" type="button" class="secondary-button subtle-button">Back</button>
-              <button id="landing-intake-skip" type="button" class="secondary-button subtle-button">Skip</button>
-              <button id="landing-intake-next" type="submit" class="secondary-button">Next</button>
-              <button id="landing-intake-edit" type="button" class="secondary-button subtle-button">Edit</button>
-              <button id="landing-intake-summarize" type="button" class="secondary-button subtle-button">Summarize</button>
-              <button id="landing-intake-fits" type="button" class="secondary-button subtle-button">Check possible fits</button>
-            </div>
-
-            <div class="action-row landing-actions intake-actions">
-              <button id="landing-intake-save" type="button" class="secondary-button">Save construct</button>
-              <button id="landing-intake-update" type="button" class="secondary-button subtle-button">Update construct</button>
-              <button id="landing-intake-variant" type="button" class="secondary-button subtle-button">Create variant</button>
-              <button id="landing-intake-delete-working" type="button" class="secondary-button subtle-button">Delete current construct</button>
-              <button id="landing-intake-restart" type="button" class="secondary-button subtle-button">Restart intake</button>
-            </div>
-          </form>
-
-          <div id="landing-chat-feed" class="landing-chat-feed empty">
-            <p>Drafted constructs will appear here with quick links to the topic page and backend review flow.</p>
-          </div>
+      </aside>
+      <main id="ss-workspace" class="ss-workspace" aria-label="Workspace">
+        <section class="ss-card ss-card-skeleton">
+          <h1>Structured construct workspace</h1>
+          <p class="ss-muted">The first question is always: What is the topic?</p>
         </section>
-      </section>
+      </main>
+      <aside id="ss-sidebar-right" class="ss-sidebar ss-sidebar-right" aria-label="Right sidebar">
+        <div class="ss-panel ss-panel-skeleton">
+          <div class="ss-panel-title">Matches</div>
+          <p class="ss-muted">Loading...</p>
+        </div>
+      </aside>
+    </div>
 
-      <section id="landing-topics" class="workspace-grid landing-grid">
-        <section class="panel landing-topic-panel">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow small">Current Topics</p>
-              <h2>Open A Local Strandspace Topic</h2>
-            </div>
-            <p class="meta">Each topic page is generated from the constructs already stored in that subject.</p>
-          </div>
-          <div id="landing-topic-grid" class="landing-topic-grid">
-            <article class="landing-topic-empty">
-              <p>Loading local Strandspace topics...</p>
-            </article>
-          </div>
-        </section>
-
-        <section class="panel landing-flow-panel">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow small">How It Works</p>
-              <h2>Use Strandspace Front To Back</h2>
-            </div>
-          </div>
-          <div class="architecture-band landing-flow-band">
-            <article>
-              <p class="eyebrow small">1. Pick Or Describe</p>
-              <h3>Choose a stored topic or describe a new construct in plain language.</h3>
-              <p>The landing page uses your local subjects for navigation and the builder for first-pass drafting.</p>
-            </article>
-            <article>
-              <p class="eyebrow small">2. Open The Subject</p>
-              <h3>Jump into a dynamic topic recall page for the chosen subject.</h3>
-              <p>Each subject view loads its own constructs, prompt chips, and explainable recall trace.</p>
-            </article>
-            <article>
-              <p class="eyebrow small">3. Refine In Backend</p>
-              <h3>Send the draft straight into the backend editor when it needs review.</h3>
-              <p>The backend stays the editable memory system for saving, benchmarking, and row-level cleanup.</p>
-            </article>
-            <article>
-              <p class="eyebrow small">4. Keep It Unified</p>
-              <h3>Music Engineering now lives in the same topic-view flow as every other subject.</h3>
-              <p>The dedicated fixed page is retired, so one subject system now covers recall, suggestions, and backend review.</p>
-            </article>
-          </div>
-        </section>
-      </section>
-    </main>
+    <footer id="ss-bottom-bar" class="ss-bottom-bar" aria-label="Action bar"></footer>
   </body>
 </html>
