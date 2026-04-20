@@ -4,6 +4,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-339933)](#license-status)
 [![Local-first](https://img.shields.io/badge/runtime-local--first-126b73)](#why-strandspace)
 
+Last updated: 2026-04-20
+
 Strandspace is a local-first recall workspace for reusable knowledge constructs. It ships with two focused modes:
 
 - `Subjectspace` for structured capture and recall across a subject field
@@ -155,6 +157,12 @@ What they do:
 - `dataset:clean` safely normalizes the active dataset, repairs broken related IDs, and refreshes local relations
 - `kill` stops project-related `node` / `npm` dev processes
 - `restart` stops the current dev process and starts the server again
+
+## Benchmarks
+
+- Model Lab endpoints: `GET /api/model-lab/status`, `POST /api/model-lab/compare`, `GET /api/model-lab/reports`.
+- Benchmark coverage lives in `test/benchmark-tests.mjs` and runs via `npm test`.
+- Optional assist payload metrics: set `STRANDSPACE_LOG_ASSIST_PAYLOAD_METRICS=1` to log estimated before/after payload size.
 
 ## Seeded Examples
 
