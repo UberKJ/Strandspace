@@ -255,6 +255,29 @@ header.page-switch {
   flex-shrink: 0;
 }
 
+.chat-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 2rem 0.5rem;
+}
+
+.subject-select {
+  min-width: 220px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.subject-select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  background: var(--bg-primary);
+}
+
 .messages-container {
   flex: 1;
   overflow-y: auto;
@@ -305,6 +328,10 @@ header.page-switch {
 
 .message-assistant {
   align-self: flex-start;
+}
+
+.message.is-pending {
+  opacity: 0.75;
 }
 
 .message-role {
@@ -401,6 +428,15 @@ header.page-switch {
 
   .chat-sidebar {
     display: none;
+  }
+
+  .chat-controls {
+    padding: 1rem 1rem 0.5rem;
+  }
+
+  .subject-select {
+    min-width: 0;
+    flex: 1;
   }
 
   .message {
