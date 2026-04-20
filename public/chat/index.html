@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Strandspace Chat</title>
-    <link rel="stylesheet" href="/chat/style.css?v=2026-04-18-chat-02" />
-    <script type="module" src="/chat/app.js?v=2026-04-18-chat-02" defer></script>
+    <link rel="stylesheet" href="/chat/style.css?v=2026-04-20-chat-ui-01" />
+    <script type="module" src="/chat/app.js?v=2026-04-20-chat-ui-01" defer></script>
   </head>
   <body>
     <header class="page-switch">
@@ -47,6 +47,13 @@
           </button>
         </div>
 
+        <div class="chat-controls">
+          <label for="subject-select" class="meta">Subject</label>
+          <select id="subject-select" class="subject-select">
+            <option value="">General Recall</option>
+          </select>
+        </div>
+
         <div id="messages-container" class="messages-container">
           <div class="welcome-state">
             <h2>Welcome to Strandspace Chat</h2>
@@ -54,7 +61,7 @@
           </div>
         </div>
 
-        <form id="chat-form" class="chat-input-form" style="display: none;">
+        <form id="chat-form" class="chat-input-form">
           <label class="sr-only" for="message-input">Send a message</label>
           <textarea
             id="message-input"
