@@ -2716,6 +2716,56 @@ await check("POST /api/soundspace/learn mirrors reviewed sound constructs into M
   });
 });
 
+await check("GET /api/topicspace/answer decodes resistor color codes locally", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/topicspace/answer?q=resistor%20brown%20black%20red%20gold`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.source, "topicspace");
+    assert.match(String(payload.answer ?? ""), /1\s*kΩ/i);
+    assert.match(String(payload.answer ?? ""), /±\s*5%/i);
+    assert.match(String(payload.answer ?? ""), /bands:\s*brown black red gold/i);
+  });
+});
+
+await check("POST /api/topicspace/learn saves universal topic constructs and recall finds them", async () => {
+  await withServer(async (address) => {
+    const topic = `Tripod Setup ${Date.now()}`;
+    const learnResponse = await postJson(`http://127.0.0.1:${address.port}/api/topicspace/learn`, {
+      topic,
+      title: "Tripod quick checklist",
+      construct_type: "procedure",
+      purpose: "Set up a camera tripod quickly and safely.",
+      core_entities: ["tripod", "camera"],
+      attributes: "surface: flat\nheight: eye-level",
+      steps: [
+        "Extend thicker legs first.",
+        "Lock all clamps before mounting the camera."
+      ],
+      rules: [
+        "Always confirm the quick release is latched."
+      ],
+      tags: ["camera", "tripod", "checklist"],
+      retrieval_keys: ["tripod", "quick checklist"],
+      trigger_phrases: ["tripod setup"]
+    });
+
+    assert.equal(learnResponse.status, 200);
+    const learned = await learnResponse.json();
+    assert.equal(learned.ok, true);
+    assert.equal(learned.construct?.topic, topic);
+
+    const recallResponse = await fetch(`http://127.0.0.1:${address.port}/api/topicspace/recall?q=tripod%20quick%20checklist&topic=${encodeURIComponent(topic)}`);
+    assert.equal(recallResponse.status, 200);
+    const recallPayload = await recallResponse.json();
+    assert.equal(recallPayload.ok, true);
+    assert.equal(recallPayload.ready, true);
+    assert.equal(recallPayload.matched?.topic, topic);
+    assert.match(String(recallPayload.matched?.title ?? ""), /Tripod quick checklist/i);
+  });
+});
+
 const failed = results.filter((result) => !result.ok);
 for (const result of results) {
   if (result.ok) {

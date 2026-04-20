@@ -13,6 +13,15 @@ import {
   summarizeSoundConstruct,
   upsertSoundConstruct
 } from "./strandspace/soundspace.js";
+import {
+  answerTopicspace,
+  ensureTopicspaceTables,
+  recallTopicspace,
+  seedTopicspace,
+  upsertTopicConstruct,
+  listTopicConstructs,
+  getTopicConstruct
+} from "./strandspace/topicspace.js";
 import { buildSoundConstructFromQuestion } from "./strandspace/sound-llm.js";
 import {
   auditSubjectDataset,
@@ -134,6 +143,12 @@ const API_TIMEOUTS_MS = new Map([
   ["/api/model-lab/reports", DEFAULT_API_TIMEOUT_MS],
   ["/api/tts", EXTENDED_API_TIMEOUT_MS],
   ["/api/stats", DEFAULT_API_TIMEOUT_MS],
+  ["/api/topicspace/constructs", DEFAULT_API_TIMEOUT_MS],
+  ["/api/topicspace/construct", DEFAULT_API_TIMEOUT_MS],
+  ["/api/topicspace/learn", DEFAULT_API_TIMEOUT_MS],
+  ["/api/topicspace", DEFAULT_API_TIMEOUT_MS],
+  ["/api/topicspace/answer", DEFAULT_API_TIMEOUT_MS],
+  ["/api/topicspace/recall", DEFAULT_API_TIMEOUT_MS],
   ["/api/subjectspace/subject-ideas", EXTENDED_API_TIMEOUT_MS],
   ["/api/subjectspace/build", EXTENDED_API_TIMEOUT_MS],
   ["/api/subjectspace/dataset/health", DEFAULT_API_TIMEOUT_MS],
@@ -229,6 +244,44 @@ const BACKEND_TABLES = {
       "strandsJson"
     ],
     orderBy: "updatedAt DESC, name ASC"
+  },
+  topic_constructs: {
+    label: "Topic Constructs",
+    primaryKey: "id",
+    editableColumns: [
+      "topic",
+      "title",
+      "constructType",
+      "purpose",
+      "summary",
+      "coreEntitiesJson",
+      "attributesJson",
+      "relationshipsJson",
+      "rulesJson",
+      "stepsJson",
+      "lookupTableJson",
+      "examplesJson",
+      "knownFieldsJson",
+      "unknownFieldsJson",
+      "nullFieldsJson",
+      "sourcesJson",
+      "confidence",
+      "tagsJson",
+      "retrievalKeysJson",
+      "triggerPhrasesJson",
+      "linkedConstructIdsJson"
+    ],
+    searchColumns: [
+      "topic",
+      "title",
+      "constructType",
+      "purpose",
+      "summary",
+      "tagsJson",
+      "retrievalKeysJson",
+      "triggerPhrasesJson"
+    ],
+    orderBy: "updatedAt DESC, topic ASC"
   },
   strand_binders: {
     label: "Strand Binders",
@@ -1146,6 +1199,20 @@ function readSubjectspaceParams(source = null) {
   return {
     question: String(source?.question ?? source?.q ?? "").trim(),
     subjectId: String(source?.subjectId ?? source?.subject ?? "").trim()
+  };
+}
+
+function readTopicspaceParams(source = null) {
+  if (source instanceof URL) {
+    return {
+      question: String(source.searchParams.get("q") ?? source.searchParams.get("question") ?? "").trim(),
+      topic: String(source.searchParams.get("topic") ?? "").trim()
+    };
+  }
+
+  return {
+    question: String(source?.question ?? source?.q ?? "").trim(),
+    topic: String(source?.topic ?? "").trim()
   };
 }
 
@@ -2304,6 +2371,8 @@ function openMemoryDatabase() {
   database.exec("PRAGMA journal_mode = WAL;");
   ensureSoundspaceTables(database);
   seedSoundspace(database);
+  ensureTopicspaceTables(database);
+  seedTopicspace(database);
   ensureSubjectspaceTables(database);
   ensureBenchmarkTables(database);
   seedSubjectspace(database);
@@ -2336,6 +2405,7 @@ export function closeMemoryDatabase() {
 export function resetExampleData(targetDb = openMemoryDatabase()) {
   ensureSubjectspaceTables(targetDb);
   ensureSoundspaceTables(targetDb);
+  ensureTopicspaceTables(targetDb);
   ensureBenchmarkTables(targetDb);
 
   targetDb.exec("BEGIN");
@@ -2347,6 +2417,7 @@ export function resetExampleData(targetDb = openMemoryDatabase()) {
     targetDb.exec("DELETE FROM strand_binders;");
     targetDb.exec("DELETE FROM sound_constructs;");
     targetDb.exec("DELETE FROM subject_constructs;");
+    targetDb.exec("DELETE FROM topic_constructs;");
     targetDb.exec("COMMIT");
   } catch (error) {
     try {
@@ -2359,11 +2430,13 @@ export function resetExampleData(targetDb = openMemoryDatabase()) {
 
   const soundCount = Number(seedSoundspace(targetDb) ?? 0);
   const subjectCount = Number(seedSubjectspace(targetDb) ?? 0);
+  const topicCount = Number(seedTopicspace(targetDb) ?? 0);
   syncSoundConstructsToSubjectspace(targetDb);
 
   return {
     soundCount: Number(targetDb.prepare("SELECT COUNT(*) as count FROM sound_constructs").get().count ?? soundCount),
-    subjectCount: Number(targetDb.prepare("SELECT COUNT(*) as count FROM subject_constructs").get().count ?? subjectCount)
+    subjectCount: Number(targetDb.prepare("SELECT COUNT(*) as count FROM subject_constructs").get().count ?? subjectCount),
+    topicCount: Number(targetDb.prepare("SELECT COUNT(*) as count FROM topic_constructs").get().count ?? topicCount)
   };
 }
 
@@ -3754,6 +3827,113 @@ async function handleApi(req, res) {
       suggestedConstruct: hydrateConstructForClient(suggestedConstruct),
       responseId
     });
+    return;
+  }
+
+  if (url.pathname === "/api/topicspace/constructs") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    const topic = String(url.searchParams.get("topic") ?? "").trim();
+    sendJson(res, 200, {
+      ok: true,
+      topic: topic || null,
+      constructs: listTopicConstructs(db, topic)
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/topicspace/construct") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    const id = String(url.searchParams.get("id") ?? "").trim();
+    if (!id) {
+      sendJson(res, 400, { ok: false, error: "id is required" });
+      return;
+    }
+
+    const construct = getTopicConstruct(db, id);
+    if (!construct) {
+      sendJson(res, 404, { ok: false, error: "construct not found" });
+      return;
+    }
+
+    sendJson(res, 200, { ok: true, construct });
+    return;
+  }
+
+  if (url.pathname === "/api/topicspace/learn") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { ok: false, error: "Invalid JSON body" });
+      return;
+    }
+
+    const topic = String(payload.topic ?? payload.topicLabel ?? payload.subjectLabel ?? payload.subject ?? "").trim();
+    if (!topic) {
+      sendJson(res, 400, { ok: false, error: "topic is required" });
+      return;
+    }
+
+    const saved = upsertTopicConstruct(db, {
+      ...payload,
+      topic
+    });
+
+    sendJson(res, 200, {
+      ok: true,
+      construct: saved,
+      count: listTopicConstructs(db, topic).length
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/topicspace" || url.pathname === "/api/topicspace/answer") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    const { question, topic } = readTopicspaceParams(url);
+    if (!question) {
+      sendJson(res, 400, { ok: false, error: "question is required" });
+      return;
+    }
+
+    sendJson(res, 200, answerTopicspace(db, { question, topic }));
+    return;
+  }
+
+  if (url.pathname === "/api/topicspace/recall") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    const { question, topic } = readTopicspaceParams(url);
+    if (!question) {
+      sendJson(res, 400, { ok: false, error: "question is required" });
+      return;
+    }
+
+    sendJson(res, 200, { ok: true, ...recallTopicspace(db, { question, topic }) });
     return;
   }
 

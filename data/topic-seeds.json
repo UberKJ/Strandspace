@@ -1,0 +1,76 @@
+[
+  {
+    "topic": "Resistor color codes",
+    "title": "Resistor color code lookup (4-band)",
+    "construct_type": "reference_lookup",
+    "purpose": "Decode a 4-band resistor color code into ohms and tolerance without calling an LLM.",
+    "summary": "Use the first two bands as digits, the third as a multiplier, and the fourth as tolerance.",
+    "core_entities": ["resistor", "color band", "ohms", "tolerance"],
+    "attributes": {
+      "format": "4-band",
+      "output": "ohms + tolerance"
+    },
+    "relationships": [],
+    "rules": [
+      "Band 1 = first digit, Band 2 = second digit, Band 3 = multiplier, Band 4 = tolerance.",
+      "If the question includes four color names in order, decode them as a 4-band resistor."
+    ],
+    "steps": [
+      "Read band 1 and band 2 as digits.",
+      "Read band 3 as multiplier.",
+      "Read band 4 as tolerance.",
+      "Compute (digit1*10 + digit2) * multiplier and report tolerance."
+    ],
+    "lookup_table": {
+      "digits": {
+        "black": 0,
+        "brown": 1,
+        "red": 2,
+        "orange": 3,
+        "yellow": 4,
+        "green": 5,
+        "blue": 6,
+        "violet": 7,
+        "gray": 8,
+        "white": 9
+      },
+      "multiplier": {
+        "black": 1,
+        "brown": 10,
+        "red": 100,
+        "orange": 1000,
+        "yellow": 10000,
+        "green": 100000,
+        "blue": 1000000,
+        "violet": 10000000,
+        "gray": 100000000,
+        "white": 1000000000,
+        "gold": 0.1,
+        "silver": 0.01
+      },
+      "tolerance": {
+        "brown": 1,
+        "red": 2,
+        "green": 0.5,
+        "blue": 0.25,
+        "violet": 0.1,
+        "gray": 0.05,
+        "gold": 5,
+        "silver": 10
+      }
+    },
+    "examples": [
+      "brown black red gold -> 1 kΩ ±5%",
+      "red violet brown gold -> 270 Ω ±5%"
+    ],
+    "sources": [
+      "Common 4-band resistor color code reference tables."
+    ],
+    "confidence": 0.9,
+    "tags": ["reference", "lookup", "electronics"],
+    "retrieval_keys": ["resistor", "color code", "band", "ohms", "tolerance"],
+    "trigger_phrases": ["resistor color code", "color bands", "decode resistor"],
+    "linked_construct_ids": []
+  }
+]
+
