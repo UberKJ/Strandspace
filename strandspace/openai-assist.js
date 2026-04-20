@@ -175,6 +175,10 @@ function shouldLogAssistPayloadMetrics() {
   return String(process.env.STRANDSPACE_LOG_ASSIST_PAYLOAD_METRICS ?? "").trim() === "1";
 }
 
+function shouldLogAssistTokenMetrics() {
+  return String(process.env.STRANDSPACE_LOG_ASSIST_TOKEN_METRICS ?? "").trim() === "1";
+}
+
 function logAssistPayloadDelta({
   kind = "subject-assist",
   model = DEFAULT_MODEL,
@@ -204,6 +208,14 @@ function logAssistPayloadDelta({
   });
 }
 
+function logAssistTokenMetrics(metrics = null) {
+  if (!shouldLogAssistTokenMetrics() || !metrics) {
+    return;
+  }
+
+  console.info("[assist-token-metrics]", metrics);
+}
+
 function recallSnapshotVerbose(recall = {}) {
   const matched = recall.matched ?? null;
   return {
@@ -227,6 +239,57 @@ function recallSnapshotVerbose(recall = {}) {
       support: candidate.support ?? []
     })),
     readiness: recall.readiness ?? {}
+  };
+}
+
+function cueSnapshot(question = "", recall = {}) {
+  const parsed = recall?.parsed ?? {};
+  const rawQuestion = String(question ?? parsed?.raw ?? "").trim();
+  const keywords = Array.isArray(parsed?.keywords) ? parsed.keywords.slice(0, 10) : [];
+  const phrases = Array.isArray(parsed?.phrases) ? parsed.phrases.slice(0, 6) : [];
+  const exclusions = Array.isArray(parsed?.exclusions)
+    ? parsed.exclusions
+      .slice(0, 6)
+      .map((entry) => String(entry?.cue ?? entry?.term ?? "").trim())
+      .filter(Boolean)
+    : [];
+
+  return {
+    raw: rawQuestion,
+    keywords,
+    phrases,
+    exclusions
+  };
+}
+
+function minimalCandidateSnapshot(candidate = {}) {
+  return {
+    id: candidate.id,
+    constructLabel: candidate.constructLabel,
+    target: candidate.target,
+    objective: candidate.objective,
+    parentConstructId: candidate.parentConstructId ?? null,
+    variantType: candidate.variantType ?? null,
+    score: Number.isFinite(Number(candidate.score)) ? Number(candidate.score) : null,
+    matchedRatio: Number.isFinite(Number(candidate.matchedRatio)) ? Number(candidate.matchedRatio) : null
+  };
+}
+
+function minimalMatchedSnapshot(matched = null) {
+  if (!matched) {
+    return null;
+  }
+
+  return {
+    id: matched.id,
+    constructLabel: matched.constructLabel,
+    target: matched.target,
+    objective: matched.objective,
+    context: limitObject(matched.context, 4),
+    steps: Array.isArray(matched.steps) ? matched.steps.slice(0, 4) : [],
+    tags: Array.isArray(matched.tags) ? matched.tags.slice(0, 6) : [],
+    parentConstructId: matched.parentConstructId ?? null,
+    variantType: matched.variantType ?? null
   };
 }
 
@@ -255,12 +318,15 @@ function recallSnapshotCompact(recall = {}) {
         variantType: matched.variantType ?? null
       }
       : null,
-    candidates: (recall.candidates ?? []).slice(0, 2).map((candidate) => ({
+    candidates: (recall.candidates ?? []).slice(0, 5).map((candidate) => ({
       id: candidate.id,
       constructLabel: candidate.constructLabel,
       target: candidate.target,
       objective: candidate.objective,
+      parentConstructId: candidate.parentConstructId ?? null,
+      variantType: candidate.variantType ?? null,
       score: candidate.score,
+      matchedRatio: Number.isFinite(Number(candidate.matchedRatio)) ? Number(candidate.matchedRatio) : null,
       support: Array.isArray(candidate.support) ? candidate.support.slice(0, 2) : []
     })),
     readiness: {
@@ -484,6 +550,15 @@ function buildInstructions() {
   ].join(" ");
 }
 
+function buildCompactInstructions() {
+  return [
+    "You help Strandspace validate or expand a reusable subject-memory construct.",
+    "Output ONLY JSON matching the provided schema (no markdown, no extra keys).",
+    "Prefer incremental edits to the matched construct; fill only missing cues.",
+    "Keep context entries short and steps actionable."
+  ].join(" ");
+}
+
 function buildInputVerbose({ question, subjectId, subjectLabel, recall }) {
   return [
     `Subject id: ${subjectId || "new-subject"}`,
@@ -503,6 +578,127 @@ function buildInputCompact({ question, subjectId, subjectLabel, recall }) {
     `Local recall: ${JSON.stringify(recallSnapshotCompact(recall))}`,
     "Produce a validated or expanded construct that the app can optionally learn into local memory."
   ].join("\n\n");
+}
+
+function buildInputCueOnly({ question, subjectId, subjectLabel, recall }) {
+  const cue = cueSnapshot(question, recall);
+
+  return JSON.stringify({
+    subject: {
+      id: subjectId || "new-subject",
+      label: subjectLabel
+    },
+    question: cue.raw,
+    cue: {
+      keywords: cue.keywords,
+      phrases: cue.phrases,
+      exclusions: cue.exclusions
+    }
+  });
+}
+
+function buildInputReduced({ question, subjectId, subjectLabel, recall }) {
+  const cue = cueSnapshot(question, recall);
+  const routing = recall?.routing ?? {};
+  const matched = minimalMatchedSnapshot(recall?.matched ?? null);
+  const candidates = Array.isArray(recall?.candidates) ? recall.candidates.slice(0, 5).map(minimalCandidateSnapshot) : [];
+
+  return JSON.stringify({
+    subject: {
+      id: subjectId || "new-subject",
+      label: subjectLabel
+    },
+    question: cue.raw,
+    cue: {
+      keywords: cue.keywords,
+      phrases: cue.phrases,
+      exclusions: cue.exclusions
+    },
+    routing: {
+      mode: String(routing.mode ?? "").trim() || null,
+      missingKeywords: Array.isArray(routing.missingKeywords) ? routing.missingKeywords.slice(0, 6) : [],
+      confidence: Number.isFinite(Number(routing.confidence)) ? Number(routing.confidence) : null,
+      margin: Number.isFinite(Number(routing.margin)) ? Number(routing.margin) : null,
+      matchedRatio: Number.isFinite(Number(routing.matchedRatio)) ? Number(routing.matchedRatio) : null
+    },
+    matched,
+    topCandidates: candidates
+  });
+}
+
+function buildSubjectAssistRequest({
+  question,
+  subjectId,
+  subjectLabel,
+  recall,
+  payloadMode
+} = {}) {
+  const mode = String(payloadMode ?? "reduced").trim().toLowerCase() || "reduced";
+  const cue = cueSnapshot(question, recall);
+  const rawUserTokens = estimateTokens(cue.raw);
+  const compressedCueTokens = estimateTokens(JSON.stringify({
+    keywords: cue.keywords,
+    phrases: cue.phrases,
+    exclusions: cue.exclusions
+  }));
+
+  let instructions = buildCompactInstructions();
+  let input = buildInputReduced({ question, subjectId, subjectLabel, recall });
+  let retrievedConstructDataTokens = estimateTokens(JSON.stringify({
+    matched: minimalMatchedSnapshot(recall?.matched ?? null),
+    topCandidates: Array.isArray(recall?.candidates) ? recall.candidates.slice(0, 5).map(minimalCandidateSnapshot) : []
+  }));
+
+  if (mode === "baseline_full") {
+    instructions = buildInstructions();
+    input = buildInputVerbose({ question, subjectId, subjectLabel, recall });
+    retrievedConstructDataTokens = estimateTokens(JSON.stringify(recallSnapshotVerbose(recall)));
+  } else if (mode === "cue_only") {
+    instructions = buildCompactInstructions();
+    input = buildInputCueOnly({ question, subjectId, subjectLabel, recall });
+    retrievedConstructDataTokens = 0;
+  } else {
+    instructions = buildCompactInstructions();
+    input = buildInputReduced({ question, subjectId, subjectLabel, recall });
+  }
+
+  const finalRequestEstimatedTokens = estimateTokens(`${instructions}\n\n${input}`);
+  const responseEstimatedTokens = null;
+
+  const metrics = {
+    kind: "subject-assist",
+    payloadMode: mode,
+    rawUserInput: {
+      chars: cue.raw.length,
+      estimatedTokens: rawUserTokens
+    },
+    compressedCue: {
+      chars: JSON.stringify({
+        keywords: cue.keywords,
+        phrases: cue.phrases,
+        exclusions: cue.exclusions
+      }).length,
+      estimatedTokens: compressedCueTokens
+    },
+    retrievedConstructData: {
+      estimatedTokens: retrievedConstructDataTokens
+    },
+    request: {
+      instructionsChars: instructions.length,
+      inputChars: input.length,
+      estimatedTokens: finalRequestEstimatedTokens
+    },
+    response: {
+      estimatedTokens: responseEstimatedTokens
+    }
+  };
+
+  return {
+    instructions,
+    input,
+    payloadMode: mode,
+    metrics
+  };
 }
 
 function buildBuilderInstructions() {
@@ -1007,7 +1203,8 @@ export async function generateOpenAiSubjectAssist({
   subjectLabel = "General Recall",
   recall = {},
   model = DEFAULT_MODEL,
-  requestTimeoutMs = null
+  requestTimeoutMs = null,
+  payloadMode = "reduced"
 } = {}) {
   const selectedModel = resolveRequestedModel(model);
 
@@ -1017,32 +1214,24 @@ export async function generateOpenAiSubjectAssist({
       subjectId,
       subjectLabel,
       recall,
-      model: selectedModel
+      model: selectedModel,
+      payloadMode
     }), {
       timeoutMs: requestTimeoutMs
     });
   }
 
-  const instructions = buildInstructions();
-  const verboseInput = buildInputVerbose({
+  const request = buildSubjectAssistRequest({
     question,
     subjectId,
     subjectLabel,
-    recall
-  });
-  const compactInput = buildInputCompact({
-    question,
-    subjectId,
-    subjectLabel,
-    recall
+    recall,
+    payloadMode
   });
 
-  logAssistPayloadDelta({
-    kind: "subject-assist",
-    model: selectedModel,
-    instructions,
-    verboseInput,
-    compactInput
+  logAssistTokenMetrics({
+    ...request.metrics,
+    model: selectedModel
   });
 
   const openai = getClient();
@@ -1050,8 +1239,8 @@ export async function generateOpenAiSubjectAssist({
     openai.responses.create({
       model: selectedModel,
       store: false,
-      instructions,
-      input: compactInput,
+      instructions: request.instructions,
+      input: request.input,
       text: {
         format: {
           type: "json_schema",
@@ -1073,10 +1262,24 @@ export async function generateOpenAiSubjectAssist({
     objective: matched?.objective
   });
 
+  const usage = normalizeUsagePayload(response.usage);
+  const responseTokens = usage?.output_tokens ?? estimateTokens(response.output_text);
+  const responseMetrics = {
+    ...request.metrics,
+    model: response.model ?? selectedModel,
+    response: {
+      ...request.metrics.response,
+      estimatedTokens: responseTokens
+    },
+    usage: usage ?? null
+  };
+
   return {
     responseId: response.id,
     model: response.model ?? selectedModel,
-    usage: normalizeUsagePayload(response.usage),
+    payloadMode: request.payloadMode,
+    usage,
+    metrics: responseMetrics,
     assist
   };
 }

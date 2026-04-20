@@ -65,6 +65,18 @@ function markdownEscape(value = "") {
   return String(value ?? "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
 }
 
+function safeJsonParse(value, fallback) {
+  if (!value) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
 function hasTable(db, name) {
   try {
     return Boolean(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(String(name)));
@@ -104,8 +116,63 @@ function listBenchmarkReports(db, options = {}) {
     comparisonAvailable: Boolean(row.comparisonAvailable),
     faster: row.faster || "",
     summary: row.summary || "",
+    debug: safeJsonParse(row.debugJson, null),
     createdAt: row.createdAt
   }));
+}
+
+function payloadBenchModeSnapshot(payloadBenchmark = null, mode = "") {
+  if (!payloadBenchmark || typeof payloadBenchmark !== "object") {
+    return null;
+  }
+
+  const modes = Array.isArray(payloadBenchmark.modes) ? payloadBenchmark.modes : [];
+  return modes.find((entry) => entry && entry.payloadMode === mode) ?? null;
+}
+
+function buildPayloadBenchmarkSection(runs = []) {
+  const entries = runs
+    .filter((run) => run?.debug?.payloadBenchmark && Array.isArray(run.debug.payloadBenchmark.modes))
+    .slice(0, 12);
+
+  if (!entries.length) {
+    return "";
+  }
+
+  const lines = [];
+  lines.push("## Payload Benchmark (Recent)");
+  lines.push("");
+  lines.push("| createdAt | model | baselineReqTokens | cueOnlyReqTokens | reducedReqTokens | reducedReduction | baselineCost | reducedCost |");
+  lines.push("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |");
+
+  for (const run of entries) {
+    const payloadBenchmark = run.debug.payloadBenchmark;
+    const baseline = payloadBenchModeSnapshot(payloadBenchmark, "baseline_full");
+    const cueOnly = payloadBenchModeSnapshot(payloadBenchmark, "cue_only");
+    const reduced = payloadBenchModeSnapshot(payloadBenchmark, "reduced");
+
+    lines.push([
+      markdownEscape(run.createdAt),
+      markdownEscape(run.model || "unknown"),
+      baseline?.requestTokens ?? "n/a",
+      cueOnly?.requestTokens ?? "n/a",
+      reduced?.requestTokens ?? "n/a",
+      reduced?.reductionRequestPct === null || reduced?.reductionRequestPct === undefined ? "n/a" : `${reduced.reductionRequestPct}%`,
+      baseline?.estimatedCostUsd === null || baseline?.estimatedCostUsd === undefined || Number(baseline.estimatedCostUsd) <= 0 ? "n/a" : `$${baseline.estimatedCostUsd}`,
+      reduced?.estimatedCostUsd === null || reduced?.estimatedCostUsd === undefined || Number(reduced.estimatedCostUsd) <= 0 ? "n/a" : `$${reduced.estimatedCostUsd}`
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"));
+  }
+
+  lines.push("");
+  lines.push("Notes:");
+  lines.push("");
+  lines.push("- `baseline_full` uses the verbose Strandspace assist payload.");
+  lines.push("- `cue_only` sends only the compressed cue (no retrieved construct details).");
+  lines.push("- `reduced` sends compressed cue + top matches with minimal structured fields.");
+  lines.push("- Costs require `STRANDSPACE_OPENAI_PRICING_JSON` or per-1M token env overrides.");
+  lines.push("");
+
+  return `${lines.join("\n")}\n`;
 }
 
 function buildBenchmarkHistoryReport({ dbPath, runs, generatedAt }) {
@@ -278,6 +345,13 @@ function buildBenchmarkReportsReport({ dbPath, runs, generatedAt }) {
   }
 
   lines.push("");
+
+  const payloadSection = buildPayloadBenchmarkSection(runs);
+  if (payloadSection) {
+    lines.push(payloadSection.trimEnd());
+    lines.push("");
+  }
+
   lines.push("## Notes");
   lines.push("");
   lines.push("- This report is generated from the local SQLite table `benchmark_reports` (Model Lab reports).");

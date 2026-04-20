@@ -1,20 +1,20 @@
 # Strandspace Benchmark History
 
-Generated: 2026-04-20T06:00:16.783Z
+Generated: 2026-04-20T19:15:36.377Z
 Database: `data\strandspace.sqlite`
-Runs: 15
+Runs: 16
 
 ## Summary
 
-- Avg local recall latency: 69.6 ms
-- Avg assist round-trip latency: 6958.1 ms
-- Avg speedup: 113.9x
+- Avg local recall latency: 69 ms
+- Avg assist round-trip latency: 7366.6 ms
+- Avg speedup: 121.1x
 
 ## By Model
 
 | provider | model | runs | avgLocalMs | avgAssistMs | avgSpeedup |
 | --- | --- | ---: | ---: | ---: | ---: |
-| OpenAI Assist | gpt-5.4-mini-2026-03-17 | 13 | 70.7 | 5471.5 | 89.1 |
+| OpenAI Assist | gpt-5.4-mini-2026-03-17 | 14 | 69.9 | 6044.5 | 99 |
 | OpenAI Assist | gpt-5.2-2025-12-11 | 1 | 75.6 | 17481.2 | 231.2 |
 | OpenAI Assist | gpt-5.4-2026-03-05 | 1 | 49.3 | 15760.9 | 319.5 |
 
@@ -22,6 +22,7 @@ Runs: 15
 
 | createdAt | testLabel | provider | model | mode | prompt | compactPrompt | localMs | assistMs | speedup | faster |
 | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- |
+| 2026-04-20T19:14:59.521Z | Payload benchmark (modes) | OpenAI Assist | gpt-5.4-mini-2026-03-17 | compare | What is a good handheld vocal EQ setup for karaoke? | What is a good handheld vocal EQ setup for karaoke? | 59.1 | 13493.3 | 228.4 | strandbase |
 | 2026-04-20T05:25:57.731Z | Manual benchmark | OpenAI Assist | gpt-5.4-mini-2026-03-17 | compare | Bose T8S band Shure SM58 acoustic guitar Electric Guitars Mic'd Amp w/ SM57 small setup | Recall Bose T8S acoustic guitar. | 68.8 | 4976.6 | 72.3 | strandbase |
 | 2026-04-20T05:06:20.790Z | Fewer cue words benchmark | OpenAI Assist | gpt-5.4-mini-2026-03-17 | compare | Recall Bose T8S acoustic guitar | Recall Bose T8S acoustic guitar | 69.4 | 4607.2 | 66.3 | strandbase |
 | 2026-04-20T04:56:47.347Z | local benchmark run 3 | OpenAI Assist | gpt-5.4-mini-2026-03-17 | compare | What is a safe feedback-control starting point for a small karaoke room? | Recall best starting behringer xenyx qx1202usb vocal. | 50.8 | 3710.6 | 73.1 | strandbase |
@@ -37,6 +38,19 @@ Runs: 15
 | 2026-04-19T21:43:32.251Z | Manual model lab compare | OpenAI Assist | gpt-5.4-mini-2026-03-17 | compare | Bose T8S karaoke Innopaw WM333 full gain-staging reset with MDX-2600 and mixed mains/monitors | Recall bose t8s karaoke innopaw wm333 full. | 51.9 | 8752.7 | 168.7 | strandbase |
 | 2026-04-19T21:38:57.241Z | Post-fix live compare | OpenAI Assist | gpt-5.4-mini-2026-03-17 | compare | What is a good t8s sm58 mic setting for karaoke? | Recall Bose T8S microphone for karaoke vocal. | 58.6 | 5632.9 | 96.1 | strandbase |
 | 2026-04-19T21:37:13.881Z | Live debug compare | OpenAI Assist | gpt-5.4-mini-2026-03-17 | compare | What is my gallery interview key light setup with the softbox at 45 degrees? | Recall Bose T8S microphone for karaoke vocal. | 63.1 | 6617.8 | 104.9 | strandbase |
+
+## Payload Benchmark (Recent)
+
+| createdAt | model | baselineReqTokens | cueOnlyReqTokens | reducedReqTokens | reducedReduction | baselineCost | reducedCost |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2026-04-20T19:14:59.521Z | gpt-5.4-mini-2026-03-17 | 4129 | 285 | 1124 | 72.8% | n/a | n/a |
+
+Notes:
+
+- `baseline_full` uses the verbose Strandspace assist payload.
+- `cue_only` sends only the compressed cue (no retrieved construct details).
+- `reduced` sends compressed cue + top matches with minimal structured fields.
+- Costs require `STRANDSPACE_OPENAI_PRICING_JSON` or per-1M token env overrides.
 
 ## Notes
 

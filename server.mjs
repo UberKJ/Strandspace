@@ -2109,6 +2109,46 @@ async function buildModelLabStatusPayload() {
   };
 }
 
+function resolveOpenAiPricingOverrides() {
+  const raw = String(process.env.STRANDSPACE_OPENAI_PRICING_JSON ?? "").trim();
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function estimateOpenAiCostUsd({ model = "", inputTokens = null, outputTokens = null } = {}) {
+  const normalizedModel = String(model ?? "").trim();
+  const pricing = resolveOpenAiPricingOverrides();
+
+  const fallbackInputRaw = String(process.env.STRANDSPACE_OPENAI_INPUT_USD_PER_1M ?? "").trim();
+  const fallbackOutputRaw = String(process.env.STRANDSPACE_OPENAI_OUTPUT_USD_PER_1M ?? "").trim();
+  const fallbackInputPer1M = fallbackInputRaw ? Number(fallbackInputRaw) : Number.NaN;
+  const fallbackOutputPer1M = fallbackOutputRaw ? Number(fallbackOutputRaw) : Number.NaN;
+
+  const meta = pricing && normalizedModel && pricing[normalizedModel] && typeof pricing[normalizedModel] === "object"
+    ? pricing[normalizedModel]
+    : null;
+
+  const inputPer1M = Number(meta?.inputUsdPer1M ?? fallbackInputPer1M);
+  const outputPer1M = Number(meta?.outputUsdPer1M ?? fallbackOutputPer1M);
+
+  if (!Number.isFinite(inputPer1M) || !Number.isFinite(outputPer1M)) {
+    return null;
+  }
+
+  const input = Number.isFinite(Number(inputTokens)) ? Number(inputTokens) : 0;
+  const output = Number.isFinite(Number(outputTokens)) ? Number(outputTokens) : 0;
+  const cost = (input / 1_000_000) * inputPer1M + (output / 1_000_000) * outputPer1M;
+  return Number.isFinite(cost) ? Number(cost.toFixed(6)) : null;
+}
+
 function normalizeModelProvider(value = "", status = null) {
   return String(status?.defaultProvider ?? "openai").trim() || "openai";
 }
@@ -2998,6 +3038,8 @@ async function handleApi(req, res) {
     const providerMeta = findModelProvider(status, provider);
     const model = String(payload.model ?? providerMeta?.defaultModel ?? "").trim();
     const groundWithLocalRecall = payload.groundWithLocalRecall !== false;
+    const payloadMode = String(payload.payloadMode ?? "reduced").trim() || "reduced";
+    const payloadBenchmark = payload.payloadBenchmark === true;
     const requestTimeoutMs = Number(status?.benchmarkTimeoutMs ?? DEFAULT_MODEL_LAB_OPENAI_TIMEOUT_MS);
     const originalLocal = measureSync(() => recallSubjectSpace(db, {
       question,
@@ -3050,6 +3092,7 @@ async function handleApi(req, res) {
       output: ""
     };
     let debug = null;
+    let payloadBenchmarkResult = null;
 
     const config = getOpenAiAssistStatus();
     if (!config.enabled) {
@@ -3067,7 +3110,8 @@ async function handleApi(req, res) {
           subjectLabel,
           recall,
           model,
-          requestTimeoutMs
+          requestTimeoutMs,
+          payloadMode
         }), {
           route: url.pathname,
           provider,
@@ -3080,6 +3124,97 @@ async function handleApi(req, res) {
           assistResult.assist?.nextQuestion ? `Next question: ${assistResult.assist.nextQuestion}` : ""
         ].filter(Boolean).join("\n\n").trim();
 
+        if (payloadBenchmark) {
+          const benchmarkModes = ["baseline_full", "cue_only", "reduced"];
+          const results = [];
+          const resolvedByMode = new Map([[assistResult.payloadMode ?? payloadMode, assistResult]]);
+
+          for (const mode of benchmarkModes) {
+            if (resolvedByMode.has(mode)) {
+              continue;
+            }
+
+            const modeStarted = performance.now();
+            try {
+              const modeResult = await runTimed(`Model lab OpenAI compare (${mode})`, () => generateOpenAiSubjectAssist({
+                question: benchmarkQuestion,
+                subjectId,
+                subjectLabel,
+                recall,
+                model,
+                requestTimeoutMs,
+                payloadMode: mode
+              }), {
+                route: url.pathname,
+                provider,
+                question: previewQuestionForLogs(benchmarkQuestion),
+                subjectId: subjectId || recall.matched?.subjectId || ""
+              });
+              resolvedByMode.set(mode, modeResult);
+              results.push({
+                payloadMode: mode,
+                ok: true,
+                latencyMs: toLatencyMs(performance.now() - modeStarted),
+                metrics: modeResult.metrics ?? null,
+                usage: normalizeUsageMetrics(modeResult.usage),
+                estimatedCostUsd: estimateOpenAiCostUsd({
+                  model: modeResult.model ?? model ?? config.model,
+                  inputTokens: normalizeUsageMetrics(modeResult.usage)?.inputTokens ?? null,
+                  outputTokens: normalizeUsageMetrics(modeResult.usage)?.outputTokens ?? null
+                })
+              });
+            } catch (error) {
+              results.push({
+                payloadMode: mode,
+                ok: false,
+                latencyMs: toLatencyMs(performance.now() - modeStarted),
+                error: error instanceof Error ? error.message : String(error)
+              });
+            }
+          }
+
+          const primaryEntry = {
+            payloadMode: assistResult.payloadMode ?? payloadMode,
+            ok: true,
+            latencyMs: toLatencyMs(performance.now() - started),
+            metrics: assistResult.metrics ?? null,
+            usage,
+            estimatedCostUsd: estimateOpenAiCostUsd({
+              model: assistResult.model ?? model ?? config.model,
+              inputTokens: usage?.inputTokens ?? null,
+              outputTokens: usage?.outputTokens ?? null
+            })
+          };
+          if (!results.some((entry) => entry.payloadMode === primaryEntry.payloadMode)) {
+            results.push(primaryEntry);
+          }
+
+          const baseline = results.find((entry) => entry.ok && entry.payloadMode === "baseline_full") ?? null;
+          const baselineRequestTokens = Number(baseline?.usage?.inputTokens ?? baseline?.metrics?.request?.estimatedTokens ?? 0) || null;
+
+          payloadBenchmarkResult = {
+            baselineMode: "baseline_full",
+            requestTokenBasis: baseline?.usage?.inputTokens ? "usage" : "estimate",
+            baselineRequestTokens,
+            modes: results
+              .map((entry) => {
+                const entryRequestTokens = Number(entry?.usage?.inputTokens ?? entry?.metrics?.request?.estimatedTokens ?? 0) || null;
+                const entryTotalTokens = Number(entry?.usage?.totalTokens ?? 0) || null;
+                const reductionRequest = baselineRequestTokens && entryRequestTokens
+                  ? Number(((1 - entryRequestTokens / baselineRequestTokens) * 100).toFixed(1))
+                  : null;
+
+                return {
+                  ...entry,
+                  requestTokens: entryRequestTokens,
+                  totalTokens: entryTotalTokens,
+                  reductionRequestPct: reductionRequest
+                };
+              })
+              .sort((left, right) => String(left.payloadMode).localeCompare(String(right.payloadMode)))
+          };
+        }
+
         llm = {
           ...llm,
           model: assistResult.model ?? config.model,
@@ -3090,7 +3225,14 @@ async function handleApi(req, res) {
           promptTokenSource: usage?.inputTokens ? "usage" : llm.promptTokenSource,
           outputTokens: usage?.outputTokens ?? null,
           totalTokens: usage?.totalTokens ?? null,
-          output: answerText
+          output: answerText,
+          payloadMode: assistResult.payloadMode ?? payloadMode,
+          tokenMetrics: assistResult.metrics ?? null,
+          estimatedCostUsd: estimateOpenAiCostUsd({
+            model: assistResult.model ?? model ?? config.model,
+            inputTokens: usage?.inputTokens ?? null,
+            outputTokens: usage?.outputTokens ?? null
+          })
         };
         debug = createModelLabDebugEntry({
           mode: "compare",
@@ -3107,6 +3249,9 @@ async function handleApi(req, res) {
           localLatencyMs: local.latencyMs,
           promptMode: "subjectspace-assist"
         });
+        if (debug && payloadBenchmarkResult) {
+          debug.payloadBenchmark = payloadBenchmarkResult;
+        }
       } catch (error) {
         if (isModelTestingUnavailableError(error)) {
           const unavailableDebug = createModelLabDebugEntry({
@@ -3197,7 +3342,8 @@ async function handleApi(req, res) {
       llm,
       comparison: buildSubjectspaceBenchmark(local.latencyMs, llm, prompts),
       recall,
-      debug
+      debug,
+      payloadBenchmark: payloadBenchmarkResult
     };
     persistBenchmarkReport(db, {
       ...resultPayload,
@@ -3768,8 +3914,11 @@ async function handleApi(req, res) {
     let assistResult;
     try {
       assistResult = await runTimed("Subjectspace assist", () => generateOpenAiSubjectAssist({
-        parsed: { raw: question },
-        subjectLabel
+        question,
+        subjectId,
+        subjectLabel,
+        recall,
+        payloadMode: payload.payloadMode ?? "reduced"
       }), {
         route: url.pathname,
         question: previewQuestionForLogs(question),
@@ -3879,8 +4028,11 @@ async function handleApi(req, res) {
       const started = performance.now();
       try {
         const assistResult = await runTimed("Subjectspace compare assist", () => generateOpenAiSubjectAssist({
-          parsed: { raw: benchmarkQuestion },
-          subjectLabel
+          question: benchmarkQuestion,
+          subjectId,
+          subjectLabel,
+          recall,
+          payloadMode: payload.payloadMode ?? "reduced"
         }), {
           route: url.pathname,
           question: previewQuestionForLogs(benchmarkQuestion),
@@ -4105,8 +4257,11 @@ async function handleApi(req, res) {
     let assistResult;
     try {
       assistResult = await runTimed("Subjectspace chat assist", () => generateOpenAiSubjectAssist({
-        parsed: { raw: message },
-        subjectLabel
+        question: message,
+        subjectId,
+        subjectLabel,
+        recall,
+        payloadMode: payload.payloadMode ?? "reduced"
       }), {
         route: url.pathname,
         question: previewQuestionForLogs(message),

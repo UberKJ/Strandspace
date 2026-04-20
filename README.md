@@ -163,7 +163,10 @@ What they do:
 - Model Lab endpoints: `GET /api/model-lab/status`, `POST /api/model-lab/compare`, `GET /api/model-lab/reports`.
 - Benchmark coverage lives in `test/benchmark-tests.mjs` and runs via `npm test`.
 - Generate a local markdown snapshot with `npm run benchmark:report` (writes `docs/benchmark-history.md`).
+- Optional assist token metrics: set `STRANDSPACE_LOG_ASSIST_TOKEN_METRICS=1` to log estimated token breakdowns for the OpenAI assist request/response.
 - Optional assist payload metrics: set `STRANDSPACE_LOG_ASSIST_PAYLOAD_METRICS=1` to log estimated before/after payload size.
+- Payload benchmark mode: send `payloadBenchmark: true` in `POST /api/model-lab/compare` to compare `baseline_full` vs `cue_only` vs `reduced` assist payload modes.
+- Estimated cost output in payload benchmarking requires either `STRANDSPACE_OPENAI_PRICING_JSON='{\"model\":{\"inputUsdPer1M\":0,\"outputUsdPer1M\":0}}'` or `STRANDSPACE_OPENAI_INPUT_USD_PER_1M` / `STRANDSPACE_OPENAI_OUTPUT_USD_PER_1M`.
 
 ## Seeded Examples
 

@@ -192,6 +192,88 @@ export async function registerBenchmarkTests(ctx = {}) {
     }
   });
 
+  await check("POST /api/model-lab/compare payloadBenchmark returns token and cost deltas by payload mode", async () => {
+    const tokensByMode = {
+      baseline_full: 420,
+      cue_only: 90,
+      reduced: 160
+    };
+
+    __setOpenAiAssistMock(async ({ question, subjectLabel, payloadMode }) => {
+      const mode = String(payloadMode ?? "reduced").trim() || "reduced";
+      const input = tokensByMode[mode] ?? tokensByMode.reduced;
+      const output = 60;
+
+      return {
+        responseId: `resp_payload_benchmark_${mode}`,
+        model: "gpt-5.4-mini",
+        usage: {
+          input_tokens: input,
+          output_tokens: output,
+          total_tokens: input + output
+        },
+        assist: {
+          apiAction: "validate",
+          constructLabel: `${subjectLabel} payload benchmark draft`,
+          target: `Benchmark answer for ${question}`,
+          objective: "Verify payload mode benchmarking and token deltas",
+          contextEntries: [
+            { key: "payloadMode", value: mode }
+          ],
+          steps: [
+            "Run baseline full payload.",
+            "Run cue-only payload.",
+            "Run reduced payload."
+          ],
+          notes: "Synthetic response that returns deterministic token usage for each payload mode.",
+          tags: ["benchmark", "payload"],
+          validationFocus: ["token usage"],
+          rationale: "Mocked usage makes reductions measurable without calling OpenAI.",
+          shouldLearn: false
+        }
+      };
+    });
+
+    try {
+      await withServer(async (address) => {
+        const construct = await createSubjectConstruct(address.port, {
+          subjectLabel: `Payload Benchmark Subject ${Date.now()}`
+        });
+
+        const response = await postJson(`http://127.0.0.1:${address.port}/api/model-lab/compare`, {
+          provider: "openai",
+          model: "gpt-5.4-mini",
+          subjectId: construct.subjectId,
+          question: "How should I set gain staging for a Yamaha MG10XU?",
+          payloadBenchmark: true
+        });
+
+        assert.equal(response.status, 200);
+        const payload = await response.json();
+        assert.equal(payload.ok, true);
+        assert.ok(payload.payloadBenchmark);
+        assert.equal(payload.payloadBenchmark.baselineMode, "baseline_full");
+        assert.ok(Array.isArray(payload.payloadBenchmark.modes));
+        assert.ok(payload.payloadBenchmark.modes.length >= 3);
+
+        const reduced = payload.payloadBenchmark.modes.find((entry) => entry.payloadMode === "reduced");
+        const cueOnly = payload.payloadBenchmark.modes.find((entry) => entry.payloadMode === "cue_only");
+        const baseline = payload.payloadBenchmark.modes.find((entry) => entry.payloadMode === "baseline_full");
+
+        assert.ok(baseline);
+        assert.ok(reduced);
+        assert.ok(cueOnly);
+        assert.equal(baseline.requestTokens, tokensByMode.baseline_full);
+        assert.equal(reduced.requestTokens, tokensByMode.reduced);
+        assert.equal(cueOnly.requestTokens, tokensByMode.cue_only);
+        assert.ok(Number(reduced.reductionRequestPct ?? 0) > 0);
+        assert.ok(Number(cueOnly.reductionRequestPct ?? 0) > 0);
+      });
+    } finally {
+      __setOpenAiAssistMock(null);
+    }
+  });
+
   await check("POST /api/model-lab/compare returns model testing unavailable on timeout and does not persist a report entry", async () => {
     const originalTimeout = process.env.SUBJECTSPACE_OPENAI_TIMEOUT_MS;
     const originalModelLabTimeout = process.env.SUBJECTSPACE_MODEL_LAB_TIMEOUT_MS;
