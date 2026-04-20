@@ -4,7 +4,6 @@ import {
   parseCommaList,
   parseEntityList,
   rowsToObject,
-  safeJsonParse,
   tokenize,
   uniqueList
 } from "./utils.js";
@@ -14,6 +13,9 @@ const storageKey = "strandspace_workspace_state_v1";
 export function createDefaultState() {
   return {
     theme: "dark",
+    flags: {
+      debug: false
+    },
     status: {
       openai: null,
       database: null,
@@ -32,8 +34,17 @@ export function createDefaultState() {
     draft: createEmptyDraft(),
     ui: {
       attributesRows: [{ key: "", value: "" }],
-      lookupJsonText: "",
-      lookupJsonError: "",
+      lookup: {
+        sections: [{ name: "", rows: [{ key: "", value: "" }] }]
+      },
+      intake: {
+        analysis: null,
+        error: "",
+        lastTopic: "",
+        ignoreStrongMatch: false,
+        typePickerOpen: false,
+        typeConfirmed: false
+      },
       diagnostic: {
         symptoms: [""],
         causes: [""],
@@ -97,6 +108,9 @@ export function saveState(state) {
   try {
     const payload = {
       theme: state.theme,
+      flags: {
+        debug: Boolean(state.flags?.debug)
+      },
       intake: state.intake,
       draft: state.draft,
       filters: {
@@ -120,6 +134,9 @@ export function hydrateState(stored, fallback) {
   if (!stored || typeof stored !== "object") return state;
 
   state.theme = stored.theme === "light" ? "light" : "dark";
+  state.flags = {
+    debug: Boolean(stored.flags?.debug)
+  };
   state.intake = {
     stepIndex: Number(stored.intake?.stepIndex ?? 0) || 0
   };
@@ -140,9 +157,7 @@ export function hydrateState(stored, fallback) {
   state.ui.attributesRows = objectToRows(state.draft.attributes);
   if (state.ui.attributesRows.length === 0) state.ui.attributesRows = [{ key: "", value: "" }];
 
-  state.ui.lookupJsonText = state.draft.lookup_table && Object.keys(state.draft.lookup_table).length
-    ? JSON.stringify(state.draft.lookup_table, null, 2)
-    : "";
+  state.ui.lookup.sections = lookupTableToSections(state.draft.lookup_table);
 
   state.ui.diagnostic.symptoms = Array.isArray(state.draft.attributes?.symptoms) ? [...state.draft.attributes.symptoms] : [""];
   state.ui.diagnostic.causes = Array.isArray(state.draft.attributes?.causes) ? [...state.draft.attributes.causes] : [""];
@@ -158,8 +173,187 @@ export function hydrateState(stored, fallback) {
   return state;
 }
 
+export function hydrateLookupEditor(state) {
+  state.ui.lookup.sections = lookupTableToSections(state.draft.lookup_table);
+  if (!Array.isArray(state.ui.lookup.sections) || state.ui.lookup.sections.length === 0) {
+    state.ui.lookup.sections = [{ name: "", rows: [{ key: "", value: "" }] }];
+  }
+}
+
 export function stepSequence(state) {
-  return buildStepSequence(state.draft.construct_type || "");
+  if (state.flags?.debug) {
+    return buildStepSequence(state.draft.construct_type || "");
+  }
+
+  return buildGuidedStepSequence(state);
+}
+
+function mapInferenceKindToStep(kind = "") {
+  const k = String(kind ?? "").trim();
+  if (k === "offer_match") return "reuse_match";
+  if (k === "confirm_type") return "construct_type";
+  if (k === "ask_purpose") return "purpose";
+  if (k === "ask_entities") return "core_entities";
+  if (k === "ask_lookup") return "lookup_table";
+  if (k === "ask_steps") return "steps";
+  if (k === "ask_attributes") return "attributes";
+  if (k === "ask_rules") return "rules";
+  if (k === "ask_examples") return "examples";
+  return "";
+}
+
+function shouldAskReuseMatch(state) {
+  if (state.ui?.intake?.ignoreStrongMatch) return false;
+  const matched = state.ui?.intake?.analysis?.recall?.matched ?? null;
+  const ready = Boolean(state.ui?.intake?.analysis?.recall?.ready);
+  return Boolean(ready && matched && String(matched?.id ?? "").trim());
+}
+
+function shouldAskStep(state, key) {
+  const draft = state.draft ?? {};
+  const nulls = new Set(Array.isArray(draft.null_fields) ? draft.null_fields : []);
+  if (nulls.has(key)) return false;
+  if ((key === "diagnostic" || key === "specification") && nulls.has("attributes")) return false;
+
+  if (key === "reuse_match") return shouldAskReuseMatch(state);
+  if (key === "construct_type") return !Boolean(state.ui?.intake?.typeConfirmed);
+
+  if (key === "purpose") return !String(draft.purpose ?? "").trim();
+  if (key === "core_entities") return !(Array.isArray(draft.core_entities) && draft.core_entities.filter(Boolean).length);
+
+  if (key === "lookup_table") {
+    return !(draft.lookup_table && typeof draft.lookup_table === "object" && !Array.isArray(draft.lookup_table) && Object.keys(draft.lookup_table).length);
+  }
+
+  if (key === "steps") return !(Array.isArray(draft.steps) && draft.steps.filter(Boolean).length);
+  if (key === "attributes") return !(draft.attributes && typeof draft.attributes === "object" && !Array.isArray(draft.attributes) && Object.keys(draft.attributes).length);
+  if (key === "diagnostic") {
+    const symptoms = Array.isArray(draft.attributes?.symptoms) ? draft.attributes.symptoms.filter(Boolean).length : 0;
+    const checks = Array.isArray(draft.attributes?.checks) ? draft.attributes.checks.filter(Boolean).length : 0;
+    const causes = Array.isArray(draft.attributes?.causes) ? draft.attributes.causes.filter(Boolean).length : 0;
+    return symptoms + checks + causes === 0;
+  }
+  if (key === "specification") {
+    const rows = Array.isArray(draft.attributes?.specs) ? draft.attributes.specs : [];
+    return rows.filter((row) => row?.key || row?.value || row?.unit).length === 0;
+  }
+
+  if (key === "rules") return !(Array.isArray(draft.rules) && draft.rules.filter(Boolean).length);
+  if (key === "examples") return !(Array.isArray(draft.examples) && draft.examples.filter(Boolean).length);
+  if (key === "tags") return !(Array.isArray(draft.tags) && draft.tags.filter(Boolean).length);
+  if (key === "title") return canSuggestTitle(state) && !String(draft.title ?? "").trim();
+
+  return false;
+}
+
+function essentialStepsForType(type = "") {
+  const t = String(type ?? "").trim();
+  if (t === "reference_lookup" || t === "classification") return ["lookup_table"];
+  if (t === "procedure" || t === "timeline") return ["steps"];
+  if (t === "diagnostic") return ["diagnostic"];
+  if (t === "specification") return ["specification"];
+  if (t === "configuration" || t === "profile" || t === "comparison") return ["attributes"];
+  return ["attributes"];
+}
+
+function buildGuidedStepSequence(state) {
+  const steps = ["topic"];
+  const topic = String(state.draft?.topic ?? "").trim();
+  if (!topic) return steps;
+
+  const inference = state.ui?.intake?.analysis?.inference ?? null;
+  const preferred = mapInferenceKindToStep(inference?.next_question_kind);
+  if (preferred && preferred !== "topic" && shouldAskStep(state, preferred) && !steps.includes(preferred)) {
+    steps.push(preferred);
+  }
+
+  const add = (key) => {
+    if (!steps.includes(key) && shouldAskStep(state, key)) steps.push(key);
+  };
+
+  add("reuse_match");
+  add("construct_type");
+  add("purpose");
+  add("core_entities");
+
+  const type = String(state.draft?.construct_type ?? "").trim() || String(inference?.construct_type ?? "").trim();
+  for (const key of essentialStepsForType(type)) add(key);
+
+  add("rules");
+
+  return steps;
+}
+
+function lookupTableToSections(table) {
+  const normalized = table && typeof table === "object" && !Array.isArray(table) ? table : {};
+  const entries = Object.entries(normalized);
+
+  const sections = [];
+  const flatRows = [];
+
+  for (const [key, value] of entries) {
+    const k = String(key ?? "").trim();
+    if (!k) continue;
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const rows = Object.entries(value).map(([innerKey, innerValue]) => ({
+        key: String(innerKey ?? "").trim(),
+        value: innerValue === null || innerValue === undefined ? "" : String(innerValue)
+      })).filter((row) => row.key || row.value);
+      sections.push({ name: k, rows: rows.length ? rows : [{ key: "", value: "" }] });
+    } else {
+      flatRows.push({ key: k, value: value === null || value === undefined ? "" : String(value) });
+    }
+  }
+
+  if (flatRows.length) {
+    sections.unshift({ name: "", rows: flatRows });
+  }
+
+  if (sections.length === 0) {
+    return [{ name: "", rows: [{ key: "", value: "" }] }];
+  }
+
+  return sections.map((section) => ({
+    name: String(section?.name ?? ""),
+    rows: Array.isArray(section?.rows) && section.rows.length ? section.rows : [{ key: "", value: "" }]
+  }));
+}
+
+function parseLookupValue(value) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return "";
+  if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) return Number(trimmed);
+  return trimmed;
+}
+
+function sectionsToLookupTable(sections) {
+  const normalized = Array.isArray(sections) ? sections : [];
+  const out = {};
+
+  for (const section of normalized) {
+    const name = String(section?.name ?? "").trim();
+    const rows = Array.isArray(section?.rows) ? section.rows : [];
+
+    const entries = Object.fromEntries(
+      rows
+        .map((row) => [String(row?.key ?? "").trim(), String(row?.value ?? "").trim()])
+        .filter(([key, value]) => key && value)
+        .slice(0, 80)
+        .map(([key, value]) => [key, parseLookupValue(value)])
+    );
+
+    if (Object.keys(entries).length === 0) {
+      continue;
+    }
+
+    if (name) {
+      out[name] = entries;
+    } else {
+      Object.assign(out, entries);
+    }
+  }
+
+  return out;
 }
 
 export function currentStep(state) {
@@ -240,12 +434,20 @@ export function buildRecallQuestion(state) {
 }
 
 export function applySkipToStep(state, stepKey) {
+  if (stepKey === "reuse_match") {
+    state.ui.intake.ignoreStrongMatch = true;
+    return;
+  }
+
   if (stepKey === "topic") {
     state.draft.topic = "";
     return;
   }
   if (stepKey === "construct_type") {
-    state.draft.construct_type = "";
+    if (!String(state.draft.construct_type ?? "").trim()) {
+      state.draft.construct_type = "hybrid";
+    }
+    state.ui.intake.typeConfirmed = true;
     return;
   }
 
@@ -268,20 +470,16 @@ export function applySkipToStep(state, stepKey) {
   const key = map[stepKey];
   if (!key) return;
   state.draft[key] = null;
+  const list = Array.isArray(state.draft.null_fields) ? state.draft.null_fields : [];
+  state.draft.null_fields = uniqueList([...list, key], 64);
 }
 
 export function applyAttributesRowsToDraft(state) {
   state.draft.attributes = rowsToObject(state.ui.attributesRows);
 }
 
-export function applyLookupTextToDraft(state) {
-  const parsed = safeJsonParse(state.ui.lookupJsonText);
-  if (!parsed.ok) {
-    state.ui.lookupJsonError = parsed.error ?? "Invalid JSON";
-    return false;
-  }
-  state.ui.lookupJsonError = "";
-  state.draft.lookup_table = parsed.value && typeof parsed.value === "object" ? parsed.value : {};
+export function applyLookupSectionsToDraft(state) {
+  state.draft.lookup_table = sectionsToLookupTable(state.ui.lookup?.sections);
   return true;
 }
 

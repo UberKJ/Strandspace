@@ -22,6 +22,7 @@ import {
   listTopicConstructs,
   getTopicConstruct
 } from "./strandspace/topicspace.js";
+import { analyzeTopicIntake } from "./strandspace/intake.js";
 import { buildSoundConstructFromQuestion } from "./strandspace/sound-llm.js";
 import {
   auditSubjectDataset,
@@ -145,6 +146,7 @@ const API_TIMEOUTS_MS = new Map([
   ["/api/stats", DEFAULT_API_TIMEOUT_MS],
   ["/api/topicspace/constructs", DEFAULT_API_TIMEOUT_MS],
   ["/api/topicspace/construct", DEFAULT_API_TIMEOUT_MS],
+  ["/api/topicspace/intake", EXTENDED_API_TIMEOUT_MS],
   ["/api/topicspace/learn", DEFAULT_API_TIMEOUT_MS],
   ["/api/topicspace", DEFAULT_API_TIMEOUT_MS],
   ["/api/topicspace/answer", DEFAULT_API_TIMEOUT_MS],
@@ -3827,6 +3829,28 @@ async function handleApi(req, res) {
       suggestedConstruct: hydrateConstructForClient(suggestedConstruct),
       responseId
     });
+    return;
+  }
+
+  if (url.pathname === "/api/topicspace/intake") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { ok: false, error: "Invalid JSON body" });
+      return;
+    }
+
+    const topic = String(payload.topic ?? payload.topicLabel ?? "").trim();
+    const draft = payload.draft && typeof payload.draft === "object" ? payload.draft : null;
+
+    sendJson(res, 200, await analyzeTopicIntake(db, { topic, draft }));
     return;
   }
 

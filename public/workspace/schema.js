@@ -39,17 +39,18 @@ export const TYPE_HINTS = {
 
 export const STEP_DEFS = {
   topic: { label: "Topic", prompt: "What is the topic?", hint: "Example: resistor color codes, onboarding checklist, lens selection." },
-  construct_type: { label: "Type", prompt: "What type of construct is this?", hint: "Pick the closest match. You can change it later." },
-  purpose: { label: "Purpose", prompt: "What is the purpose?", hint: "What this construct helps you do or return." },
-  core_entities: { label: "Core entities", prompt: "What are the core entities?", hint: "One per line (device, system, person, nouns)." },
-  attributes: { label: "Attributes", prompt: "What attributes/settings matter?", hint: "Capture stable key/value context for local reconstruction." },
-  steps: { label: "Steps", prompt: "What are the steps?", hint: "Ordered steps or checklist items." },
-  rules: { label: "Rules", prompt: "What are the rules?", hint: "Decision rules, constraints, or guidance." },
-  lookup_table: { label: "Lookup table", prompt: "What is the lookup table?", hint: "Paste JSON mapping (supports nested objects)." },
-  examples: { label: "Examples", prompt: "Examples (optional)", hint: "One per line. Keep them short and realistic." },
-  diagnostic: { label: "Diagnostic", prompt: "Capture symptoms, causes, and checks", hint: "Keep it explainable and local-first." },
-  specification: { label: "Specifications", prompt: "Capture measurements/specs", hint: "Key/value measurements, limits, or units." },
-  tags: { label: "Tags", prompt: "Tags (optional)", hint: "Comma-separated." },
+  reuse_match: { label: "Possible fit", prompt: "I found a saved construct that looks like a match.", hint: "Reuse it, merge it, or start a new one." },
+  construct_type: { label: "Type", prompt: "What kind of topic is this?", hint: "Strandspace will suggest a type. You can change it any time." },
+  purpose: { label: "Purpose", prompt: "What should this topic help you do?", hint: "One sentence is enough." },
+  core_entities: { label: "Key things", prompt: "What are the key things involved?", hint: "A few nouns is enough (device, person, system, options)." },
+  attributes: { label: "Details", prompt: "What details matter for reliable answers?", hint: "Add a few key/value details (no code needed)." },
+  steps: { label: "Steps", prompt: "What are the steps?", hint: "Short steps are best." },
+  rules: { label: "Rules", prompt: "Any rules or constraints?", hint: "Decision rules help local reconstruction." },
+  lookup_table: { label: "Lookups", prompt: "What should this topic look up?", hint: "Add a few example mappings (no JSON needed)." },
+  examples: { label: "Examples", prompt: "Examples (optional)", hint: "A couple short examples is enough." },
+  diagnostic: { label: "Diagnostic", prompt: "What symptoms, causes, and checks matter?", hint: "Keep it explainable and local-first." },
+  specification: { label: "Specifications", prompt: "What measurements or constraints matter?", hint: "Capture key/value measurements and units." },
+  tags: { label: "Tags", prompt: "Tags (optional)", hint: "Short, comma-separated labels." },
   title: { label: "Title", prompt: "Title (optional)", hint: "Suggested only after you have enough structure." },
   retrieval_keys: { label: "Retrieval keys", prompt: "Retrieval keys (optional)", hint: "Words/phrases that should retrieve this construct." },
   trigger_phrases: { label: "Trigger phrases", prompt: "Trigger phrases (optional)", hint: "Phrases that should strongly match this construct." }
@@ -79,4 +80,3 @@ export function buildStepSequence(constructType = "") {
   const rest = byType[type] ?? byType.hybrid;
   return [...base, ...rest, "retrieval_keys", "trigger_phrases"];
 }
-

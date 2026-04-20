@@ -2729,6 +2729,27 @@ await check("GET /api/topicspace/answer decodes resistor color codes locally", a
   });
 });
 
+await check("POST /api/topicspace/intake infers the next guided intake question", async () => {
+  __setOpenAiAssistMock(null);
+
+  await withServer(async (address) => {
+    const response = await postJson(`http://127.0.0.1:${address.port}/api/topicspace/intake`, {
+      topic: "resistor color codes"
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.topic, "resistor color codes");
+    assert.ok(payload.recall);
+    assert.ok(payload.inference);
+    assert.ok(typeof payload.inference.next_question === "string");
+    assert.ok(typeof payload.inference.next_question_kind === "string");
+    assert.ok(Array.isArray(payload.inference.suggested_options));
+    assert.ok(typeof payload.inference.construct_type === "string");
+  });
+});
+
 await check("POST /api/topicspace/learn saves universal topic constructs and recall finds them", async () => {
   await withServer(async (address) => {
     const topic = `Tripod Setup ${Date.now()}`;

@@ -176,11 +176,27 @@ export function renderStepIndicator(state) {
 export function renderPrompt(state) {
   const { key } = currentStep(state);
   const def = STEP_DEFS[key] ?? { prompt: "Next", hint: "" };
+  const inference = state.ui?.intake?.analysis?.inference ?? null;
+  const preferredKey = (() => {
+    const kind = String(inference?.next_question_kind ?? "").trim();
+    if (kind === "offer_match") return "reuse_match";
+    if (kind === "confirm_type") return "construct_type";
+    if (kind === "ask_purpose") return "purpose";
+    if (kind === "ask_entities") return "core_entities";
+    if (kind === "ask_lookup") return "lookup_table";
+    if (kind === "ask_steps") return "steps";
+    if (kind === "ask_attributes") return "attributes";
+    if (kind === "ask_rules") return "rules";
+    if (kind === "ask_examples") return "examples";
+    return "";
+  })();
+
+  const inferredPrompt = preferredKey && preferredKey === key ? String(inference?.next_question ?? "").trim() : "";
   const typeHint = key === "construct_type"
     ? (TYPE_HINTS[String(state.draft.construct_type ?? "").trim()] ?? "Pick the closest match.")
     : "";
   const hint = [def.hint, typeHint].filter(Boolean).join(" ");
-  return { prompt: def.prompt, hint };
+  return { prompt: inferredPrompt || def.prompt, hint };
 }
 
 export function renderTitleSuggestion(state) {
@@ -208,21 +224,82 @@ export function renderTitleSuggestion(state) {
 export function renderEditorMarkup(state) {
   const { key } = currentStep(state);
   const type = String(state.draft.construct_type ?? "").trim();
+  const analysis = state.ui?.intake?.analysis ?? null;
+  const inference = analysis?.inference ?? null;
 
   if (key === "topic") {
+    const nextQuestion = String(inference?.next_question ?? "").trim();
+    const showNext = Boolean(nextQuestion && String(state.draft.topic ?? "").trim());
     return `
       <label class="ss-label" for="ss-field-topic">Topic</label>
       <input id="ss-field-topic" class="ss-input ss-input-lg" type="text" placeholder="Enter a topic..." value="${escapeHtml(state.draft.topic ?? "")}" data-field="topic" />
+      ${showNext ? `
+        <div class="ss-next-card">
+          <div class="ss-next-kicker ss-muted">Next question</div>
+          <div class="ss-next-question">${escapeHtml(nextQuestion)}</div>
+          <div class="ss-next-actions">
+            <button class="ss-button ss-button-primary" data-action="continue-intake">Continue</button>
+            ${analysis?.recall?.matched?.id ? `<button class="ss-button ss-button-secondary" data-action="jump-to-match">View possible fit</button>` : ""}
+          </div>
+        </div>
+      ` : ""}
+    `;
+  }
+
+  if (key === "reuse_match") {
+    const matched = analysis?.recall?.matched ?? null;
+    const title = String(matched?.title ?? "").trim() || String(matched?.topic ?? "").trim() || "Untitled";
+    const purpose = String(matched?.purpose ?? "").trim();
+    const matchedType = String(matched?.construct_type ?? "").trim() || "hybrid";
+    const id = String(matched?.id ?? "").trim();
+    if (!id) {
+      return `<div class="ss-muted">No strong match found.</div>`;
+    }
+
+    return `
+      <div class="ss-match-inline">
+        <div class="ss-match-inline-card">
+          <div class="ss-match-inline-title">${escapeHtml(title)}</div>
+          <div class="ss-match-inline-meta">${escapeHtml(typeLabel(matchedType))}</div>
+          ${purpose ? `<div class="ss-muted">${escapeHtml(purpose)}</div>` : ""}
+        </div>
+        <div class="ss-match-inline-actions">
+          <button class="ss-button ss-button-primary" data-action="reuse-match-use" data-id="${escapeHtml(id)}">Reuse</button>
+          <button class="ss-button ss-button-secondary" data-action="reuse-match-merge" data-id="${escapeHtml(id)}">Merge</button>
+          <button class="ss-button ss-button-secondary" data-action="reuse-match-new">Start new</button>
+        </div>
+      </div>
+      <div class="ss-muted ss-inline-help">Reusing keeps answers local-first. Merge fills missing fields without overwriting your draft.</div>
     `;
   }
 
   if (key === "construct_type") {
+    const suggested = String(inference?.construct_type ?? "").trim() || type || "hybrid";
+    const pickerOpen = Boolean(state.ui?.intake?.typePickerOpen);
     return `
-      <label class="ss-label" for="ss-field-type">Construct type</label>
-      <select id="ss-field-type" class="ss-select" data-field="construct_type">
-        <option value="">Choose a type...</option>
-        ${CONSTRUCT_TYPES.map((value) => `<option value="${escapeHtml(value)}" ${value === type ? "selected" : ""}>${escapeHtml(valueLabel(value))}</option>`).join("")}
-      </select>
+      <div class="ss-choice">
+        <div class="ss-choice-head">
+          <div>
+            <div class="ss-label">Suggested kind</div>
+            <div class="ss-choice-value">${escapeHtml(typeLabel(suggested))}</div>
+          </div>
+          <div class="ss-choice-actions">
+            <button class="ss-button ss-button-primary" data-action="type-confirm" data-type="${escapeHtml(suggested)}">Use this</button>
+            <button class="ss-button ss-button-secondary" data-action="type-toggle">Choose another</button>
+            <button class="ss-button ss-button-secondary" data-action="type-confirm" data-type="hybrid">Not sure</button>
+          </div>
+        </div>
+        ${pickerOpen ? `
+          <div class="ss-type-grid" role="list">
+            ${CONSTRUCT_TYPES.map((value) => `
+              <button class="ss-type-card ${value === type ? "is-selected" : ""}" data-action="type-confirm" data-type="${escapeHtml(value)}" role="listitem">
+                <div class="ss-type-title">${escapeHtml(typeLabel(value))}</div>
+                <div class="ss-muted">${escapeHtml(TYPE_HINTS[value] ?? "")}</div>
+              </button>
+            `).join("")}
+          </div>
+        ` : ""}
+      </div>
     `;
   }
 
@@ -315,19 +392,42 @@ export function renderEditorMarkup(state) {
   }
 
   if (key === "lookup_table") {
+    const sections = Array.isArray(state.ui.lookup?.sections) ? state.ui.lookup.sections : [{ name: "", rows: [{ key: "", value: "" }] }];
     return `
       <div class="ss-editor-head">
         <div>
-          <div class="ss-label">Lookup table (JSON)</div>
-          <div class="ss-muted">Nested objects are allowed. Keep keys stable and human-readable.</div>
+          <div class="ss-label">Lookup entries</div>
+          <div class="ss-muted">Add a few example mappings. Categories are optional.</div>
         </div>
-        <div class="ss-inline-actions">
-          <button class="ss-button ss-button-secondary" data-action="lookup-format">Format JSON</button>
-          <button class="ss-button ss-button-secondary" data-action="lookup-clear">Clear</button>
-        </div>
+        <button class="ss-button ss-button-secondary" data-action="lookup-add-section">Add category</button>
       </div>
-      <textarea class="ss-textarea ss-mono" rows="10" placeholder="{ \"digits\": { \"brown\": 1 } }" data-field="lookup_json">${escapeHtml(state.ui.lookupJsonText ?? "")}</textarea>
-      ${state.ui.lookupJsonError ? `<div class="ss-error">JSON error: ${escapeHtml(state.ui.lookupJsonError)}</div>` : ""}
+      <div class="ss-lookup-editor">
+        ${sections.map((section, sidx) => `
+          <div class="ss-lookup-section">
+            <div class="ss-lookup-section-head">
+              <input class="ss-input" type="text" value="${escapeHtml(section?.name ?? "")}" placeholder="Category (optional)" data-action="lookup-section-name" data-section="${sidx}" />
+              <div class="ss-inline-actions">
+                <button class="ss-button ss-button-secondary" data-action="lookup-add-row" data-section="${sidx}">Add entry</button>
+                ${sections.length > 1 ? `<button class="ss-button ss-button-secondary" data-action="lookup-remove-section" data-section="${sidx}">Remove</button>` : ""}
+              </div>
+            </div>
+            <div class="ss-grid-editor">
+              <div class="ss-grid-row ss-grid-header">
+                <div>From</div>
+                <div>To</div>
+                <div></div>
+              </div>
+              ${(Array.isArray(section?.rows) ? section.rows : []).map((row, ridx) => `
+                <div class="ss-grid-row">
+                  <input class="ss-input" type="text" value="${escapeHtml(row?.key ?? "")}" placeholder="key" data-action="lookup-key" data-section="${sidx}" data-index="${ridx}" />
+                  <input class="ss-input" type="text" value="${escapeHtml(row?.value ?? "")}" placeholder="value" data-action="lookup-value" data-section="${sidx}" data-index="${ridx}" />
+                  <button class="ss-icon-button" title="Remove entry" data-action="lookup-remove-row" data-section="${sidx}" data-index="${ridx}">Ã—</button>
+                </div>
+              `).join("")}
+            </div>
+          </div>
+        `).join("")}
+      </div>
     `;
   }
 
@@ -412,7 +512,7 @@ export function renderEditorMarkup(state) {
 }
 
 function valueLabel(type) {
-  return `${type} — ${typeLabel(type)}`;
+  return `${typeLabel(type)}`;
 }
 
 function renderListColumn(title, actionPrefix, values = []) {
@@ -448,7 +548,7 @@ export function renderDraftSummary(state) {
   };
 
   addRow("Topic", escapeHtml(String(draft.topic ?? "").trim() || "—"));
-  addRow("Type", escapeHtml(String(draft.construct_type ?? "").trim() || "—"));
+  addRow("Type", escapeHtml(typeLabel(String(draft.construct_type ?? "").trim() || "hybrid")));
   addRow("Title", escapeHtml(String(draft.title ?? "").trim() || "—"));
   addRow("Purpose", escapeHtml(String(draft.purpose ?? "").trim() || "—"));
   addRow("Entities", escapeHtml((Array.isArray(draft.core_entities) ? draft.core_entities.join(", ") : "") || "—"));
@@ -461,7 +561,18 @@ export function renderDraftSummary(state) {
   addRow("Rules", rules.length ? `<ul class="ss-mini-list">${rules.slice(0, 8).map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>` : "—");
 
   const lookup = draft.lookup_table && typeof draft.lookup_table === "object" ? draft.lookup_table : {};
-  addRow("Lookup", Object.keys(lookup).length ? `<pre class="ss-mini-pre">${escapeHtml(JSON.stringify(lookup, null, 2).slice(0, 900))}${JSON.stringify(lookup, null, 2).length > 900 ? "\n…" : ""}</pre>` : "—");
+  const lookupPreview = [];
+  for (const [key, value] of Object.entries(lookup).slice(0, 6)) {
+    const label = String(key ?? "").trim();
+    if (!label) continue;
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const inner = Object.entries(value).slice(0, 4).map(([k, v]) => `${String(k ?? "").trim()}→${String(v ?? "").trim()}`);
+      lookupPreview.push(`${label}: ${inner.join(", ")}${Object.keys(value).length > 4 ? ", …" : ""}`);
+    } else {
+      lookupPreview.push(`${label}→${String(value ?? "").trim()}`);
+    }
+  }
+  addRow("Lookup", lookupPreview.length ? `<ul class="ss-mini-list">${lookupPreview.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : "—");
 
   const attrs = draft.attributes && typeof draft.attributes === "object" && !Array.isArray(draft.attributes) ? draft.attributes : {};
   const attrEntries = Object.entries(attrs).filter(([key]) => !["symptoms", "causes", "checks", "specs"].includes(key));
@@ -527,7 +638,7 @@ export function renderSavedConstructList(state) {
         <div class="ss-list-item-main">
           <div class="ss-list-item-title">${escapeHtml(title)}</div>
           <div class="ss-list-item-meta">
-            ${escapeHtml(topic)} · ${escapeHtml(type)}${tags.length ? ` · ${escapeHtml(tags.slice(0, 3).join(", "))}` : ""}
+            ${escapeHtml(topic)} · ${escapeHtml(typeLabel(type))}${tags.length ? ` · ${escapeHtml(tags.slice(0, 3).join(", "))}` : ""}
           </div>
         </div>
         <div class="ss-list-item-actions">
@@ -553,7 +664,7 @@ export function renderRecentDrafts(state) {
     <div class="ss-list-item">
       <div class="ss-list-item-main">
         <div class="ss-list-item-title">${escapeHtml(String(item?.title ?? item?.topic ?? "Draft"))}</div>
-        <div class="ss-list-item-meta">${escapeHtml(String(item?.construct_type ?? "hybrid"))} · ${escapeHtml(String(item?.updatedAt ?? ""))}</div>
+        <div class="ss-list-item-meta">${escapeHtml(typeLabel(String(item?.construct_type ?? "hybrid")))} · ${escapeHtml(String(item?.updatedAt ?? ""))}</div>
       </div>
       <div class="ss-list-item-actions">
         <button class="ss-icon-button" data-action="use-recent" data-payload="${escapeHtml(JSON.stringify(item ?? {}))}">Use</button>
@@ -598,7 +709,7 @@ export function renderMatchPanel(state) {
         <div class="ss-match-head">
           <div>
             <div class="ss-match-title">${escapeHtml(title)}</div>
-            <div class="ss-match-meta">${escapeHtml(type)} · score ${Number.isFinite(score) ? score.toFixed(1) : "0.0"}${Number.isFinite(conf) ? ` · conf ${conf.toFixed(2)}` : ""}</div>
+            <div class="ss-match-meta">${escapeHtml(typeLabel(type))} · score ${Number.isFinite(score) ? score.toFixed(1) : "0.0"}${Number.isFinite(conf) ? ` · conf ${conf.toFixed(2)}` : ""}</div>
           </div>
           <div class="ss-match-actions">
             <button class="ss-icon-button" data-action="view-match" data-id="${escapeHtml(row?.id ?? "")}">${expanded ? "Hide" : "View"}</button>

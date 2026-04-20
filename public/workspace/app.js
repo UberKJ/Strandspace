@@ -1,12 +1,13 @@
 import {
   applyAttributesRowsToDraft,
   applyDiagnosticToDraft,
-  applyLookupTextToDraft,
+  applyLookupSectionsToDraft,
   applySkipToStep,
   applySpecificationToDraft,
   createDefaultState,
   createEmptyDraft,
   currentStep,
+  hydrateLookupEditor,
   hydrateState,
   isDraftSaved,
   loadState,
@@ -18,6 +19,7 @@ import {
 } from "./state.js";
 import {
   answerTopicspace,
+  analyzeTopicIntake,
   getSystemHealth,
   getTopicConstruct,
   learnSubjectConstruct,
@@ -97,9 +99,65 @@ const scheduleRecon = createDebounced(async () => {
   renderReconPreviewPanel();
 }, 320);
 
+const scheduleIntake = createDebounced(async () => {
+  const topic = String(state.draft.topic ?? "").trim();
+  if (!topic) {
+    state.ui.intake.analysis = null;
+    state.ui.intake.error = "";
+    state.ui.intake.lastTopic = "";
+    renderEditor();
+    renderBottomDisabledStates();
+    persist();
+    return;
+  }
+
+  try {
+    state.ui.intake.error = "";
+    const payload = await analyzeTopicIntake({
+      topic,
+      draft: {
+        construct_type: String(state.draft.construct_type ?? "").trim(),
+        purpose: String(state.draft.purpose ?? "").trim()
+      }
+    });
+    state.ui.intake.analysis = payload;
+    state.ui.intake.lastTopic = topic;
+
+    const inference = payload?.inference ?? null;
+    if (inference) {
+      if (!String(state.draft.construct_type ?? "").trim() && String(inference.construct_type ?? "").trim()) {
+        state.draft.construct_type = String(inference.construct_type ?? "").trim();
+      }
+      if (!String(state.draft.purpose ?? "").trim() && String(inference.purpose ?? "").trim()) {
+        state.draft.purpose = String(inference.purpose ?? "").trim();
+      }
+      if (!(Array.isArray(state.draft.core_entities) && state.draft.core_entities.length) && Array.isArray(inference.core_entities) && inference.core_entities.length) {
+        state.draft.core_entities = inference.core_entities.slice(0, 10).map((item) => String(item ?? "").trim()).filter(Boolean);
+      }
+    }
+
+    renderHeader();
+    renderEditor();
+    renderDraftPanel();
+    renderBottomDisabledStates();
+    persist();
+  } catch (error) {
+    state.ui.intake.error = String(error?.message ?? "Unable to analyze topic");
+    renderEditor();
+    renderBottomDisabledStates();
+    persist();
+  }
+}, 360);
+
 boot();
 
 async function boot() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    state.flags.debug = params.get("debug") === "1";
+  } catch {
+    state.flags.debug = false;
+  }
   setTheme(state.theme);
   renderStaticShell();
   bindEvents();
@@ -123,6 +181,7 @@ async function boot() {
   }
 
   await refreshTopicConstructs();
+  scheduleIntake();
   renderAll();
 }
 
@@ -345,6 +404,35 @@ function bindEvents() {
       return;
     }
 
+    if (action === "lookup-section-name" || action === "lookup-key" || action === "lookup-value") {
+      const sectionIdx = Number(target.getAttribute("data-section") ?? -1);
+      if (!Number.isFinite(sectionIdx) || sectionIdx < 0) return;
+      const sections = Array.isArray(state.ui.lookup?.sections) ? state.ui.lookup.sections : [{ name: "", rows: [{ key: "", value: "" }] }];
+      const section = sections[sectionIdx] ?? { name: "", rows: [{ key: "", value: "" }] };
+
+      if (action === "lookup-section-name") {
+        section.name = String(target.value ?? "");
+        sections[sectionIdx] = section;
+      } else {
+        const rowIdx = Number(target.getAttribute("data-index") ?? -1);
+        if (!Number.isFinite(rowIdx) || rowIdx < 0) return;
+        const rows = Array.isArray(section.rows) ? section.rows : [{ key: "", value: "" }];
+        const row = rows[rowIdx] ?? { key: "", value: "" };
+        if (action === "lookup-key") row.key = String(target.value ?? "");
+        if (action === "lookup-value") row.value = String(target.value ?? "");
+        rows[rowIdx] = row;
+        section.rows = rows;
+        sections[sectionIdx] = section;
+      }
+
+      state.ui.lookup.sections = sections;
+      applyLookupSectionsToDraft(state);
+      renderDraftPanel();
+      scheduleRecall();
+      persist();
+      return;
+    }
+
     if (action?.startsWith("diagnostic-")) {
       handleDiagnosticInput(action, target);
       return;
@@ -446,17 +534,77 @@ function bindEvents() {
       return;
     }
 
-    if (action === "lookup-format") {
-      const parsed = safeJsonParse(state.ui.lookupJsonText);
-      if (!parsed.ok) {
-        state.ui.lookupJsonError = parsed.error ?? "Invalid JSON";
-        renderEditor();
-        persist();
-        return;
+    if (action === "continue-intake") {
+      state.intake.stepIndex = Math.min(stepSequence(state).length - 1, 1);
+      renderEditor();
+      renderBottomDisabledStates();
+      persist();
+      return;
+    }
+
+    if (action === "jump-to-match") {
+      const steps = stepSequence(state);
+      const idx = steps.indexOf("reuse_match");
+      if (idx >= 0) state.intake.stepIndex = idx;
+      else state.intake.stepIndex = Math.min(steps.length - 1, 1);
+      renderEditor();
+      renderBottomDisabledStates();
+      persist();
+      return;
+    }
+
+    if (action === "reuse-match-use" || action === "reuse-match-merge") {
+      const id = String(actionEl.getAttribute("data-id") ?? "").trim();
+      if (!id) return;
+      if (action === "reuse-match-use") {
+        await loadConstructIntoDraft(id, { replace: true });
+      } else {
+        await applyMatch(id, { merge: true });
       }
-      state.ui.lookupJsonError = "";
-      state.ui.lookupJsonText = parsed.value ? JSON.stringify(parsed.value, null, 2) : "";
-      applyLookupTextToDraft(state);
+      state.ui.intake.ignoreStrongMatch = true;
+      state.ui.intake.typeConfirmed = true;
+      renderAll();
+      return;
+    }
+
+    if (action === "reuse-match-new") {
+      state.ui.intake.ignoreStrongMatch = true;
+      renderEditor();
+      renderBottomDisabledStates();
+      persist();
+      return;
+    }
+
+    if (action === "type-toggle") {
+      state.ui.intake.typePickerOpen = !state.ui.intake.typePickerOpen;
+      renderEditor();
+      persist();
+      return;
+    }
+
+    if (action === "type-confirm") {
+      const selected = String(actionEl.getAttribute("data-type") ?? "").trim();
+      if (selected && CONSTRUCT_TYPES.includes(selected)) {
+        state.draft.construct_type = selected;
+      }
+      if (selected === "hybrid") state.draft.construct_type = "hybrid";
+      state.ui.intake.typeConfirmed = true;
+      state.ui.intake.typePickerOpen = false;
+      hydrateLookupEditor(state);
+      if (currentStep(state).key === "construct_type") {
+        state.intake.stepIndex = Math.min(stepSequence(state).length - 1, Number(state.intake.stepIndex ?? 0) + 1);
+      }
+      renderAll();
+      scheduleRecall();
+      persist();
+      return;
+    }
+
+    if (action === "lookup-add-section") {
+      const sections = Array.isArray(state.ui.lookup?.sections) ? state.ui.lookup.sections : [{ name: "", rows: [{ key: "", value: "" }] }];
+      sections.push({ name: "", rows: [{ key: "", value: "" }] });
+      state.ui.lookup.sections = sections;
+      applyLookupSectionsToDraft(state);
       renderEditor();
       renderDraftPanel();
       scheduleRecall();
@@ -464,10 +612,50 @@ function bindEvents() {
       return;
     }
 
-    if (action === "lookup-clear") {
-      state.ui.lookupJsonText = "";
-      state.ui.lookupJsonError = "";
-      state.draft.lookup_table = {};
+    if (action === "lookup-remove-section") {
+      const sectionIdx = Number(actionEl.getAttribute("data-section") ?? -1);
+      if (!Number.isFinite(sectionIdx) || sectionIdx < 0) return;
+      const sections = Array.isArray(state.ui.lookup?.sections) ? [...state.ui.lookup.sections] : [];
+      sections.splice(sectionIdx, 1);
+      if (sections.length === 0) sections.push({ name: "", rows: [{ key: "", value: "" }] });
+      state.ui.lookup.sections = sections;
+      applyLookupSectionsToDraft(state);
+      renderEditor();
+      renderDraftPanel();
+      scheduleRecall();
+      persist();
+      return;
+    }
+
+    if (action === "lookup-add-row") {
+      const sectionIdx = Number(actionEl.getAttribute("data-section") ?? -1);
+      if (!Number.isFinite(sectionIdx) || sectionIdx < 0) return;
+      const sections = Array.isArray(state.ui.lookup?.sections) ? state.ui.lookup.sections : [{ name: "", rows: [{ key: "", value: "" }] }];
+      const section = sections[sectionIdx] ?? { name: "", rows: [] };
+      section.rows = Array.isArray(section.rows) ? section.rows : [];
+      section.rows.push({ key: "", value: "" });
+      sections[sectionIdx] = section;
+      state.ui.lookup.sections = sections;
+      applyLookupSectionsToDraft(state);
+      renderEditor();
+      persist();
+      return;
+    }
+
+    if (action === "lookup-remove-row") {
+      const sectionIdx = Number(actionEl.getAttribute("data-section") ?? -1);
+      const rowIdx = Number(actionEl.getAttribute("data-index") ?? -1);
+      if (!Number.isFinite(sectionIdx) || sectionIdx < 0) return;
+      if (!Number.isFinite(rowIdx) || rowIdx < 0) return;
+      const sections = Array.isArray(state.ui.lookup?.sections) ? state.ui.lookup.sections : [{ name: "", rows: [{ key: "", value: "" }] }];
+      const section = sections[sectionIdx] ?? { name: "", rows: [] };
+      const rows = Array.isArray(section.rows) ? [...section.rows] : [];
+      rows.splice(rowIdx, 1);
+      if (rows.length === 0) rows.push({ key: "", value: "" });
+      section.rows = rows;
+      sections[sectionIdx] = section;
+      state.ui.lookup.sections = sections;
+      applyLookupSectionsToDraft(state);
       renderEditor();
       renderDraftPanel();
       scheduleRecall();
@@ -587,18 +775,21 @@ function handleFieldInput(field, target) {
 
   if (field === "topic") {
     state.draft.topic = value;
+    state.ui.intake.ignoreStrongMatch = false;
+    state.ui.intake.typeConfirmed = false;
+    state.ui.intake.typePickerOpen = false;
     renderHeader();
     renderDraftPanel();
     scheduleRecall();
+    scheduleIntake();
     persist();
     return;
   }
 
   if (field === "construct_type") {
     state.draft.construct_type = value;
-    if (!buildStepSequence(value).includes(currentStep(state).key)) {
-      state.intake.stepIndex = 0;
-    }
+    state.ui.intake.typeConfirmed = true;
+    state.ui.intake.typePickerOpen = false;
     renderAll();
     scheduleRecall();
     return;
@@ -614,15 +805,6 @@ function handleFieldInput(field, target) {
 
   if (field === "core_entities_text") {
     state.draft.core_entities = parseEntityList(value, 24);
-    renderDraftPanel();
-    scheduleRecall();
-    persist();
-    return;
-  }
-
-  if (field === "lookup_json") {
-    state.ui.lookupJsonText = value;
-    applyLookupTextToDraft(state);
     renderDraftPanel();
     scheduleRecall();
     persist();
@@ -798,7 +980,7 @@ async function saveDraft({ mode = "save" } = {}) {
   if (mode === "update" && !String(state.draft.id ?? "").trim()) return window.alert("No saved construct loaded. Save first, or use a match.");
 
   applyAttributesRowsToDraft(state);
-  applyLookupTextToDraft(state);
+  applyLookupSectionsToDraft(state);
   applyDiagnosticToDraft(state);
   applySpecificationToDraft(state);
 
@@ -909,16 +1091,20 @@ async function loadConstructIntoDraft(id, { replace = true } = {}) {
     ? Object.entries(payload.attributes).map(([key, value]) => ({ key, value: String(value ?? "") }))
     : [{ key: "", value: "" }];
   if (state.ui.attributesRows.length === 0) state.ui.attributesRows.push({ key: "", value: "" });
+  hydrateLookupEditor(state);
+  applyLookupSectionsToDraft(state);
 
-  state.ui.lookupJsonText = payload.lookup_table && typeof payload.lookup_table === "object" && Object.keys(payload.lookup_table).length
-    ? JSON.stringify(payload.lookup_table, null, 2)
-    : "";
-  state.ui.lookupJsonError = "";
+  state.ui.intake.analysis = null;
+  state.ui.intake.error = "";
+  state.ui.intake.ignoreStrongMatch = true;
+  state.ui.intake.typeConfirmed = true;
+  state.ui.intake.typePickerOpen = false;
 
   state.savedSnapshot = snapshotDraft(state);
   state.intake.stepIndex = 0;
   renderAll();
   scheduleRecall();
+  scheduleIntake();
 }
 
 async function applyMatch(id, { merge = false } = {}) {
@@ -935,8 +1121,18 @@ async function applyMatch(id, { merge = false } = {}) {
     await loadConstructIntoDraft(id, { replace: true });
     return;
   }
+
+  state.ui.attributesRows = payload.attributes && typeof payload.attributes === "object"
+    ? Object.entries(state.draft.attributes ?? {}).map(([key, value]) => ({ key, value: String(value ?? "") }))
+    : [{ key: "", value: "" }];
+  if (state.ui.attributesRows.length === 0) state.ui.attributesRows.push({ key: "", value: "" });
+
+  hydrateLookupEditor(state);
+  applyLookupSectionsToDraft(state);
+
   renderAll();
   scheduleRecall();
+  scheduleIntake();
 }
 
 function mergeDraftFromMatch(match) {
@@ -968,8 +1164,14 @@ function wipeDraft() {
   state.ui.lastAnswer = null;
   state.ui.ignoredMatchIds = new Set();
   state.ui.attributesRows = [{ key: "", value: "" }];
-  state.ui.lookupJsonText = "";
-  state.ui.lookupJsonError = "";
+  state.ui.lookup = { sections: [{ name: "", rows: [{ key: "", value: "" }] }] };
+  applyLookupSectionsToDraft(state);
+  state.ui.intake.analysis = null;
+  state.ui.intake.error = "";
+  state.ui.intake.lastTopic = "";
+  state.ui.intake.ignoreStrongMatch = false;
+  state.ui.intake.typeConfirmed = false;
+  state.ui.intake.typePickerOpen = false;
   state.ui.diagnostic = { symptoms: [""], causes: [""], checks: [""] };
   state.ui.specification = { rows: [{ key: "", value: "", unit: "" }] };
   const queryEl = document.getElementById("ss-query-input");

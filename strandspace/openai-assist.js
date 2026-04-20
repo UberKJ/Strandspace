@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { TOPIC_CONSTRUCT_TYPES } from "./topicspace.js";
 
 const DEFAULT_MODEL = process.env.SUBJECTSPACE_OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-5.4-mini";
 const DEFAULT_MODEL_LIST = ["gpt-5.4-mini", "gpt-5.4", "gpt-5.2"];
@@ -169,6 +170,122 @@ function limitObject(value = null, limit = 6) {
 function estimateTokens(text = "") {
   const normalized = String(text ?? "");
   return Math.max(0, Math.ceil(normalized.length / 4));
+}
+
+function topicIntakeSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      construct_type: {
+        type: "string",
+        enum: [...TOPIC_CONSTRUCT_TYPES, "unknown"]
+      },
+      purpose: { type: "string" },
+      core_entities: {
+        type: "array",
+        items: { type: "string" },
+        maxItems: 10
+      },
+      next_question_kind: {
+        type: "string",
+        enum: [
+          "offer_match",
+          "confirm_type",
+          "ask_purpose",
+          "ask_entities",
+          "ask_lookup",
+          "ask_steps",
+          "ask_attributes",
+          "ask_rules",
+          "ask_examples",
+          "done"
+        ]
+      },
+      next_question: { type: "string" },
+      suggested_options: {
+        type: "array",
+        items: { type: "string" },
+        maxItems: 6
+      },
+      matched_construct_id: { type: ["string", "null"] },
+      confidence: { type: "number" }
+    },
+    required: [
+      "construct_type",
+      "purpose",
+      "core_entities",
+      "next_question_kind",
+      "next_question",
+      "suggested_options",
+      "matched_construct_id",
+      "confidence"
+    ]
+  };
+}
+
+function buildTopicIntakeInstructions() {
+  return [
+    "You are Strandspace's guided intake inference layer.",
+    "Goal: help the UI ask the next best plain-language question (one at a time), while prefilling fields when possible.",
+    "Rules:",
+    "- Never ask the user for JSON, schema objects, code, or raw structured data.",
+    "- Keep questions conversational, short, and unambiguous.",
+    "- Prefer local constructs: if a saved construct strongly matches, ask to reuse/merge/start-new.",
+    "- If information is missing, ask for the most useful missing detail next.",
+    `- Use only these construct types when needed (internal): ${TOPIC_CONSTRUCT_TYPES.join(", ")}.`,
+    "Output strictly the JSON schema."
+  ].join("\n");
+}
+
+function buildTopicIntakeInputCompact({ topic = "", localMatches = [], draft = {} } = {}) {
+  const payload = {
+    topic: trimText(topic, 120),
+    localMatches: Array.isArray(localMatches)
+      ? localMatches.slice(0, 3).map((match) => ({
+        id: String(match?.id ?? "").trim(),
+        title: trimText(match?.title ?? "", 80),
+        construct_type: String(match?.construct_type ?? "").trim(),
+        purpose: trimText(match?.purpose ?? "", 120),
+        core_entities: normalizeArray(match?.core_entities, 8),
+        score: Number(match?.score ?? 0) || 0,
+        confidence: Number(match?.confidence ?? 0) || 0
+      }))
+      : [],
+    draftHint: {
+      purpose: trimText(draft?.purpose ?? "", 120),
+      construct_type: String(draft?.construct_type ?? "").trim()
+    }
+  };
+
+  return JSON.stringify(payload);
+}
+
+function normalizeTopicIntakeInferencePayload(payload = {}) {
+  const rawType = String(payload?.construct_type ?? "").trim();
+  const type = TOPIC_CONSTRUCT_TYPES.includes(rawType) ? rawType : "unknown";
+
+  const purpose = trimText(payload?.purpose ?? "", 240);
+  const coreEntities = normalizeArray(payload?.core_entities, 10);
+  const kind = String(payload?.next_question_kind ?? "").trim();
+  const nextQuestion = trimText(payload?.next_question ?? "", 240);
+  const suggestedOptions = normalizeArray(payload?.suggested_options, 6);
+  const matchedId = payload?.matched_construct_id === null ? "" : String(payload?.matched_construct_id ?? "").trim();
+
+  let confidence = Number(payload?.confidence ?? 0);
+  if (!Number.isFinite(confidence)) confidence = 0.5;
+  confidence = Math.max(0, Math.min(1, confidence));
+
+  return {
+    construct_type: type === "unknown" ? "hybrid" : type,
+    purpose,
+    core_entities: coreEntities,
+    next_question_kind: kind || "confirm_type",
+    next_question: nextQuestion || "What would you like this topic to help you do?",
+    suggested_options: suggestedOptions.length ? suggestedOptions : ["Continue"],
+    matched_construct_id: matchedId ? matchedId : null,
+    confidence
+  };
 }
 
 function shouldLogAssistPayloadMetrics() {
@@ -1538,4 +1655,65 @@ export function __resetOpenAiAssistState() {
   mockAssistRunner = null;
   resolvedApiKey = null;
   resolvedApiKeyLoaded = false;
+}
+
+export async function generateOpenAiTopicIntakeInference({
+  topic = "",
+  localMatches = [],
+  draft = {},
+  model = DEFAULT_MODEL,
+  requestTimeoutMs = null
+} = {}) {
+  const selectedModel = resolveRequestedModel(model);
+
+  if (mockAssistRunner) {
+    return runOpenAiRequest(() => mockAssistRunner({
+      mode: "topic-intake",
+      topic,
+      localMatches,
+      draft,
+      model: selectedModel
+    }), {
+      timeoutMs: requestTimeoutMs
+    });
+  }
+
+  const instructions = buildTopicIntakeInstructions();
+  const compactInput = buildTopicIntakeInputCompact({ topic, localMatches, draft });
+
+  logAssistTokenMetrics({
+    kind: "topic-intake",
+    model: selectedModel,
+    instructionsChars: instructions.length,
+    inputChars: compactInput.length,
+    estimatedTokens: estimateTokens(`${instructions}\n\n${compactInput}`)
+  });
+
+  const openai = getClient();
+  const response = await runOpenAiRequest((requestOptions) => (
+    openai.responses.create({
+      model: selectedModel,
+      store: false,
+      instructions,
+      input: compactInput,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "topic_intake_inference",
+          strict: true,
+          schema: topicIntakeSchema()
+        }
+      }
+    }, requestOptions)
+  ), {
+    timeoutMs: requestTimeoutMs
+  });
+
+  const parsed = JSON.parse(response.output_text);
+  return {
+    responseId: response.id,
+    model: response.model ?? selectedModel,
+    usage: normalizeUsagePayload(response.usage),
+    inference: normalizeTopicIntakeInferencePayload(parsed)
+  };
 }
