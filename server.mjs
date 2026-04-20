@@ -25,6 +25,7 @@ import {
   ensureSubjectspaceTables,
   getSubjectConstruct,
   ingestConversationToConstructs,
+  listStrandspaceBenchmarkHistory,
   listConstructLinks,
   listConstructStrands,
   mergeSubjectConstruct,
@@ -36,6 +37,7 @@ import {
   releaseSubjectSeedsPath,
   refreshSubjectConstructRelations,
   cleanSubjectDataset,
+  saveStrandspaceBenchmarkHistory,
   seedSubjectspace,
   upsertSubjectConstruct
 } from "./strandspace/subjectspace.js";
@@ -139,6 +141,7 @@ const API_TIMEOUTS_MS = new Map([
   ["/api/subjectspace/ingest-conversation", EXTENDED_API_TIMEOUT_MS],
   ["/api/subjectspace/assist", EXTENDED_API_TIMEOUT_MS],
   ["/api/subjectspace/compare", EXTENDED_API_TIMEOUT_MS],
+  ["/api/subjectspace/benchmark/history", DEFAULT_API_TIMEOUT_MS],
   ["/api/subjectspace/answer", DEFAULT_API_TIMEOUT_MS],
   ["/api/subjectspace/recall", DEFAULT_API_TIMEOUT_MS],
   ["/api/soundspace/answer", EXTENDED_API_TIMEOUT_MS],
@@ -3252,6 +3255,26 @@ async function handleApi(req, res) {
     return;
   }
 
+  if (url.pathname === "/api/subjectspace/benchmark/history") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    const subjectId = String(url.searchParams.get("subjectId") ?? url.searchParams.get("subject") ?? "").trim();
+    const limit = Number(url.searchParams.get("limit") ?? 25) || 25;
+    sendJson(res, 200, {
+      ok: true,
+      subjectId: subjectId || null,
+      history: listStrandspaceBenchmarkHistory(db, {
+        subjectId,
+        limit
+      })
+    });
+    return;
+  }
+
   if (url.pathname === "/api/subjectspace/dataset/clean") {
     if (req.method !== "POST") {
       res.writeHead(405, { Allow: "POST" });
@@ -3893,6 +3916,32 @@ async function handleApi(req, res) {
       subjectId: recall.matched?.subjectId ?? subjectId ?? "",
       localReady: recall.ready
     });
+
+    try {
+      saveStrandspaceBenchmarkHistory(db, {
+        subjectId: recall.matched?.subjectId ?? subjectId ?? "",
+        subjectLabel,
+        question,
+        benchmarkQuestion,
+        matchedConstructId: recall.matched?.id ?? null,
+        matchedConstructLabel: recall.matched?.constructLabel ?? null,
+        routeMode: recall.routing?.mode ?? null,
+        localLatencyMs: local.latencyMs,
+        assistLatencyMs: llm.latencyMs,
+        estimatedOriginalTokens: prompts.original?.estimatedTokens ?? null,
+        estimatedCompactTokens: prompts.benchmark?.estimatedTokens ?? null,
+        estimatedSavings: prompts.benchmark?.tokenSavings ?? null,
+        apiTotalTokens: llm.totalTokens ?? null,
+        confidence: recall.readiness?.confidence ?? null,
+        margin: recall.readiness?.margin ?? null
+      });
+    } catch (error) {
+      logEvent("warn", "Subjectspace benchmark history persistence failed", {
+        route: url.pathname,
+        subjectId: recall.matched?.subjectId ?? subjectId ?? "",
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
 
     sendJson(res, 200, {
       ok: true,

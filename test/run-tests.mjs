@@ -539,6 +539,10 @@ await check("ensureSubjectspaceTables upgrades older subjectspace tables with re
 
     const columns = legacyDb.prepare("PRAGMA table_info(subject_constructs)").all();
     assert.ok(columns.some((column) => column.name === "relatedConstructIdsJson"));
+    assert.ok(columns.some((column) => column.name === "parentConstructId"));
+    assert.ok(columns.some((column) => column.name === "branchReason"));
+    assert.ok(columns.some((column) => column.name === "changeSummary"));
+    assert.ok(columns.some((column) => column.name === "variantType"));
     const subjectStrandTables = legacyDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'subject_strands'").all();
     const constructStrandTables = legacyDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'construct_strands'").all();
     assert.equal(subjectStrandTables.length, 1);
@@ -607,9 +611,60 @@ await check("empty subjectspace recall returns a clear teach-first message", asy
     assert.equal(recall.readiness.libraryCount, 0);
     assert.equal(recall.routing?.mode, "teach_local");
     assert.match(String(recall.answer), /Teach one strong construct|No constructs are stored/i);
+    assert.equal(recall.changeDetection?.status, "no_stable_match");
   } finally {
     emptyDb.close();
   }
+});
+
+await check("subjectspace recall change detection classifies a minor prompt tweak", async () => {
+  await withServer(async (address) => {
+    const construct = await createSubjectConstruct(address.port, {
+      subjectLabel: `Change Detection ${Date.now()}`
+    });
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/subjectspace/recall?subjectId=${encodeURIComponent(construct.subjectId)}&q=${encodeURIComponent("Recall my gallery interview key light setup with the softbox.")}`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.recall.ready, true);
+    assert.equal(payload.construct.id, construct.id);
+    assert.equal(payload.recall.changeDetection.status, "stable_match");
+    assert.equal(payload.recall.changeDetection.severity, "minor");
+    assert.ok(payload.recall.changeDetection.counts.stable >= 1);
+    assert.equal(payload.recall.changeDetection.changedCues.length, 0);
+  });
+});
+
+await check("subjectspace recall change detection classifies a meaningful change when an exclusion conflicts", async () => {
+  await withServer(async (address) => {
+    const construct = await createSubjectConstruct(address.port, {
+      subjectLabel: `Change Detection ${Date.now()}`
+    });
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/subjectspace/recall?subjectId=${encodeURIComponent(construct.subjectId)}&q=${encodeURIComponent("Recall my gallery interview key light without softbox.")}`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.recall.ready, true);
+    assert.equal(payload.construct.id, construct.id);
+    assert.equal(payload.recall.changeDetection.status, "stable_match");
+    assert.equal(payload.recall.changeDetection.severity, "meaningful");
+    assert.ok(payload.recall.changeDetection.changedCues.length >= 1);
+  });
+});
+
+await check("subjectspace recall change detection reports no stable match when the subject field is empty", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/subjectspace/recall?subjectId=${encodeURIComponent(`empty-subject-${Date.now()}`)}&q=${encodeURIComponent("Recall my gallery interview key light setup.")}`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.recall.ready, false);
+    assert.equal(payload.recall.changeDetection.status, "no_stable_match");
+    assert.equal(payload.recall.changeDetection.severity, "no_stable_match");
+    assert.equal(payload.recall.changeDetection.counts.stable, 0);
+  });
 });
 
 await check("weighted subjectspace recall handles exact, reordered, and partial wording", async () => {
@@ -840,6 +895,78 @@ await check("subject construct saves create related construct links and similar 
     assert.equal(listSubjectConstructs(db, "portrait-lighting").length, 2);
     assert.match(String(merged.notes), /jacket gets lost/i);
     assert.equal(merged.context.background, "charcoal roll");
+  } finally {
+    db.close();
+  }
+});
+
+await check("subject construct branching preserves the parent and creates a variant when changes are branch-worthy", async () => {
+  const db = new DatabaseSync(":memory:");
+  ensureSubjectspaceTables(db);
+
+  try {
+    const parent = upsertSubjectConstruct(db, {
+      subjectId: "portrait-lighting",
+      subjectLabel: "Portrait Lighting",
+      constructLabel: "Gallery interview key light recall",
+      target: "Key light for a seated interview",
+      objective: "soft face lighting with gentle background separation",
+      context: {
+        room: "small gallery",
+        camera: "medium close-up",
+        keyLight: "large softbox at 45 degrees"
+      },
+      steps: [
+        "Raise the key until the cheek has shape.",
+        "Keep the background under the face."
+      ],
+      tags: ["lighting", "interview", "softbox"]
+    });
+
+    const variant = upsertSubjectConstruct(db, {
+      subjectLabel: "Portrait Lighting",
+      constructLabel: "Gallery interview fresnel key light variant",
+      target: "Key light for a seated interview",
+      objective: "soft face lighting with a harder edge and stronger separation",
+      context: {
+        room: "small gallery",
+        camera: "medium close-up",
+        keyLight: "small fresnel at 45 degrees"
+      },
+      steps: [
+        "Raise the key until the cheek has shape.",
+        "Keep the background under the face."
+      ],
+      tags: ["lighting", "interview", "softbox"]
+    });
+
+    assert.notEqual(variant.id, parent.id);
+    assert.equal(variant.parentConstructId, parent.id);
+    assert.equal(variant.variantType, "branch_worthy");
+    assert.ok(String(variant.branchReason ?? "").includes("branch_worthy"));
+    assert.ok(String(variant.changeSummary ?? "").length > 0);
+
+    const reloadedParent = getSubjectConstruct(db, parent.id);
+    assert.equal(reloadedParent.learnedCount, 1);
+    assert.equal(reloadedParent.context.keyLight, "large softbox at 45 degrees");
+
+    assert.equal(listSubjectConstructs(db, "portrait-lighting").length, 2);
+
+    const recall = recallSubjectSpace(db, {
+      subjectId: "portrait-lighting",
+      question: "Recall my gallery interview key light fresnel setup."
+    });
+
+    assert.equal(recall.ready, true);
+
+    if (recall.matched?.id === variant.id) {
+      assert.equal(recall.lineage?.parent?.id, parent.id);
+    } else if (recall.matched?.id === parent.id) {
+      assert.ok(Array.isArray(recall.lineage?.variants));
+      assert.ok(recall.lineage.variants.some((entry) => entry.id === variant.id));
+    } else {
+      assert.fail(`Unexpected matched construct: ${String(recall.matched?.id ?? "")}`);
+    }
   } finally {
     db.close();
   }
@@ -1313,6 +1440,29 @@ await check("POST /api/subjectspace/compare compacts the prompt and shows Strand
     assert.ok(Number(payload.comparison.speedup) >= 1);
     assert.match(String(payload.comparison.summary), /Strandbase recall was/i);
     assert.match(String(payload.comparison.summary), /estimated token/i);
+
+    const historyResponse = await fetch(`http://127.0.0.1:${address.port}/api/subjectspace/benchmark/history?subjectId=${encodeURIComponent(construct.subjectId)}&limit=10`);
+    assert.equal(historyResponse.status, 200);
+    const historyPayload = await historyResponse.json();
+    assert.equal(historyPayload.ok, true);
+    assert.equal(historyPayload.subjectId, construct.subjectId);
+    assert.ok(Array.isArray(historyPayload.history));
+    assert.ok(historyPayload.history.length >= 1);
+
+    const entry = historyPayload.history.find((candidate) => candidate.matchedConstructId === construct.id) ?? historyPayload.history[0];
+    assert.equal(entry.subjectId, construct.subjectId);
+    assert.equal(entry.subjectLabel, payload.subjectLabel);
+    assert.equal(entry.question, payload.question);
+    assert.equal(entry.benchmarkQuestion, payload.prompts.question);
+    assert.equal(entry.matchedConstructId, construct.id);
+    assert.equal(entry.matchedConstructLabel, construct.constructLabel);
+    assert.equal(entry.routeMode, payload.local.route);
+    assert.equal(entry.estimatedOriginalTokens, payload.prompts.original.estimatedTokens);
+    assert.equal(entry.estimatedCompactTokens, payload.prompts.benchmark.estimatedTokens);
+    assert.equal(entry.estimatedSavings, payload.prompts.benchmark.tokenSavings);
+    assert.equal(entry.apiTotalTokens, payload.llm.totalTokens);
+    assert.equal(entry.confidence, payload.local.confidence);
+    assert.equal(entry.margin, payload.recall.readiness.margin);
   });
 
   __setOpenAiAssistMock(null);
