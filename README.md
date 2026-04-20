@@ -162,6 +162,7 @@ What they do:
 
 - Model Lab endpoints: `GET /api/model-lab/status`, `POST /api/model-lab/compare`, `GET /api/model-lab/reports`.
 - Benchmark coverage lives in `test/benchmark-tests.mjs` and runs via `npm test`.
+- Generate a local markdown snapshot with `npm run benchmark:report` (writes `docs/benchmark-history.md`).
 - Optional assist payload metrics: set `STRANDSPACE_LOG_ASSIST_PAYLOAD_METRICS=1` to log estimated before/after payload size.
 
 ## Seeded Examples
