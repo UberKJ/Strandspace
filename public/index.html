@@ -57,40 +57,50 @@
         <section class="hero-stage landing-chat-stage">
           <div class="section-head">
             <div>
-              <p class="eyebrow small">AI Builder</p>
-              <h2>Describe The Construct You Want</h2>
+              <p class="eyebrow small">Guided Intake</p>
+              <h2>Start With The Topic</h2>
             </div>
             <p id="landing-builder-meta" class="meta landing-meta-light">
-              This chatbox drafts a construct first, then hands it to the backend for review and storage.
+              Strandspace captures a topic first, then collects just enough structure to save a partial or complete construct.
             </p>
           </div>
 
-          <form id="landing-builder-form" class="landing-builder-form">
-            <label class="subject-picker">
-              <span>Build inside an existing topic</span>
-              <select id="landing-subject-select" aria-label="Choose a local subject">
-                <option value="">Loading subjects...</option>
+          <form id="landing-intake-form" class="landing-builder-form">
+            <div class="builder-form-label">
+              <span id="landing-intake-prompt">What is the topic?</span>
+              <select id="landing-intake-type" aria-label="Choose a construct type" class="is-hidden">
+                <option value="">Choose a construct type...</option>
+                <option value="reference/lookup">reference/lookup</option>
+                <option value="procedure/how-to">procedure/how-to</option>
+                <option value="setup/configuration">setup/configuration</option>
+                <option value="profile/entity">profile/entity</option>
+                <option value="comparison">comparison</option>
+                <option value="diagnostic">diagnostic</option>
+                <option value="specification/measurement">specification/measurement</option>
               </select>
-            </label>
-            <label class="builder-form-label">
-              <span>Or name a new topic</span>
-              <input
-                id="landing-subject-label"
-                type="text"
-                placeholder="Optional when you want AI to draft a brand-new subject"
-              />
-            </label>
-            <label class="builder-form-label">
-              <span>Construct request</span>
               <textarea
-                id="landing-builder-input"
-                rows="8"
-                placeholder="Example: Build a reusable Yamaha MG12XU karaoke vocal chain for Innopaw WM333 wireless mics with safe gain staging, feedback control, and a simple step-by-step startup order."
+                id="landing-intake-input"
+                rows="6"
+                placeholder="Enter a topic (example: resistor color code, studio key light setup, camera tripod quick reference)."
               ></textarea>
-            </label>
-            <div class="action-row">
-              <button id="landing-builder-submit" type="submit" class="secondary-button">Build construct draft</button>
-              <p class="meta landing-meta-light">Strandspace checks local knowledge first, then uses AI refinement when available.</p>
+              <p id="landing-intake-hint" class="meta landing-meta-light"></p>
+            </div>
+
+            <div class="action-row landing-actions intake-controls">
+              <button id="landing-intake-back" type="button" class="secondary-button subtle-button">Back</button>
+              <button id="landing-intake-skip" type="button" class="secondary-button subtle-button">Skip</button>
+              <button id="landing-intake-next" type="submit" class="secondary-button">Next</button>
+              <button id="landing-intake-edit" type="button" class="secondary-button subtle-button">Edit</button>
+              <button id="landing-intake-summarize" type="button" class="secondary-button subtle-button">Summarize</button>
+              <button id="landing-intake-fits" type="button" class="secondary-button subtle-button">Check possible fits</button>
+            </div>
+
+            <div class="action-row landing-actions intake-actions">
+              <button id="landing-intake-save" type="button" class="secondary-button">Save construct</button>
+              <button id="landing-intake-update" type="button" class="secondary-button subtle-button">Update construct</button>
+              <button id="landing-intake-variant" type="button" class="secondary-button subtle-button">Create variant</button>
+              <button id="landing-intake-delete-working" type="button" class="secondary-button subtle-button">Delete current construct</button>
+              <button id="landing-intake-restart" type="button" class="secondary-button subtle-button">Restart intake</button>
             </div>
           </form>
 

@@ -72,6 +72,10 @@ button {
   cursor: pointer;
 }
 
+.is-hidden {
+  display: none !important;
+}
+
 a.secondary-button,
 a.primary-button,
 .landing-link-button {

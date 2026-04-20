@@ -1115,6 +1115,50 @@ await check("POST /api/subjectspace/learn stores and recalls a custom construct"
   });
 });
 
+await check("subjectspace can recall a lookup-style construct for local reconstruction", async () => {
+  await withServer(async (address) => {
+    const topic = `Reference Lookup ${Date.now()}`;
+    const response = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/learn`, {
+      subjectLabel: topic,
+      constructLabel: "Resistor color code lookup",
+      target: "Decode a 4-band resistor color code into ohms + tolerance",
+      objective: "Return resistance value quickly without an LLM",
+      context: [
+        "constructType: reference/lookup",
+        "topic: resistor color code",
+        "format: 4-band",
+        "output: ohms + tolerance"
+      ].join("\n"),
+      steps: [
+        "Read band 1 and band 2 as digits.",
+        "Read band 3 as the multiplier.",
+        "Read band 4 as tolerance.",
+        "Return the computed ohms plus tolerance."
+      ].join("\n"),
+      notes: [
+        "Digits: black 0, brown 1, red 2, orange 3, yellow 4, green 5, blue 6, violet 7, gray 8, white 9.",
+        "Multiplier: brown x10, red x100, orange x1k, yellow x10k, gold x0.1, silver x0.01.",
+        "Tolerance: gold ±5%, silver ±10%."
+      ].join("\n"),
+      tags: "reference, lookup, electronics"
+    });
+
+    assert.equal(response.status, 200);
+    const learned = await response.json();
+    assert.ok(learned.construct?.id);
+
+    const recallResponse = await postJson(`http://127.0.0.1:${address.port}/api/subjectspace/answer`, {
+      subjectId: learned.construct.subjectId,
+      question: "Resistor color code lookup brown black red gold"
+    });
+    assert.equal(recallResponse.status, 200);
+    const payload = await recallResponse.json();
+    assert.equal(payload.source, "strandspace");
+    assert.equal(payload.recall.ready, true);
+    assert.match(String(payload.answer ?? ""), /resistor|digits|tolerance/i);
+  });
+});
+
 await check("subjectspace routes narrow-but-ambiguous recall toward API validation", async () => {
   await withServer(async (address) => {
     const construct = await createSubjectConstruct(address.port, {
