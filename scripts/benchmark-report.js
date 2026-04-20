@@ -65,7 +65,50 @@ function markdownEscape(value = "") {
   return String(value ?? "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
 }
 
-function buildReport({ dbPath, runs, generatedAt }) {
+function hasTable(db, name) {
+  try {
+    return Boolean(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(String(name)));
+  } catch {
+    return false;
+  }
+}
+
+function listBenchmarkReports(db, options = {}) {
+  const limit = Math.max(1, Math.min(Number(options.limit ?? 200) || 200, 2000));
+  const rows = db.prepare(`
+    SELECT *
+    FROM benchmark_reports
+    ORDER BY createdAt DESC
+    LIMIT ?
+  `).all(limit);
+
+  return rows.map((row) => ({
+    id: row.id,
+    subjectId: row.subjectId || "",
+    subjectLabel: row.subjectLabel || "",
+    testLabel: row.testLabel || "",
+    provider: row.provider || "",
+    providerLabel: row.providerLabel || row.provider || "",
+    model: row.model || "",
+    mode: row.mode || "compare",
+    grounded: Boolean(row.grounded),
+    promptMode: row.promptMode || "",
+    question: row.question || "",
+    benchmarkQuestion: row.benchmarkQuestion || "",
+    localConstructLabel: row.localConstructLabel || "",
+    llmConstructLabel: row.llmConstructLabel || "",
+    localLatencyMs: Number.isFinite(Number(row.localLatencyMs)) ? Number(row.localLatencyMs) : null,
+    llmLatencyMs: Number.isFinite(Number(row.llmLatencyMs)) ? Number(row.llmLatencyMs) : null,
+    deltaMs: Number.isFinite(Number(row.deltaMs)) ? Number(row.deltaMs) : null,
+    speedup: Number.isFinite(Number(row.speedup)) ? Number(row.speedup) : null,
+    comparisonAvailable: Boolean(row.comparisonAvailable),
+    faster: row.faster || "",
+    summary: row.summary || "",
+    createdAt: row.createdAt
+  }));
+}
+
+function buildBenchmarkHistoryReport({ dbPath, runs, generatedAt }) {
   const totalRuns = runs.length;
   const localLatencies = runs.map((run) => run.localLatencyMs).filter((value) => value !== null);
   const assistLatencies = runs.map((run) => run.assistLatencyMs).filter((value) => value !== null);
@@ -153,6 +196,97 @@ function buildReport({ dbPath, runs, generatedAt }) {
   return `${lines.join("\n")}\n`;
 }
 
+function buildBenchmarkReportsReport({ dbPath, runs, generatedAt }) {
+  const totalRuns = runs.length;
+  const localLatencies = runs.map((run) => run.localLatencyMs).filter((value) => value !== null);
+  const assistLatencies = runs.map((run) => run.llmLatencyMs).filter((value) => value !== null);
+  const speedups = runs.map((run) => run.speedup).filter((value) => value !== null);
+
+  const avgLocal = average(localLatencies);
+  const avgAssist = average(assistLatencies);
+  const avgSpeedup = average(speedups);
+
+  const perModel = new Map();
+  for (const run of runs) {
+    const key = `${safeString(run.provider || "unknown")}:${safeString(run.model || "unknown")}`;
+    if (!perModel.has(key)) {
+      perModel.set(key, []);
+    }
+    perModel.get(key).push(run);
+  }
+
+  const modelRows = [...perModel.entries()]
+    .map(([key, entries]) => ({
+      key,
+      provider: entries[0]?.providerLabel || entries[0]?.provider || "unknown",
+      model: entries[0]?.model || "unknown",
+      count: entries.length,
+      avgLocal: average(entries.map((run) => run.localLatencyMs).filter((v) => v !== null)),
+      avgAssist: average(entries.map((run) => run.llmLatencyMs).filter((v) => v !== null)),
+      avgSpeedup: average(entries.map((run) => run.speedup).filter((v) => v !== null))
+    }))
+    .sort((left, right) => right.count - left.count || left.key.localeCompare(right.key));
+
+  const lines = [];
+  lines.push("# Strandspace Benchmark History");
+  lines.push("");
+  lines.push(`Generated: ${generatedAt}`);
+  lines.push(`Database: \`${dbPath}\``);
+  lines.push(`Runs: ${totalRuns}`);
+  lines.push("");
+  lines.push("## Summary");
+  lines.push("");
+  lines.push(`- Avg local recall latency: ${avgLocal === null ? "n/a" : `${round(avgLocal, 1)} ms`}`);
+  lines.push(`- Avg assist round-trip latency: ${avgAssist === null ? "n/a" : `${round(avgAssist, 1)} ms`}`);
+  lines.push(`- Avg speedup: ${avgSpeedup === null ? "n/a" : `${round(avgSpeedup, 1)}x`}`);
+  lines.push("");
+  lines.push("## By Model");
+  lines.push("");
+  lines.push("| provider | model | runs | avgLocalMs | avgAssistMs | avgSpeedup |");
+  lines.push("| --- | --- | ---: | ---: | ---: | ---: |");
+  for (const row of modelRows) {
+    lines.push([
+      markdownEscape(row.provider),
+      markdownEscape(row.model),
+      row.count,
+      row.avgLocal === null ? "n/a" : round(row.avgLocal, 1),
+      row.avgAssist === null ? "n/a" : round(row.avgAssist, 1),
+      row.avgSpeedup === null ? "n/a" : round(row.avgSpeedup, 1)
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"));
+  }
+
+  lines.push("");
+  lines.push("## Recent Runs");
+  lines.push("");
+  lines.push("| createdAt | testLabel | provider | model | mode | prompt | compactPrompt | localMs | assistMs | speedup | faster |");
+  lines.push("| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- |");
+
+  for (const run of runs.slice(0, 25)) {
+    lines.push([
+      markdownEscape(run.createdAt),
+      markdownEscape(run.testLabel),
+      markdownEscape(run.providerLabel || run.provider),
+      markdownEscape(run.model),
+      markdownEscape(run.mode),
+      markdownEscape(run.question),
+      markdownEscape(run.benchmarkQuestion),
+      run.localLatencyMs === null ? "n/a" : round(run.localLatencyMs, 1),
+      run.llmLatencyMs === null ? "n/a" : round(run.llmLatencyMs, 1),
+      run.speedup === null ? "n/a" : round(run.speedup, 1),
+      markdownEscape(run.faster)
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"));
+  }
+
+  lines.push("");
+  lines.push("## Notes");
+  lines.push("");
+  lines.push("- This report is generated from the local SQLite table `benchmark_reports` (Model Lab reports).");
+  lines.push("- If `assistMs` is `n/a`, the run likely occurred in local-only mode or usage was unavailable.");
+  lines.push("");
+
+  return `${lines.join("\n")}\n`;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const dbPath = safeString(args.get("db")) || process.env.STRANDSPACE_DB_PATH || join("data", "strandspace.sqlite");
@@ -162,9 +296,18 @@ async function main() {
   const db = new DatabaseSync(dbPath);
   try {
     ensureSubjectspaceTables(db);
-    const runs = listStrandspaceBenchmarkHistory(db, { limit });
+    const useBenchmarkReports = hasTable(db, "benchmark_reports");
+    const runs = useBenchmarkReports
+      ? listBenchmarkReports(db, { limit })
+      : listStrandspaceBenchmarkHistory(db, { limit });
     const generatedAt = new Date().toISOString();
-    const report = buildReport({
+    const report = useBenchmarkReports
+      ? buildBenchmarkReportsReport({
+        dbPath,
+        runs,
+        generatedAt
+      })
+      : buildBenchmarkHistoryReport({
       dbPath,
       runs,
       generatedAt
