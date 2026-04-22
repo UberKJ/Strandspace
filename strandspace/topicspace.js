@@ -7,6 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export const defaultTopicSeedsPath = join(__dirname, "..", "data", "topic-seeds.json");
+export const diabeticRecipeSeedsPath = join(__dirname, "..", "data", "diabetic-recipe-seeds.json");
 
 function nowIso() {
   return new Date().toISOString();
@@ -337,6 +338,31 @@ export function ensureTopicspaceTables(db) {
   `);
 }
 
+function readSeedFile(filePath) {
+  try {
+    return JSON.parse(readFileSync(filePath, "utf8"));
+  } catch {
+    return [];
+  }
+}
+
+function upsertMissingStableSeeds(db, seeds = []) {
+  let inserted = 0;
+  for (const item of seeds) {
+    const id = String(item?.id ?? "").trim();
+    if (!id) {
+      continue;
+    }
+    const exists = db.prepare("SELECT id FROM topic_constructs WHERE id = ?").get(id);
+    if (exists) {
+      continue;
+    }
+    upsertTopicConstruct(db, item);
+    inserted += 1;
+  }
+  return inserted;
+}
+
 export function seedTopicspace(db, filePath = defaultTopicSeedsPath) {
   ensureTopicspaceTables(db);
 
@@ -347,14 +373,22 @@ export function seedTopicspace(db, filePath = defaultTopicSeedsPath) {
     existing = 0;
   }
 
-  if (existing > 0) {
-    return existing;
+  if (filePath !== defaultTopicSeedsPath) {
+    const raw = readSeedFile(filePath);
+    for (const item of raw) {
+      upsertTopicConstruct(db, item);
+    }
+    return Number(db.prepare("SELECT COUNT(*) as count FROM topic_constructs").get().count ?? 0);
   }
 
-  const raw = JSON.parse(readFileSync(filePath, "utf8"));
-  for (const item of raw) {
-    upsertTopicConstruct(db, item);
+  if (existing === 0) {
+    const raw = readSeedFile(filePath);
+    for (const item of raw) {
+      upsertTopicConstruct(db, item);
+    }
   }
+
+  upsertMissingStableSeeds(db, readSeedFile(diabeticRecipeSeedsPath));
 
   return Number(db.prepare("SELECT COUNT(*) as count FROM topic_constructs").get().count ?? 0);
 }
@@ -368,9 +402,23 @@ export function listTopicConstructs(db, topic = "") {
   return rows.map(fromRow);
 }
 
-export function getTopicConstruct(db, id = "") {
+function getTopicConstructRaw(db, id = "") {
   ensureTopicspaceTables(db);
   return fromRow(db.prepare("SELECT * FROM topic_constructs WHERE id = ?").get(String(id)));
+}
+
+function hydrateLinkedConstructs(db, construct) {
+  if (!construct) return null;
+  const ids = Array.isArray(construct.linked_construct_ids) ? construct.linked_construct_ids : [];
+  const linked_constructs = ids
+    .map((id) => getTopicConstructRaw(db, id))
+    .filter(Boolean)
+    .map((item) => ({ ...item, linked_constructs: [] }));
+  return { ...construct, linked_constructs };
+}
+
+export function getTopicConstruct(db, id = "") {
+  return hydrateLinkedConstructs(db, getTopicConstructRaw(db, id));
 }
 
 export function upsertTopicConstruct(db, payload = {}) {
@@ -583,12 +631,25 @@ function buildLocalAnswer(construct = {}, question = "") {
 
   const steps = Array.isArray(construct.steps) ? construct.steps : [];
   const rules = Array.isArray(construct.rules) ? construct.rules : [];
+  const linked = Array.isArray(construct.linked_constructs) ? construct.linked_constructs : [];
   const summary = String(construct.summary ?? "").trim();
   const purpose = String(construct.purpose ?? "").trim();
 
   const lines = [];
   if (summary) lines.push(summary);
   if (purpose) lines.push(`Purpose: ${purpose}`);
+
+  if (linked.length) {
+    lines.push("Ingredients:");
+    for (const item of linked.slice(0, 10)) {
+      const title = String(item?.title ?? item?.topic ?? "Ingredient").trim();
+      const attrs = item?.attributes && typeof item.attributes === "object" && !Array.isArray(item.attributes)
+        ? Object.entries(item.attributes).slice(0, 4).map(([key, value]) => `${key}: ${value}`).join("; ")
+        : "";
+      const fact = attrs || String(item?.purpose ?? "").trim();
+      lines.push(`- ${title}${fact ? ` - ${fact}` : ""}`);
+    }
+  }
 
   if (steps.length) {
     lines.push("Steps:");
@@ -611,7 +672,9 @@ function buildLocalAnswer(construct = {}, question = "") {
       source: "topicspace",
       confidence,
       answer,
-      detail: null
+      detail: {
+        linked_constructs: linked
+      }
     };
   }
 
@@ -641,12 +704,14 @@ export function recallTopicspace(db, { question = "", topic = "" } = {}) {
   const runnerUp = candidates[1] ?? null;
   const confidence = matched ? chooseConfidence(matched) : 0.1;
   const ready = Boolean(matched && matched.score >= 8 && (!runnerUp || matched.score - runnerUp.score >= 4));
+  const hydratedMatched = matched ? hydrateLinkedConstructs(db, matched) : null;
 
   return {
     question: q,
     topic: t || null,
-    matched: matched ? { ...matched, confidence } : null,
+    matched: hydratedMatched ? { ...hydratedMatched, confidence } : null,
     candidates: candidates.slice(0, 5),
+    related_constructs: hydratedMatched?.linked_constructs ?? [],
     confidence,
     ready
   };

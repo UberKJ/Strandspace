@@ -7,6 +7,13 @@ import {
   tokenize,
   uniqueList
 } from "./utils.js";
+import {
+  detectSubjectProfile,
+  fieldHasValue,
+  isProfileDraftComplete,
+  missingProfileFields,
+  titleForProfile
+} from "./profiles.js";
 
 const storageKey = "strandspace_workspace_state_v1";
 
@@ -40,6 +47,8 @@ export function createDefaultState() {
       intake: {
         analysis: null,
         error: "",
+        fieldSuggestion: null,
+        suggestionAttempt: 0,
         lastTopic: "",
         ignoreStrongMatch: false,
         typePickerOpen: false,
@@ -241,6 +250,9 @@ function shouldAskStep(state, key) {
   if (key === "rules") return !(Array.isArray(draft.rules) && draft.rules.filter(Boolean).length);
   if (key === "examples") return !(Array.isArray(draft.examples) && draft.examples.filter(Boolean).length);
   if (key === "tags") return !(Array.isArray(draft.tags) && draft.tags.filter(Boolean).length);
+  if (key === "retrieval_keys") return !(Array.isArray(draft.retrieval_keys) && draft.retrieval_keys.filter(Boolean).length);
+  if (key === "trigger_phrases") return !(Array.isArray(draft.trigger_phrases) && draft.trigger_phrases.filter(Boolean).length);
+  if (key === "linked_construct_ids") return !(Array.isArray(draft.linked_construct_ids) && draft.linked_construct_ids.filter(Boolean).length);
   if (key === "title") return canSuggestTitle(state) && !String(draft.title ?? "").trim();
 
   return false;
@@ -275,6 +287,11 @@ function buildGuidedStepSequence(state) {
   add("construct_type");
   add("purpose");
   add("core_entities");
+
+  const profile = detectSubjectProfile(state.draft);
+  if (profile?.required?.length) {
+    for (const key of profile.required) add(key);
+  }
 
   const type = String(state.draft?.construct_type ?? "").trim() || String(inference?.construct_type ?? "").trim();
   for (const key of essentialStepsForType(type)) add(key);
@@ -463,6 +480,7 @@ export function applySkipToStep(state, stepKey) {
     tags: "tags",
     retrieval_keys: "retrieval_keys",
     trigger_phrases: "trigger_phrases",
+    linked_construct_ids: "linked_construct_ids",
     diagnostic: "attributes",
     specification: "attributes"
   };
@@ -502,6 +520,22 @@ export function applySpecificationToDraft(state) {
   const next = state.draft.attributes && typeof state.draft.attributes === "object" && !Array.isArray(state.draft.attributes) ? { ...state.draft.attributes } : {};
   next.specs = filtered;
   state.draft.attributes = next;
+}
+
+export function activeSubjectProfile(state) {
+  return detectSubjectProfile(state.draft);
+}
+
+export function missingRequiredFields(state) {
+  return missingProfileFields(state.draft);
+}
+
+export function isDraftComplete(state) {
+  return isProfileDraftComplete(state.draft);
+}
+
+export function isFieldComplete(state, key) {
+  return fieldHasValue(state.draft, key);
 }
 
 export function updateRecentDrafts(entry) {

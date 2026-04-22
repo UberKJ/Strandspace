@@ -9,8 +9,10 @@ import {
   currentStep,
   hydrateLookupEditor,
   hydrateState,
+  isDraftComplete,
   isDraftSaved,
   loadState,
+  missingRequiredFields,
   saveState,
   snapshotDraft,
   stepSequence,
@@ -36,6 +38,7 @@ import {
   renderDraftBadges,
   renderDraftSummary,
   renderEditorMarkup,
+  renderFieldSuggestion,
   renderHeaderBadges,
   renderMatchPanel,
   renderPrompt,
@@ -181,7 +184,6 @@ async function boot() {
   }
 
   await refreshTopicConstructs();
-  scheduleIntake();
   renderAll();
 }
 
@@ -234,6 +236,8 @@ function renderEditor() {
 
   const editorEl = document.getElementById("ss-editor");
   if (editorEl) editorEl.innerHTML = renderEditorMarkup(state);
+  const suggestionEl = document.getElementById("ss-field-suggestion");
+  if (suggestionEl) suggestionEl.innerHTML = renderFieldSuggestion(state, currentStep(state).key);
 
   const titleSuggestEl = document.getElementById("ss-title-suggestion");
   if (titleSuggestEl) titleSuggestEl.innerHTML = renderTitleSuggestion(state);
@@ -373,7 +377,6 @@ function bindEvents() {
       steps[idx] = String(target.value ?? "");
       state.draft.steps = steps;
       renderDraftPanel();
-      scheduleRecall();
       persist();
       return;
     }
@@ -385,7 +388,6 @@ function bindEvents() {
       rules[idx] = String(target.value ?? "");
       state.draft.rules = rules;
       renderDraftPanel();
-      scheduleRecall();
       persist();
       return;
     }
@@ -398,7 +400,6 @@ function bindEvents() {
       if (action === "attr-value") row.value = String(target.value ?? "");
       state.ui.attributesRows[idx] = row;
       applyAttributesRowsToDraft(state);
-      scheduleRecall();
       persist();
       renderDraftPanel();
       return;
@@ -428,8 +429,16 @@ function bindEvents() {
       state.ui.lookup.sections = sections;
       applyLookupSectionsToDraft(state);
       renderDraftPanel();
-      scheduleRecall();
       persist();
+      return;
+    }
+
+    if (action === "suggestion-edit") {
+      const fieldKey = String(target.getAttribute("data-field") ?? "").trim();
+      if (state.ui?.intake?.fieldSuggestion && String(state.ui.intake.fieldSuggestion.fieldKey ?? "") === fieldKey) {
+        state.ui.intake.fieldSuggestion.value = String(target.value ?? "");
+        persist();
+      }
       return;
     }
 
@@ -446,11 +455,29 @@ function bindEvents() {
     if (target.id === "ss-query-input") {
       state.ui.queryText = String(target.value ?? "");
       persist();
-      scheduleRecon();
     }
   });
 
-  els.workspace?.addEventListener("click", (event) => {
+  els.workspace?.addEventListener("keydown", async (event) => {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (!target) return;
+    if (event.key !== "Enter") return;
+    if (target instanceof HTMLTextAreaElement && !event.ctrlKey) return;
+
+    const field = target.getAttribute("data-field") || "";
+    const singleLineCommit = target instanceof HTMLInputElement && ["topic", "title", "tags_text"].includes(field);
+    const reconstructCommit = target.id === "ss-query-input" && event.ctrlKey;
+    if (!singleLineCommit && !reconstructCommit) return;
+
+    event.preventDefault();
+    if (reconstructCommit) {
+      await runReconNow();
+      return;
+    }
+    await commitCurrentField();
+  });
+
+  els.workspace?.addEventListener("click", async (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     const actionEl = target.closest("[data-action]");
@@ -463,7 +490,26 @@ function bindEvents() {
       state.draft.title = suggestion;
       renderEditor();
       renderDraftPanel();
-      scheduleRecall();
+      persist();
+      return;
+    }
+
+    if (action === "suggest-field" || action === "try-suggestion") {
+      const fieldKey = String(actionEl.getAttribute("data-field") ?? currentStep(state).key).trim();
+      state.ui.intake.suggestionAttempt = Number(state.ui.intake.suggestionAttempt ?? 0) + 1;
+      await runIntakeNow({ mode: "suggest_field", fieldKey, attempt: state.ui.intake.suggestionAttempt });
+      return;
+    }
+
+    if (action === "accept-suggestion") {
+      const fieldKey = String(actionEl.getAttribute("data-field") ?? currentStep(state).key).trim();
+      applyFieldSuggestion(fieldKey);
+      return;
+    }
+
+    if (action === "clear-suggestion") {
+      state.ui.intake.fieldSuggestion = null;
+      renderEditor();
       persist();
       return;
     }
@@ -483,7 +529,6 @@ function bindEvents() {
       applyAttributesRowsToDraft(state);
       renderEditor();
       renderDraftPanel();
-      scheduleRecall();
       persist();
       return;
     }
@@ -507,7 +552,6 @@ function bindEvents() {
       state.draft.steps = steps;
       renderEditor();
       renderDraftPanel();
-      scheduleRecall();
       persist();
       return;
     }
@@ -529,7 +573,19 @@ function bindEvents() {
       state.draft.rules = rules;
       renderEditor();
       renderDraftPanel();
-      scheduleRecall();
+      persist();
+      return;
+    }
+
+    if (action === "link-ingredient" || action === "unlink-ingredient") {
+      const id = String(actionEl.getAttribute("data-id") ?? "").trim();
+      if (!id) return;
+      const current = Array.isArray(state.draft.linked_construct_ids) ? state.draft.linked_construct_ids : [];
+      state.draft.linked_construct_ids = action === "link-ingredient"
+        ? Array.from(new Set([...current, id]))
+        : current.filter((item) => item !== id);
+      renderEditor();
+      renderDraftPanel();
       persist();
       return;
     }
@@ -543,6 +599,8 @@ function bindEvents() {
     }
 
     if (action === "intake-search") {
+      await runIntakeNow();
+      await runRecallNow();
       const steps = stepSequence(state);
       const idx = steps.indexOf("reuse_match");
       if (idx >= 0) state.intake.stepIndex = idx;
@@ -587,7 +645,6 @@ function bindEvents() {
       hydrateLookupEditor(state);
       state.intake.stepIndex = Math.min(stepSequence(state).length - 1, 1);
       renderAll();
-      scheduleRecall();
       persist();
       return;
     }
@@ -634,7 +691,6 @@ function bindEvents() {
         state.intake.stepIndex = Math.min(stepSequence(state).length - 1, Number(state.intake.stepIndex ?? 0) + 1);
       }
       renderAll();
-      scheduleRecall();
       persist();
       return;
     }
@@ -646,7 +702,6 @@ function bindEvents() {
       applyLookupSectionsToDraft(state);
       renderEditor();
       renderDraftPanel();
-      scheduleRecall();
       persist();
       return;
     }
@@ -661,7 +716,6 @@ function bindEvents() {
       applyLookupSectionsToDraft(state);
       renderEditor();
       renderDraftPanel();
-      scheduleRecall();
       persist();
       return;
     }
@@ -697,7 +751,6 @@ function bindEvents() {
       applyLookupSectionsToDraft(state);
       renderEditor();
       renderDraftPanel();
-      scheduleRecall();
       persist();
       return;
     }
@@ -758,6 +811,7 @@ function bindEvents() {
     }
 
     if (action === "next") {
+      await commitCurrentField();
       state.intake.stepIndex = Math.min(stepSequence(state).length - 1, Number(state.intake.stepIndex ?? 0) + 1);
       renderEditor();
       renderBottomDisabledStates();
@@ -770,7 +824,6 @@ function bindEvents() {
       applySkipToStep(state, step.key);
       state.intake.stepIndex = Math.min(stepSequence(state).length - 1, Number(state.intake.stepIndex ?? 0) + 1);
       renderAll();
-      scheduleRecall();
       return;
     }
 
@@ -817,10 +870,10 @@ function handleFieldInput(field, target) {
     state.ui.intake.ignoreStrongMatch = false;
     state.ui.intake.typeConfirmed = false;
     state.ui.intake.typePickerOpen = false;
+    state.ui.intake.fieldSuggestion = null;
     renderHeader();
     renderDraftPanel();
-    scheduleRecall();
-    scheduleIntake();
+    renderBottomDisabledStates();
     persist();
     return;
   }
@@ -830,14 +883,12 @@ function handleFieldInput(field, target) {
     state.ui.intake.typeConfirmed = true;
     state.ui.intake.typePickerOpen = false;
     renderAll();
-    scheduleRecall();
     return;
   }
 
   if (field === "purpose") {
     state.draft.purpose = value;
     renderDraftPanel();
-    scheduleRecall();
     persist();
     return;
   }
@@ -845,7 +896,6 @@ function handleFieldInput(field, target) {
   if (field === "core_entities_text") {
     state.draft.core_entities = parseEntityList(value, 24);
     renderDraftPanel();
-    scheduleRecall();
     persist();
     return;
   }
@@ -853,7 +903,6 @@ function handleFieldInput(field, target) {
   if (field === "examples_text") {
     state.draft.examples = parseLineList(value, 24);
     renderDraftPanel();
-    scheduleRecall();
     persist();
     return;
   }
@@ -861,7 +910,6 @@ function handleFieldInput(field, target) {
   if (field === "tags_text") {
     state.draft.tags = parseCommaList(value, 32);
     renderDraftPanel();
-    scheduleRecall();
     persist();
     return;
   }
@@ -869,7 +917,6 @@ function handleFieldInput(field, target) {
   if (field === "title") {
     state.draft.title = value;
     renderDraftPanel();
-    scheduleRecall();
     persist();
     return;
   }
@@ -877,7 +924,6 @@ function handleFieldInput(field, target) {
   if (field === "retrieval_keys_text") {
     state.draft.retrieval_keys = parseEntityList(value, 32);
     renderDraftPanel();
-    scheduleRecall();
     persist();
     return;
   }
@@ -885,7 +931,6 @@ function handleFieldInput(field, target) {
   if (field === "trigger_phrases_text") {
     state.draft.trigger_phrases = parseLineList(value, 24);
     renderDraftPanel();
-    scheduleRecall();
     persist();
   }
 }
@@ -899,7 +944,6 @@ function handleDiagnosticInput(action, target) {
   if (action === "diagnostic-check-edit") state.ui.diagnostic.checks[idx] = value;
   applyDiagnosticToDraft(state);
   renderDraftPanel();
-  scheduleRecall();
   persist();
 }
 
@@ -913,7 +957,6 @@ function handleSpecInput(action, target) {
   state.ui.specification.rows[idx] = row;
   applySpecificationToDraft(state);
   renderDraftPanel();
-  scheduleRecall();
   persist();
 }
 
@@ -937,7 +980,6 @@ function handleEditorClick(action, el) {
   applyDiagnosticToDraft(state);
   renderEditor();
   renderDraftPanel();
-  scheduleRecall();
   persist();
 }
 
@@ -965,6 +1007,105 @@ function buildRecallQuestion() {
     ...(Array.isArray(state.draft.tags) ? state.draft.tags : []),
     ...(Array.isArray(state.draft.rules) ? state.draft.rules.slice(0, 6) : [])
   ].map((chunk) => String(chunk ?? "").trim()).filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+}
+
+async function commitCurrentField() {
+  const step = currentStep(state);
+  if (step.key === "topic") {
+    await runIntakeNow();
+    await runRecallNow();
+    renderEditor();
+    renderDraftPanel();
+    renderBottomDisabledStates();
+    persist();
+    return;
+  }
+
+  if (step.key === "title" || step.key === "tags" || step.key === "retrieval_keys" || step.key === "trigger_phrases") {
+    await runRecallNow();
+    return;
+  }
+
+  if (step.key === "purpose" || step.key === "core_entities" || step.key === "attributes" || step.key === "steps" || step.key === "rules" || step.key === "linked_construct_ids") {
+    await runRecallNow();
+  }
+}
+
+async function runIntakeNow({ mode = "", fieldKey = "", attempt = 0 } = {}) {
+  const topic = String(state.draft.topic ?? "").trim();
+  if (!topic) return null;
+
+  try {
+    state.ui.intake.error = "";
+    const payload = await analyzeTopicIntake({
+      topic,
+      draft: buildTopicPayload({ mode: "draft" }),
+      mode,
+      fieldKey,
+      attempt
+    });
+    state.ui.intake.analysis = payload;
+    state.ui.intake.lastTopic = topic;
+    if (payload?.fieldSuggestion) {
+      state.ui.intake.fieldSuggestion = payload.fieldSuggestion;
+    }
+
+    const inference = payload?.inference ?? null;
+    if (!mode && inference) {
+      if (!String(state.draft.construct_type ?? "").trim() && String(inference.construct_type ?? "").trim()) {
+        state.draft.construct_type = String(inference.construct_type ?? "").trim();
+      }
+      if (!String(state.draft.purpose ?? "").trim() && String(inference.purpose ?? "").trim()) {
+        state.draft.purpose = String(inference.purpose ?? "").trim();
+      }
+      if (!(Array.isArray(state.draft.core_entities) && state.draft.core_entities.length) && Array.isArray(inference.core_entities) && inference.core_entities.length) {
+        state.draft.core_entities = inference.core_entities.slice(0, 10).map((item) => String(item ?? "").trim()).filter(Boolean);
+      }
+    }
+
+    renderHeader();
+    renderEditor();
+    renderDraftPanel();
+    renderBottomDisabledStates();
+    persist();
+    return payload;
+  } catch (error) {
+    state.ui.intake.error = String(error?.message ?? "Unable to analyze topic");
+    renderEditor();
+    renderBottomDisabledStates();
+    persist();
+    return null;
+  }
+}
+
+function applyFieldSuggestion(fieldKey) {
+  const suggestion = state.ui?.intake?.fieldSuggestion ?? null;
+  if (!suggestion || String(suggestion.fieldKey ?? "") !== fieldKey) return;
+  const value = suggestion.value;
+  const text = typeof value === "string" ? value : "";
+
+  if (fieldKey === "title") state.draft.title = text.trim();
+  if (fieldKey === "purpose") state.draft.purpose = text.trim();
+  if (fieldKey === "core_entities") state.draft.core_entities = Array.isArray(value) ? value : parseEntityList(text, 24);
+  if (fieldKey === "tags") state.draft.tags = Array.isArray(value) ? value : parseCommaList(text, 32);
+  if (fieldKey === "retrieval_keys") state.draft.retrieval_keys = Array.isArray(value) ? value : parseEntityList(text, 32);
+  if (fieldKey === "trigger_phrases") state.draft.trigger_phrases = Array.isArray(value) ? value : parseLineList(text, 24);
+  if (fieldKey === "steps") state.draft.steps = Array.isArray(value) ? value.map((item) => String(item ?? "").trim()).filter(Boolean) : parseLineList(text, 64);
+  if (fieldKey === "rules") state.draft.rules = Array.isArray(value) ? value.map((item) => String(item ?? "").trim()).filter(Boolean) : parseLineList(text, 64);
+  if (fieldKey === "attributes") {
+    const attrs = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    state.draft.attributes = Object.keys(attrs).length ? attrs : state.draft.attributes;
+    state.ui.attributesRows = Object.entries(state.draft.attributes ?? {}).map(([key, item]) => ({ key, value: String(item ?? "") }));
+    if (!state.ui.attributesRows.length) state.ui.attributesRows.push({ key: "", value: "" });
+  }
+  if (fieldKey === "linked_construct_ids") {
+    const ids = Array.isArray(value) ? value : [];
+    state.draft.linked_construct_ids = Array.from(new Set([...(Array.isArray(state.draft.linked_construct_ids) ? state.draft.linked_construct_ids : []), ...ids].map((id) => String(id ?? "").trim()).filter(Boolean)));
+  }
+
+  state.ui.intake.fieldSuggestion = null;
+  renderAll();
+  persist();
 }
 
 async function runRecallNow() {
@@ -1017,6 +1158,10 @@ async function saveDraft({ mode = "save" } = {}) {
   if (!topic) return window.alert("Topic is required.");
   if (!String(state.draft.construct_type ?? "").trim()) return window.alert("Construct type is required.");
   if (mode === "update" && !String(state.draft.id ?? "").trim()) return window.alert("No saved construct loaded. Save first, or use a match.");
+  if (!isDraftComplete(state)) {
+    const missing = missingRequiredFields(state).join(", ");
+    return window.alert(`This guided construct still needs: ${missing || "required fields"}. Answer, skip, or mark them not applicable before saving.`);
+  }
 
   applyAttributesRowsToDraft(state);
   applyLookupSectionsToDraft(state);
@@ -1142,8 +1287,6 @@ async function loadConstructIntoDraft(id, { replace = true } = {}) {
   state.savedSnapshot = snapshotDraft(state);
   state.intake.stepIndex = 0;
   renderAll();
-  scheduleRecall();
-  scheduleIntake();
 }
 
 async function applyMatch(id, { merge = false } = {}) {
@@ -1170,8 +1313,6 @@ async function applyMatch(id, { merge = false } = {}) {
   applyLookupSectionsToDraft(state);
 
   renderAll();
-  scheduleRecall();
-  scheduleIntake();
 }
 
 function mergeDraftFromMatch(match) {
@@ -1237,8 +1378,6 @@ function startFreshFromTopic() {
   state.ui.intake.typePickerOpen = false;
 
   renderAll();
-  scheduleIntake();
-  scheduleRecall();
   persist();
 }
 

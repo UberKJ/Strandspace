@@ -9,7 +9,7 @@ function readFlag(name = "") {
 }
 
 const subjectId = readFlag("--subject");
-const databasePath = resolveDatabasePath();
+const databasePath = await resolveDatabasePath();
 const db = new DatabaseSync(databasePath);
 
 try {

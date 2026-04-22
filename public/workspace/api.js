@@ -70,13 +70,16 @@ export async function learnSubjectConstruct(payload = {}) {
   });
 }
 
-export async function analyzeTopicIntake({ topic = "", draft = null } = {}) {
+export async function analyzeTopicIntake({ topic = "", draft = null, mode = "", fieldKey = "", attempt = 0 } = {}) {
   return fetchJson("/api/topicspace/intake", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       topic: String(topic ?? "").trim(),
-      draft: draft && typeof draft === "object" ? draft : undefined
+      draft: draft && typeof draft === "object" ? draft : undefined,
+      mode: String(mode ?? "").trim() || undefined,
+      fieldKey: String(fieldKey ?? "").trim() || undefined,
+      attempt: Number(attempt) || 0
     })
   });
 }

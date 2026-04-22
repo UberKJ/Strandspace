@@ -38,6 +38,11 @@ const {
   recallSoundspace,
   upsertSoundConstruct
 } = await import("../strandspace/soundspace.js");
+const {
+  detectSubjectProfile,
+  isProfileDraftComplete,
+  missingProfileFields
+} = await import("../public/workspace/profiles.js");
 
 const results = [];
 
@@ -266,6 +271,7 @@ await check("POST /api/system/reset-examples restores the bundled demo construct
     assert.equal(payload.ok, true);
     assert.ok(Number(payload.subjectCount) >= 10);
     assert.ok(Number(payload.soundCount) >= 10);
+    assert.ok(Number(payload.topicCount) >= 137);
     assert.ok(Array.isArray(payload.subjects));
     assert.ok(payload.subjects.some((subject) => subject.subjectId === "music-engineering"));
   });
@@ -2750,6 +2756,120 @@ await check("POST /api/topicspace/intake infers the next guided intake question"
   });
 });
 
+await check("workspace recipe profile keeps required fields queued until ingredients and steps exist", async () => {
+  const partial = {
+    topic: "Diabetic Recipe",
+    construct_type: "hybrid",
+    title: "Diabetic berry muffin recipe",
+    purpose: "A diabetic-friendly muffin recipe.",
+    core_entities: ["muffin", "diabetic", "ingredients"],
+    attributes: { dietary_goal: "diabetic-friendly", servings_or_yield: "6 muffins" },
+    rules: ["Prefer linked ingredient facts."],
+    tags: ["recipe", "diabetic"],
+    retrieval_keys: ["diabetic muffin recipe"],
+    steps: [],
+    linked_construct_ids: []
+  };
+
+  assert.equal(detectSubjectProfile(partial)?.id, "recipe");
+  assert.equal(isProfileDraftComplete(partial), false);
+  assert.ok(missingProfileFields(partial).includes("steps"));
+  assert.ok(missingProfileFields(partial).includes("linked_construct_ids"));
+
+  const complete = {
+    ...partial,
+    steps: ["Mix dry ingredients.", "Bake until set."],
+    linked_construct_ids: ["topic:almond-flour:test"]
+  };
+  assert.equal(isProfileDraftComplete(complete), true);
+});
+
+await check("POST /api/topicspace/intake suggests a single field without OpenAI", async () => {
+  __setOpenAiAssistMock(null);
+
+  await withServer(async (address) => {
+    const response = await postJson(`http://127.0.0.1:${address.port}/api/topicspace/intake`, {
+      topic: "Diabetic Recipe",
+      mode: "suggest_field",
+      fieldKey: "tags",
+      draft: {
+        topic: "Diabetic Recipe",
+        construct_type: "hybrid"
+      }
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.fieldSuggestion?.fieldKey, "tags");
+    assert.ok(Array.isArray(payload.fieldSuggestion?.value));
+    assert.ok(payload.fieldSuggestion.value.includes("diabetic"));
+  });
+});
+
+await check("diabetic recipe seed dataset contains 100 complete linked recipes", async () => {
+  await withServer(async (address) => {
+    const resetResponse = await postJson(`http://127.0.0.1:${address.port}/api/system/reset-examples`, {});
+    assert.equal(resetResponse.status, 200);
+
+    const recipesResponse = await fetch(`http://127.0.0.1:${address.port}/api/topicspace/constructs?topic=${encodeURIComponent("Diabetic Recipes")}`);
+    assert.equal(recipesResponse.status, 200);
+    const recipesPayload = await recipesResponse.json();
+    const recipes = Array.isArray(recipesPayload.constructs) ? recipesPayload.constructs : [];
+    assert.equal(recipes.length, 100);
+
+    const ingredientsResponse = await fetch(`http://127.0.0.1:${address.port}/api/topicspace/constructs?topic=${encodeURIComponent("Diabetic Ingredients")}`);
+    assert.equal(ingredientsResponse.status, 200);
+    const ingredientsPayload = await ingredientsResponse.json();
+    const ingredients = Array.isArray(ingredientsPayload.constructs) ? ingredientsPayload.constructs : [];
+    assert.ok(ingredients.length >= 30);
+
+    const ingredientIds = new Set(ingredients.map((construct) => String(construct.id ?? "")));
+    for (const recipe of recipes) {
+      assert.equal(detectSubjectProfile(recipe)?.id, "recipe");
+      assert.equal(isProfileDraftComplete(recipe), true, recipe.title);
+      assert.ok(Array.isArray(recipe.linked_construct_ids));
+      assert.ok(recipe.linked_construct_ids.length >= 3, recipe.title);
+      assert.ok(recipe.linked_construct_ids.every((id) => ingredientIds.has(id)), recipe.title);
+      assert.ok(String(recipe.attributes?.source_notes ?? "").includes("Synthetic testing value"));
+      assert.ok(Array.isArray(recipe.sources));
+      assert.ok(recipe.sources.some((source) => /not medical or nutrition advice/i.test(String(source))));
+    }
+  });
+});
+
+await check("diabetic recipe seeds hydrate ingredients and support broad retrieval prompts", async () => {
+  await withServer(async (address) => {
+    const prompts = [
+      "diabetic breakfast recipe",
+      "low carb dinner bowl",
+      "almond flour diabetic dessert"
+    ];
+
+    for (const prompt of prompts) {
+      const recallResponse = await fetch(`http://127.0.0.1:${address.port}/api/topicspace/recall?q=${encodeURIComponent(prompt)}&topic=${encodeURIComponent("Diabetic Recipes")}`);
+      assert.equal(recallResponse.status, 200);
+      const recallPayload = await recallResponse.json();
+      assert.equal(recallPayload.ok, true);
+      assert.ok(Array.isArray(recallPayload.candidates));
+      assert.ok(recallPayload.candidates.length > 0, prompt);
+      assert.equal(recallPayload.matched?.topic, "Diabetic Recipes");
+    }
+
+    const answerResponse = await fetch(`http://127.0.0.1:${address.port}/api/topicspace/answer?q=${encodeURIComponent("Diabetic lemon herb almond flour muffin 001")}&topic=${encodeURIComponent("Diabetic Recipes")}`);
+    assert.equal(answerResponse.status, 200);
+    const answerPayload = await answerResponse.json();
+    assert.equal(answerPayload.ok, true);
+    assert.equal(answerPayload.source, "topicspace");
+    const answer = String(answerPayload.answer ?? "");
+    assert.match(answer, /Ingredients:/i);
+    assert.match(answer, /Steps:/i);
+    assert.ok(answer.indexOf("Ingredients:") < answer.indexOf("Steps:"));
+    assert.ok(Array.isArray(answerPayload.recall?.related_constructs));
+    assert.ok(answerPayload.recall.related_constructs.length >= 3);
+  });
+});
+
 await check("POST /api/topicspace/learn saves universal topic constructs and recall finds them", async () => {
   await withServer(async (address) => {
     const topic = `Tripod Setup ${Date.now()}`;
@@ -2784,6 +2904,63 @@ await check("POST /api/topicspace/learn saves universal topic constructs and rec
     assert.equal(recallPayload.ready, true);
     assert.equal(recallPayload.matched?.topic, topic);
     assert.match(String(recallPayload.matched?.title ?? ""), /Tripod quick checklist/i);
+  });
+});
+
+await check("topicspace answers hydrate linked diabetic ingredients before recipe steps", async () => {
+  await withServer(async (address) => {
+    const topic = `Diabetic Recipe Link Test ${Date.now()}`;
+    const ingredientResponse = await postJson(`http://127.0.0.1:${address.port}/api/topicspace/learn`, {
+      topic: "Diabetic Ingredients",
+      title: "Almond flour ingredient facts",
+      construct_type: "hybrid",
+      purpose: "Raw ingredient facts for almond flour.",
+      core_entities: ["almond flour", "serving unit", "carbs"],
+      attributes: {
+        ingredient_name: "almond flour",
+        serving_unit: "1/4 cup",
+        total_carbs: "6g",
+        net_carbs: "3g"
+      },
+      rules: ["Use stored nutrition facts before guessing."],
+      tags: ["ingredient-library", "diabetic", "nutrition", "carbs"],
+      retrieval_keys: ["almond flour carbs"],
+      confidence: 0.9
+    });
+    assert.equal(ingredientResponse.status, 200);
+    const ingredientPayload = await ingredientResponse.json();
+    const ingredientId = ingredientPayload.construct?.id;
+    assert.ok(ingredientId);
+
+    const recipeResponse = await postJson(`http://127.0.0.1:${address.port}/api/topicspace/learn`, {
+      topic,
+      title: "Diabetic almond muffin recipe",
+      construct_type: "hybrid",
+      purpose: "A diabetic-friendly muffin recipe with linked ingredient facts.",
+      core_entities: ["almond muffin", "diabetic", "ingredients"],
+      attributes: {
+        dietary_goal: "diabetic-friendly",
+        servings_or_yield: "6 muffins",
+        carb_target_or_notes: "Use linked ingredient facts."
+      },
+      steps: ["Mix almond flour with wet ingredients.", "Bake until the center is set."],
+      rules: ["Prefer linked ingredient facts over guessed nutrition values."],
+      tags: ["recipe", "diabetic", "ingredients"],
+      retrieval_keys: ["diabetic almond muffin recipe"],
+      linked_construct_ids: [ingredientId],
+      confidence: 0.9
+    });
+    assert.equal(recipeResponse.status, 200);
+
+    const answerResponse = await fetch(`http://127.0.0.1:${address.port}/api/topicspace/answer?q=${encodeURIComponent("diabetic almond muffin recipe")}&topic=${encodeURIComponent(topic)}`);
+    assert.equal(answerResponse.status, 200);
+    const answerPayload = await answerResponse.json();
+    assert.equal(answerPayload.ok, true);
+    assert.equal(answerPayload.source, "topicspace");
+    assert.match(String(answerPayload.answer ?? ""), /Ingredients:/i);
+    assert.match(String(answerPayload.answer ?? ""), /Almond flour ingredient facts/i);
+    assert.match(String(answerPayload.answer ?? ""), /Steps:/i);
+    assert.equal(answerPayload.recall?.related_constructs?.[0]?.id, ingredientId);
   });
 });
 

@@ -1,4 +1,4 @@
-import { recallTopicspace, TOPIC_CONSTRUCT_TYPES } from "./topicspace.js";
+import { listTopicConstructs, recallTopicspace, TOPIC_CONSTRUCT_TYPES } from "./topicspace.js";
 import { getOpenAiAssistStatus, generateOpenAiTopicIntakeInference } from "./openai-assist.js";
 
 function normalizeTopic(topic = "") {
@@ -51,6 +51,156 @@ function inferCoreEntitiesHeuristic(topic = "") {
     .filter((token) => token.length >= 3)
     .slice(0, 6);
   return [...new Set(filtered)];
+}
+
+function detectProfile(topic = "", draft = {}) {
+  const haystack = [
+    topic,
+    draft?.title,
+    draft?.purpose,
+    ...(Array.isArray(draft?.tags) ? draft.tags : []),
+    ...(Array.isArray(draft?.core_entities) ? draft.core_entities : [])
+  ].join(" ").toLowerCase();
+  if (/\bingredients?\b|\bingredient\s+library\b|\braw\s+ingredients?\b/.test(haystack) && !/\b(recipe|meal)\b/.test(haystack)) {
+    return "ingredient-library";
+  }
+  if (/\b(recipe|meal|diabetic|ingredients?)\b/.test(haystack)) {
+    return "recipe";
+  }
+  return "";
+}
+
+function listIngredientCandidates(db) {
+  return listTopicConstructs(db).filter((construct) => {
+    const haystack = [
+      construct?.topic,
+      construct?.title,
+      construct?.purpose,
+      ...(Array.isArray(construct?.tags) ? construct.tags : []),
+      ...(Array.isArray(construct?.core_entities) ? construct.core_entities : [])
+    ].join(" ").toLowerCase();
+    return /\bingredients?\b|carb|nutrition|substitution|serving/.test(haystack);
+  }).slice(0, 8);
+}
+
+function buildLocalFieldSuggestion(db, { topic = "", draft = {}, fieldKey = "", attempt = 0 } = {}) {
+  const normalizedTopic = normalizeTopic(topic);
+  const profile = detectProfile(normalizedTopic, draft);
+  const entities = inferCoreEntitiesHeuristic(normalizedTopic);
+  const nudge = attempt > 1 ? "Alternative suggestion: " : "";
+
+  if (fieldKey === "title") {
+    const value = profile === "ingredient-library"
+      ? `${normalizedTopic} ingredient facts`
+      : profile === "recipe"
+        ? (/\brecipe\b/i.test(normalizedTopic) ? normalizedTopic : `${normalizedTopic} recipe`)
+        : `${normalizedTopic} - ${inferConstructTypeHeuristic(normalizedTopic).replaceAll("_", " ")}`;
+    return {
+      fieldKey,
+      value,
+      reason: "Generated from the committed topic without overwriting a manual title.",
+      alternatives: [`${normalizedTopic} quick reference`, `${normalizedTopic} reusable construct`]
+    };
+  }
+
+  if (fieldKey === "purpose") {
+    const value = profile === "recipe"
+      ? `${nudge}Build a diabetic-friendly recipe with clear ingredient quantities, serving/yield notes, steps, and carb-aware constraints.`
+      : profile === "ingredient-library"
+        ? `${nudge}Store reusable ingredient facts such as serving size, carbs, substitutions, and source notes for local recipe recall.`
+        : inferPurposeHeuristic(normalizedTopic, inferConstructTypeHeuristic(normalizedTopic));
+    return { fieldKey, value, reason: "Purpose inferred from the topic profile.", alternatives: [] };
+  }
+
+  if (fieldKey === "core_entities") {
+    const value = profile === "recipe"
+      ? [...new Set([...entities, "recipe", "ingredients", "servings", "carbohydrates"])].slice(0, 10)
+      : profile === "ingredient-library"
+        ? [...new Set([...entities, "serving unit", "carbs", "net carbs", "substitution"])].slice(0, 10)
+        : entities;
+    return { fieldKey, value, reason: "Entity list inferred from topic terms and profile cues.", alternatives: [] };
+  }
+
+  if (fieldKey === "attributes") {
+    const value = profile === "recipe"
+      ? {
+          dietary_goal: "diabetic-friendly",
+          servings_or_yield: "",
+          carb_target_or_notes: "",
+          nutrition_notes: ""
+        }
+      : profile === "ingredient-library"
+        ? {
+            ingredient_name: entities[0] || normalizedTopic,
+            serving_unit: "",
+            total_carbs: "",
+            net_carbs: "",
+            nutrition_notes: "",
+            source_notes: ""
+          }
+        : { profile: normalizedTopic, notes: "" };
+    return { fieldKey, value, reason: "Structured fields match the active subject profile.", alternatives: [] };
+  }
+
+  if (fieldKey === "linked_construct_ids") {
+    const candidates = listIngredientCandidates(db);
+    return {
+      fieldKey,
+      value: candidates.map((construct) => construct.id).filter(Boolean).slice(0, 5),
+      reason: candidates.length
+        ? "Local ingredient constructs are available to link into this recipe."
+        : "No local ingredient constructs found yet; save ingredient facts first.",
+      alternatives: candidates.map((construct) => ({ id: construct.id, title: construct.title || construct.topic })).slice(0, 5)
+    };
+  }
+
+  if (fieldKey === "steps") {
+    const value = profile === "recipe"
+      ? [
+          "Confirm the ingredient list and serving/yield target.",
+          "Measure ingredients by the linked ingredient facts.",
+          "Prepare, cook, or assemble in the safest order for the recipe.",
+          "Review carb notes and substitutions before saving."
+        ]
+      : ["Capture the setup inputs.", "Apply the stored rules.", "Verify the output locally."];
+    return { fieldKey, value, reason: "Starter steps are intentionally generic until the user accepts or edits them.", alternatives: [] };
+  }
+
+  if (fieldKey === "rules") {
+    const value = profile === "recipe"
+      ? [
+          "Do not treat AI nutrition values as medical advice.",
+          "Prefer linked ingredient facts over guessed nutrition values.",
+          "Keep substitutions explicit so recall does not swap ingredients silently."
+        ]
+      : ["Prefer exact local facts over inferred suggestions.", "Ask for more detail when required fields are missing."];
+    return { fieldKey, value, reason: "Rules protect recall from overgeneralizing the construct.", alternatives: [] };
+  }
+
+  if (fieldKey === "tags") {
+    const value = profile === "recipe"
+      ? ["recipe", "diabetic", "ingredients", "nutrition"]
+      : profile === "ingredient-library"
+        ? ["ingredient-library", "diabetic", "nutrition", "carbs"]
+        : [inferConstructTypeHeuristic(normalizedTopic), ...entities.slice(0, 3)];
+    return { fieldKey, value, reason: "Tags are based on subject profile and topic tokens.", alternatives: [] };
+  }
+
+  if (fieldKey === "retrieval_keys" || fieldKey === "trigger_phrases") {
+    const value = [
+      normalizedTopic,
+      `recall ${normalizedTopic}`,
+      profile === "recipe" ? `${normalizedTopic} ingredients` : `${normalizedTopic} facts`
+    ];
+    return { fieldKey, value, reason: "Retrieval phrases are generated from the committed topic.", alternatives: [] };
+  }
+
+  return {
+    fieldKey,
+    value: "",
+    reason: "No local field suggestion is available for this field yet.",
+    alternatives: []
+  };
 }
 
 function summarizeCandidates(candidates = []) {
@@ -130,7 +280,7 @@ function mergeInference(base, override) {
   };
 }
 
-export async function analyzeTopicIntake(db, { topic = "", draft = null } = {}) {
+export async function analyzeTopicIntake(db, { topic = "", draft = null, mode = "", fieldKey = "", attempt = 0 } = {}) {
   const normalizedTopic = normalizeTopic(topic);
   if (!normalizedTopic) {
     return {
@@ -145,6 +295,24 @@ export async function analyzeTopicIntake(db, { topic = "", draft = null } = {}) 
   const candidates = summarizeCandidates(recall.candidates);
 
   const base = buildDefaultInference({ topic: normalizedTopic, recall: { ...recall, candidates } });
+  const normalizedDraft = draft && typeof draft === "object" ? draft : {};
+
+  if (String(mode ?? "").trim() === "suggest_field") {
+    const suggestion = buildLocalFieldSuggestion(db, {
+      topic: normalizedTopic,
+      draft: normalizedDraft,
+      fieldKey: String(fieldKey ?? "").trim(),
+      attempt
+    });
+
+    return {
+      ok: true,
+      topic: normalizedTopic,
+      recall: { ...recall, candidates },
+      inference: base,
+      fieldSuggestion: suggestion
+    };
+  }
 
   const assistStatus = getOpenAiAssistStatus();
   const allowAssist = Boolean(assistStatus?.enabled);
@@ -158,7 +326,7 @@ export async function analyzeTopicIntake(db, { topic = "", draft = null } = {}) 
     const assist = await generateOpenAiTopicIntakeInference({
       topic: normalizedTopic,
       localMatches: candidates.slice(0, 3),
-      draft: draft && typeof draft === "object" ? draft : {},
+      draft: normalizedDraft,
       model: assistStatus.model
     });
     const merged = mergeInference(base, { ...assist?.inference, source: "openai" });
@@ -185,4 +353,3 @@ export async function analyzeTopicIntake(db, { topic = "", draft = null } = {}) 
     };
   }
 }
-

@@ -3849,8 +3849,11 @@ async function handleApi(req, res) {
 
     const topic = String(payload.topic ?? payload.topicLabel ?? "").trim();
     const draft = payload.draft && typeof payload.draft === "object" ? payload.draft : null;
+    const mode = String(payload.mode ?? "").trim();
+    const fieldKey = String(payload.fieldKey ?? payload.field_key ?? "").trim();
+    const attempt = Number(payload.attempt ?? 0) || 0;
 
-    sendJson(res, 200, await analyzeTopicIntake(db, { topic, draft }));
+    sendJson(res, 200, await analyzeTopicIntake(db, { topic, draft, mode, fieldKey, attempt }));
     return;
   }
 

@@ -1,6 +1,17 @@
 import { CONSTRUCT_TYPES, STEP_DEFS, TYPE_HINTS, typeLabel } from "./schema.js";
 import { escapeHtml, tokenize } from "./utils.js";
-import { canSuggestTitle, currentStep, isDraftSaved, stepSequence, titleSuggestion } from "./state.js";
+import {
+  activeSubjectProfile,
+  canSuggestTitle,
+  currentStep,
+  isDraftComplete,
+  isDraftSaved,
+  isFieldComplete,
+  missingRequiredFields,
+  stepSequence,
+  titleSuggestion
+} from "./state.js";
+import { fieldDisplayName, profileQuestion } from "./profiles.js";
 
 function badge(label, tone = "neutral") {
   const cls = tone === "accent"
@@ -29,11 +40,12 @@ export function workspaceShellMarkup() {
       <div class="ss-question">
         <div class="ss-question-head">
           <div id="ss-intake-prompt" class="ss-question-prompt">What is the topic?</div>
-          <div id="ss-intake-status" class="ss-question-status"></div>
-        </div>
-        <div id="ss-editor" class="ss-editor"></div>
-        <div id="ss-intake-hint" class="ss-question-hint ss-muted"></div>
-        <div id="ss-title-suggestion" class="ss-title-suggestion"></div>
+        <div id="ss-intake-status" class="ss-question-status"></div>
+      </div>
+      <div id="ss-editor" class="ss-editor"></div>
+      <div id="ss-field-suggestion"></div>
+      <div id="ss-intake-hint" class="ss-question-hint ss-muted"></div>
+      <div id="ss-title-suggestion" class="ss-title-suggestion"></div>
       </div>
     </section>
 
@@ -112,7 +124,7 @@ export function rightSidebarMarkup() {
   return `
     <div class="ss-panel">
       <div class="ss-panel-title">Possible fits</div>
-      <div id="ss-match-status" class="ss-muted">Type to see matches.</div>
+      <div id="ss-match-status" class="ss-muted">Press Enter, Next, or Check possible fits to search.</div>
       <div id="ss-match-list" class="ss-list"></div>
     </div>
 
@@ -147,23 +159,28 @@ export function bottomBarMarkup() {
 export function renderHeaderBadges(state) {
   const topic = String(state.draft.topic ?? "").trim();
   const type = String(state.draft.construct_type ?? "").trim();
+  const profile = activeSubjectProfile(state);
+  const missing = missingRequiredFields(state);
   const saved = isDraftSaved(state);
   const dirtyBadge = saved ? badge("Saved", "good") : badge("Unsaved", "warn");
   const typeBadge = type ? badge(typeLabel(type), "accent") : badge("Type unknown", "neutral");
   const topicBadge = topic ? badge("Topic set", "neutral") : badge("Topic missing", "warn");
-  return [topicBadge, typeBadge, dirtyBadge].join(" ");
+  const profileBadge = profile ? badge(profile.label, "accent") : "";
+  const completeBadge = topic && type && !missing.length ? badge("Complete", "good") : (missing.length ? badge(`${missing.length} required left`, "warn") : "");
+  return [topicBadge, typeBadge, profileBadge, completeBadge, dirtyBadge].filter(Boolean).join(" ");
 }
 
 export function renderDraftBadges(state) {
   const saved = isDraftSaved(state);
   const topic = String(state.draft.topic ?? "").trim();
   const type = String(state.draft.construct_type ?? "").trim();
-  const missing = [];
+  const missing = missingRequiredFields(state);
   if (!topic) missing.push("topic");
   if (!type) missing.push("type");
   return `
     ${saved ? badge("Saved", "good") : badge("Draft", "accent")}
-    ${missing.length ? badge(`Missing: ${missing.join(", ")}`, "warn") : ""}
+    ${isDraftComplete(state) ? badge("Ready to save", "good") : ""}
+    ${missing.length ? badge(`Missing: ${missing.map(fieldDisplayName).join(", ")}`, "warn") : ""}
   `.trim();
 }
 
@@ -176,6 +193,7 @@ export function renderStepIndicator(state) {
 export function renderPrompt(state) {
   const { key } = currentStep(state);
   const def = STEP_DEFS[key] ?? { prompt: "Next", hint: "" };
+  const profile = activeSubjectProfile(state);
   const inference = state.ui?.intake?.analysis?.inference ?? null;
   const preferredKey = (() => {
     const kind = String(inference?.next_question_kind ?? "").trim();
@@ -196,7 +214,7 @@ export function renderPrompt(state) {
     ? (TYPE_HINTS[String(state.draft.construct_type ?? "").trim()] ?? "Pick the closest match.")
     : "";
   const hint = [def.hint, typeHint].filter(Boolean).join(" ");
-  return { prompt: inferredPrompt || def.prompt, hint };
+  return { prompt: profileQuestion(profile, key, inferredPrompt || def.prompt), hint };
 }
 
 export function renderTitleSuggestion(state) {
@@ -219,6 +237,46 @@ export function renderTitleSuggestion(state) {
       </div>
     </div>
   `;
+}
+
+export function renderFieldSuggestion(state, fieldKey) {
+  const current = currentStep(state).key;
+  if (current !== fieldKey || fieldKey === "reuse_match" || fieldKey === "construct_type") return "";
+
+  const suggestion = state.ui?.intake?.fieldSuggestion;
+  const pending = suggestion && String(suggestion.fieldKey ?? "") === fieldKey;
+  const value = pending ? suggestion.value : "";
+  const renderedValue = typeof value === "object" && value !== null
+    ? JSON.stringify(value, null, 2)
+    : String(value ?? "").trim();
+  const reason = pending ? String(suggestion.reason ?? "").trim() : "";
+  const alternatives = pending && Array.isArray(suggestion.alternatives) ? suggestion.alternatives.slice(0, 4) : [];
+  const complete = isFieldComplete(state, fieldKey);
+
+  return `
+    <div class="ss-suggest ss-field-suggest">
+      <div>
+        <div class="ss-suggest-label">${escapeHtml(fieldDisplayName(fieldKey))} help ${complete ? "(answered)" : "(needed)"}</div>
+        ${pending ? `
+          <textarea class="ss-textarea" rows="4" data-action="suggestion-edit" data-field="${escapeHtml(fieldKey)}">${escapeHtml(renderedValue)}</textarea>
+          ${reason ? `<div class="ss-muted" style="margin-top:8px;">${escapeHtml(reason)}</div>` : ""}
+          ${alternatives.length ? `<div class="ss-muted" style="margin-top:8px;">Alternatives: ${escapeHtml(alternatives.map((item) => typeof item === "object" ? (item.title || item.value || item.id || JSON.stringify(item)) : String(item)).join(" | "))}</div>` : ""}
+        ` : `<div class="ss-muted">Suggestions only run when clicked, not while typing.</div>`}
+      </div>
+      <div class="ss-suggest-actions">
+        <button class="ss-button ss-button-secondary" data-action="suggest-field" data-field="${escapeHtml(fieldKey)}">Suggest answer</button>
+        ${pending ? `
+          <button class="ss-button ss-button-primary" data-action="accept-suggestion" data-field="${escapeHtml(fieldKey)}">Accept answer</button>
+          <button class="ss-button ss-button-secondary" data-action="try-suggestion" data-field="${escapeHtml(fieldKey)}">Try another</button>
+          <button class="ss-button ss-button-secondary" data-action="clear-suggestion" data-field="${escapeHtml(fieldKey)}">Edit manually</button>
+        ` : ""}
+      </div>
+    </div>
+  `;
+}
+
+function withSuggestion(state, fieldKey, markup) {
+  return `${markup}${renderFieldSuggestion(state, fieldKey)}`;
 }
 
 export function renderEditorMarkup(state) {
@@ -482,6 +540,56 @@ export function renderEditorMarkup(state) {
     return `
       <label class="ss-label" for="ss-field-trigger">Trigger phrases</label>
       <textarea id="ss-field-trigger" class="ss-textarea" rows="4" placeholder="One per line" data-field="trigger_phrases_text">${escapeHtml((Array.isArray(state.draft.trigger_phrases) ? state.draft.trigger_phrases : []).join("\n"))}</textarea>
+    `;
+  }
+
+  if (key === "linked_construct_ids") {
+    const linked = new Set(Array.isArray(state.draft.linked_construct_ids) ? state.draft.linked_construct_ids : []);
+    const constructs = Array.isArray(state.topicConstructs) ? state.topicConstructs : [];
+    const ingredientRows = constructs
+      .filter((construct) => {
+        const haystack = [
+          construct?.topic,
+          construct?.title,
+          construct?.purpose,
+          ...(Array.isArray(construct?.tags) ? construct.tags : []),
+          ...(Array.isArray(construct?.core_entities) ? construct.core_entities : [])
+        ].join(" ").toLowerCase();
+        return /\bingredients?\b|carb|nutrition|substitution|serving/.test(haystack);
+      })
+      .slice(0, 10);
+    const linkedRows = constructs.filter((construct) => linked.has(String(construct?.id ?? "")));
+    return `
+      <div class="ss-editor-head">
+        <div>
+          <div class="ss-label">Linked ingredient constructs</div>
+          <div class="ss-muted">Accept ingredient facts into the recipe by linking saved ingredient constructs.</div>
+        </div>
+      </div>
+      <div class="ss-list-editor">
+        ${linkedRows.length ? linkedRows.map((construct) => `
+          <div class="ss-list-row">
+            <div class="ss-list-index">Linked</div>
+            <div>${escapeHtml(String(construct?.title ?? construct?.topic ?? "Ingredient"))}</div>
+            <button class="ss-button ss-button-secondary" data-action="unlink-ingredient" data-id="${escapeHtml(construct?.id ?? "")}">Remove</button>
+          </div>
+        `).join("") : `<div class="ss-muted">No ingredient facts linked yet.</div>`}
+      </div>
+      <div class="ss-editor-head" style="margin-top:14px;">
+        <div class="ss-label">Suggested local ingredients</div>
+      </div>
+      <div class="ss-list-editor">
+        ${ingredientRows.length ? ingredientRows.map((construct) => `
+          <div class="ss-list-row">
+            <div class="ss-list-index">${linked.has(String(construct?.id ?? "")) ? "Added" : "Add"}</div>
+            <div>
+              <strong>${escapeHtml(String(construct?.title ?? construct?.topic ?? "Ingredient"))}</strong>
+              <div class="ss-muted">${escapeHtml(String(construct?.purpose ?? "").slice(0, 120))}</div>
+            </div>
+            <button class="ss-button ss-button-secondary" data-action="link-ingredient" data-id="${escapeHtml(construct?.id ?? "")}" ${linked.has(String(construct?.id ?? "")) ? "disabled" : ""}>Accept ingredient</button>
+          </div>
+        `).join("") : `<div class="ss-muted">No saved ingredient constructs yet. Save raw ingredients under a Diabetic Ingredients topic first.</div>`}
+      </div>
     `;
   }
 

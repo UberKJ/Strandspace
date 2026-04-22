@@ -689,11 +689,11 @@ function applyMatchedConstructToSession(session, construct) {
     ...session.working,
     id: construct.id ?? "",
     constructLabel: construct.title ?? session.working.constructLabel ?? "",
-    target: coreEntities.join("\n") || session.working.target ?? "",
+    target: coreEntities.join("\n") || (session.working.target ?? ""),
     objective: construct.purpose ?? session.working.objective ?? "",
-    context: context || session.working.context ?? "",
+    context: context || (session.working.context ?? ""),
     steps: Array.isArray(construct.steps) ? construct.steps.join("\n") : (session.working.steps ?? ""),
-    notes: notesParts.join("\n\n").trim() || session.working.notes ?? "",
+    notes: notesParts.join("\n\n").trim() || (session.working.notes ?? ""),
     tags: Array.isArray(construct.tags) ? construct.tags.join(", ") : (session.working.tags ?? "")
   };
   return session;
