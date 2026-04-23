@@ -75,6 +75,12 @@
 
           <div class="ds-search-results" aria-label="Search results">
             <div class="ds-results-block">
+              <h3 class="ds-results-title" id="browse-title">Saved recipes</h3>
+              <div class="ds-match-grid" id="browse-list"></div>
+              <p class="ds-sub ds-empty" id="browse-empty" style="display:none;">No saved recipes in this meal type yet.</p>
+            </div>
+
+            <div class="ds-results-block">
               <h3 class="ds-results-title">Local Matches</h3>
               <div class="ds-match-grid" id="search-matches"></div>
               <p class="ds-sub ds-empty" id="search-empty" style="display:none;">No strong local matches found.</p>
@@ -148,6 +154,9 @@
         searchInput: document.getElementById("search-input"),
         searchButton: document.getElementById("search-button"),
         searchUseAi: document.getElementById("search-use-ai"),
+        browseList: document.getElementById("browse-list"),
+        browseEmpty: document.getElementById("browse-empty"),
+        browseTitle: document.getElementById("browse-title"),
         searchMatches: document.getElementById("search-matches"),
         searchHint: document.getElementById("search-hint"),
         searchEmpty: document.getElementById("search-empty"),
@@ -168,6 +177,7 @@
       let activeMealFilter = "";
       let builderSessionId = "";
       let builderStage = "";
+      let cachedLibrary = [];
 
       function escapeHtml(value = "") {
         return String(value ?? "")
@@ -346,7 +356,41 @@
           return;
         }
         const recipes = Array.isArray(data.recipes) ? data.recipes : [];
+        cachedLibrary = recipes;
         els.libraryMeta.textContent = `${recipes.length} saved recipe${recipes.length === 1 ? "" : "s"}${activeMealFilter ? ` · ${activeMealFilter}` : ""}`;
+        renderBrowseList();
+      }
+
+      function renderBrowseList() {
+        if (!els.browseList) return;
+        els.browseList.innerHTML = "";
+
+        const mealLabel = activeMealFilter ? activeMealFilter : "all";
+        if (els.browseTitle) {
+          els.browseTitle.textContent = `Saved recipes (${mealLabel})`;
+        }
+
+        if (!Array.isArray(cachedLibrary) || cachedLibrary.length === 0) {
+          if (els.browseEmpty) els.browseEmpty.style.display = "";
+          return;
+        }
+        if (els.browseEmpty) els.browseEmpty.style.display = "none";
+
+        for (const recipe of cachedLibrary) {
+          const match = {
+            recipe_id: String(recipe.recipe_id ?? ""),
+            title: String(recipe.title ?? ""),
+            meal_type: String(recipe.meal_type ?? "") || null,
+            description: null,
+            servings: recipe.servings ?? null,
+            tags: Array.isArray(recipe.tags) ? recipe.tags : [],
+            gi_notes: null,
+            recall_count: 0,
+            match_score: null
+          };
+          const item = renderMatchCard(match);
+          if (item) els.browseList.appendChild(item);
+        }
       }
 
       function clearSearchResults() {
@@ -375,7 +419,10 @@
         const tokens = tokenizeQuery(query);
         if (!tokens.length) return [];
 
-        const { response, data } = await getJson("/api/diabetic/recipes");
+        const libraryUrl = activeMealFilter
+          ? `/api/diabetic/recipes?meal_type=${encodeURIComponent(activeMealFilter)}`
+          : "/api/diabetic/recipes";
+        const { response, data } = await getJson(libraryUrl);
         if (!response.ok) return [];
         const recipes = Array.isArray(data.recipes) ? data.recipes : [];
 
@@ -414,7 +461,8 @@
         card.className = "ds-match";
 
         const tags = Array.isArray(match.tags) ? match.tags : [];
-        const score = Number(match.match_score ?? 0);
+        const hasScore = match.match_score !== null && match.match_score !== undefined;
+        const score = hasScore ? Number(match.match_score) : 0;
 
         card.innerHTML = `
           <div class="ds-match-head">
@@ -422,7 +470,7 @@
               <h4>${escapeHtml(match.title || "Recipe")}</h4>
               <div class="ds-badges">
                 <span class="ds-badge status-badge status-neutral">${escapeHtml(match.meal_type || "meal")}</span>
-                ${Number.isFinite(score) ? `<span class="ds-badge status-badge status-neutral">score ${escapeHtml(score.toFixed(0))}</span>` : ""}
+                ${(hasScore && Number.isFinite(score) && score > 0) ? `<span class="ds-badge status-badge status-neutral">score ${escapeHtml(score.toFixed(0))}</span>` : ""}
               </div>
             </div>
             <button type="button" class="ghost-action show-recipe">Show Recipe</button>
@@ -474,7 +522,8 @@
         try {
           const useAi = Boolean(els.searchUseAi.checked);
           if (!useAi) {
-            const { response, data } = await getJson(`/api/diabetic/search?q=${encodeURIComponent(query)}`);
+            const mealParam = activeMealFilter ? `&meal_type=${encodeURIComponent(activeMealFilter)}` : "";
+            const { response, data } = await getJson(`/api/diabetic/search?q=${encodeURIComponent(query)}${mealParam}`);
             if (!response.ok) {
               if (response.status === 404) {
                 els.searchHint.textContent = "Search API not available on this server yet. Restart the server on the search-refine branch.";
@@ -502,7 +551,11 @@
             return;
           }
 
-          const { response, data } = await postJson("/api/diabetic/search-create", { query, use_ai: true });
+          const { response, data } = await postJson("/api/diabetic/search-create", {
+            query,
+            use_ai: true,
+            meal_type: activeMealFilter || ""
+          });
 
           let matches = Array.isArray(data.matches) ? data.matches : [];
           if (response.status === 404) {

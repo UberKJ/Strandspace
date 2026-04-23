@@ -350,7 +350,8 @@ async function handleApi(req, res) {
       return;
     }
 
-    const matches = searchDiabeticRecipes(db, query);
+    const mealType = String(url.searchParams.get("meal_type") ?? "").trim();
+    const matches = searchDiabeticRecipes(db, query, { mealType });
     sendJson(res, 200, {
       query,
       matches,
@@ -376,17 +377,19 @@ async function handleApi(req, res) {
 
     const query = String(payload.query ?? "").trim();
     const use_ai = Boolean(payload.use_ai);
+    const mealType = String(payload.meal_type ?? "").trim();
 
     if (!query) {
       sendJson(res, 400, { error: "query is required" });
       return;
     }
 
-    const matches = searchDiabeticRecipes(db, query);
+    const matches = searchDiabeticRecipes(db, query, { mealType });
 
     if (!use_ai) {
       sendJson(res, 200, {
         query,
+        meal_type: mealType || null,
         matches,
         ai_used: false,
         recipe: null
@@ -401,6 +404,7 @@ async function handleApi(req, res) {
       const saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
       sendJson(res, 200, {
         query,
+        meal_type: mealType || null,
         matches,
         ai_used: true,
         recipe: saved
@@ -412,6 +416,7 @@ async function handleApi(req, res) {
           error: "OPENAI_API_KEY not configured",
           route: "api_unavailable",
           query,
+          meal_type: mealType || null,
           matches
         });
         return;
@@ -419,6 +424,7 @@ async function handleApi(req, res) {
 
       sendJson(res, 200, {
         query,
+        meal_type: mealType || null,
         matches,
         ai_used: true,
         recipe: null,

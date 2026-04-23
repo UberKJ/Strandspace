@@ -119,6 +119,23 @@ export async function registerDiabeticspaceTests({
     });
   });
 
+  await check("GET /api/diabetic/search respects meal_type filter", async () => {
+    await withServer(async (address) => {
+      const dinner = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/search?q=salmon&meal_type=dinner`);
+      assert.equal(dinner.status, 200);
+      const dinnerPayload = await dinner.json();
+      assert.ok(Array.isArray(dinnerPayload.matches));
+      assert.ok(dinnerPayload.matches.length >= 1);
+      assert.ok(dinnerPayload.matches.every((m) => String(m.meal_type ?? "").toLowerCase() === "dinner"));
+
+      const snack = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/search?q=salmon&meal_type=snack`);
+      assert.equal(snack.status, 200);
+      const snackPayload = await snack.json();
+      assert.ok(Array.isArray(snackPayload.matches));
+      assert.equal(snackPayload.matches.length, 0);
+    });
+  });
+
   await check("GET /api/diabetic/search with no good matches returns empty array", async () => {
     await withServer(async (address) => {
       const response = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/search?q=zxqv-not-a-food`);
@@ -134,6 +151,7 @@ export async function registerDiabeticspaceTests({
     await withServer(async (address) => {
       const response = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/search-create`, {
         query: "salmon",
+        meal_type: "dinner",
         use_ai: false
       });
       assert.equal(response.status, 200);
@@ -142,6 +160,7 @@ export async function registerDiabeticspaceTests({
       assert.equal(payload.recipe, null);
       assert.ok(Array.isArray(payload.matches));
       assert.ok(payload.matches.length >= 1);
+      assert.ok(payload.matches.every((m) => String(m.meal_type ?? "").toLowerCase() === "dinner"));
     });
   });
 
@@ -152,6 +171,7 @@ export async function registerDiabeticspaceTests({
     await withServer(async (address) => {
       const response = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/search-create`, {
         query: "salmon",
+        meal_type: "dinner",
         use_ai: true
       });
       assert.equal(response.status, 503);
@@ -160,6 +180,7 @@ export async function registerDiabeticspaceTests({
       assert.equal(payload.query, "salmon");
       assert.ok(Array.isArray(payload.matches));
       assert.ok(payload.matches.length >= 1);
+      assert.ok(payload.matches.every((m) => String(m.meal_type ?? "").toLowerCase() === "dinner"));
     });
     delete process.env.DIABETICSPACE_DISABLE_USER_ENV_LOOKUP;
     if (previousKey) {

@@ -426,7 +426,7 @@ export function recallDiabeticRecipe(db, query = "") {
   return getDiabeticRecipeById(db, best.recipe_id);
 }
 
-export function searchDiabeticRecipes(db, query = "") {
+export function searchDiabeticRecipes(db, query = "", { mealType = "" } = {}) {
   initDiabeticDb(db);
   const q = String(query ?? "").trim();
   if (!q) return [];
@@ -434,12 +434,14 @@ export function searchDiabeticRecipes(db, query = "") {
   const queryTokens = tokenizeSearchQuery(q);
   if (!queryTokens.length) return [];
 
+  const meal_type = String(mealType ?? "").trim().toLowerCase();
   const rows = db.prepare("SELECT * FROM diabetic_recipes").all();
   const matches = [];
 
   for (const row of rows) {
     const recipe = parseRecipeRow(row);
     if (!recipe) continue;
+    if (meal_type && String(recipe.meal_type ?? "").trim().toLowerCase() !== meal_type) continue;
     const match_score = scoreRecipeSearchMatch(recipe, queryTokens, q);
     if (match_score <= 0) continue;
     matches.push({

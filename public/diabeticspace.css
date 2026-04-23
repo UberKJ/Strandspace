@@ -285,7 +285,7 @@ body.diabeticspace {
 .ds-search-results {
   margin-top: 16px;
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
+  grid-template-columns: 0.95fr 1.05fr 0.95fr;
   gap: 16px;
 }
 
@@ -504,4 +504,3 @@ body.diabeticspace {
     grid-template-columns: 1fr;
   }
 }
-
