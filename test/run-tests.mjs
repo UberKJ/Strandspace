@@ -9,9 +9,12 @@ const __dirname = dirname(__filename);
 const rootDir = join(__dirname, "..");
 const tempDir = join(rootDir, "tmp", "tests");
 const tempDatabasePath = join(tempDir, `strandspace-test-${Date.now()}.sqlite`);
+const tempImageDir = join(tempDir, `diabetic-images-${Date.now()}`);
 
 await mkdir(tempDir, { recursive: true });
+await mkdir(tempImageDir, { recursive: true });
 process.env.STRANDSPACE_DB_PATH = tempDatabasePath;
+process.env.DIABETICSPACE_IMAGE_DIR = tempImageDir;
 
 const { createApp } = await import("../server.mjs");
 const { __setOpenAiAssistMock } = await import("../strandspace/openai-assist.js");
@@ -381,6 +384,7 @@ try {
   await rm(tempDatabasePath, { force: true });
   await rm(`${tempDatabasePath}-shm`, { force: true });
   await rm(`${tempDatabasePath}-wal`, { force: true });
+  await rm(tempImageDir, { recursive: true, force: true });
 } catch {
   // Best effort cleanup for temporary test data.
 }

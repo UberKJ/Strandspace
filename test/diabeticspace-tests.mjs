@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { access } from "node:fs/promises";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import {
@@ -10,7 +12,7 @@ import {
   getDiabeticRecipeById,
   getDiabeticBuilderSession
 } from "../strandspace/diabeticspace.js";
-import { __setDiabeticAssistMock } from "../strandspace/diabetic-assist.js";
+import { __setDiabeticAssistMock, __setDiabeticImageMock } from "../strandspace/diabetic-assist.js";
 
 function buildMockRecipe({
   recipe_id = "mock-recipe",
@@ -195,6 +197,10 @@ export async function registerDiabeticspaceTests({
       capturedInput = String(input ?? "");
       return buildMockRecipe({ recipe_id: `search-ai-${Date.now()}`, title: "Search AI Recipe", meal_type: "dinner" });
     });
+    __setDiabeticImageMock(() => Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+Xo2YAAAAASUVORK5CYII=",
+      "base64"
+    ));
     await withServer(async (address) => {
       const response = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/search-create`, {
         query: "salmon dinner",
@@ -209,6 +215,7 @@ export async function registerDiabeticspaceTests({
       assert.match(capturedInput, /baked-lemon-herb-salmon/);
     });
     __setDiabeticAssistMock(null);
+    __setDiabeticImageMock(null);
     delete process.env.OPENAI_API_KEY;
   });
 
@@ -266,14 +273,26 @@ export async function registerDiabeticspaceTests({
   await check("POST /api/diabetic/chat unknown recipe routes api_expand with OpenAI available", async () => {
     process.env.OPENAI_API_KEY = "test-key";
     __setDiabeticAssistMock(() => buildMockRecipe({ recipe_id: `ai-expand-${Date.now()}`, title: "AI Expand Recipe" }));
+    __setDiabeticImageMock(() => Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+Xo2YAAAAASUVORK5CYII=",
+      "base64"
+    ));
     await withServer(async (address) => {
       const response = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/chat`, { message: "zxqv jnptl qwrp lmx" });
       assert.equal(response.status, 200);
       const payload = await response.json();
       assert.equal(payload.route, "api_expand");
       assert.ok(payload.recipe.recipe_id.startsWith("ai-expand-"));
+      assert.ok(payload.recipe.image_url);
+      assert.match(String(payload.recipe.image_url), /^\/diabetic-images\/.+\.png$/);
+
+      const filename = String(payload.recipe.image_url).split("/").pop();
+      const dir = String(process.env.DIABETICSPACE_IMAGE_DIR ?? "");
+      assert.ok(dir);
+      await access(join(dir, filename));
     });
     __setDiabeticAssistMock(null);
+    __setDiabeticImageMock(null);
     delete process.env.OPENAI_API_KEY;
   });
 
@@ -293,6 +312,10 @@ export async function registerDiabeticspaceTests({
   await check("POST /api/diabetic/adapt returns recipe_id ending in -adapted or -adapted-N", async () => {
     process.env.OPENAI_API_KEY = "test-key";
     __setDiabeticAssistMock(() => buildMockRecipe({ recipe_id: "ignored", title: "Adapted Recipe" }));
+    __setDiabeticImageMock(() => Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+Xo2YAAAAASUVORK5CYII=",
+      "base64"
+    ));
     await withServer(async (address) => {
       const first = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/adapt`, {
         recipe_id: "almond-flour-pancakes",
@@ -311,6 +334,7 @@ export async function registerDiabeticspaceTests({
       assert.match(String(secondPayload.recipe.recipe_id), /almond-flour-pancakes-adapted-(\d+)$/);
     });
     __setDiabeticAssistMock(null);
+    __setDiabeticImageMock(null);
     delete process.env.OPENAI_API_KEY;
   });
 
@@ -352,6 +376,10 @@ export async function registerDiabeticspaceTests({
   await check("POST /api/diabetic/builder/complete returns completed: true", async () => {
     process.env.OPENAI_API_KEY = "test-key";
     __setDiabeticAssistMock(() => buildMockRecipe({ recipe_id: `builder-ai-${Date.now()}`, title: "Builder AI Recipe", meal_type: "dinner" }));
+    __setDiabeticImageMock(() => Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+Xo2YAAAAASUVORK5CYII=",
+      "base64"
+    ));
     await withServer(async (address) => {
       const start = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/builder/start`, {});
       const started = await start.json();
@@ -376,6 +404,7 @@ export async function registerDiabeticspaceTests({
       db.close();
     });
     __setDiabeticAssistMock(null);
+    __setDiabeticImageMock(null);
     delete process.env.OPENAI_API_KEY;
   });
 

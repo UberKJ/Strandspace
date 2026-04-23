@@ -107,6 +107,7 @@ function normalizeRecipeInput(recipeObj = {}) {
   const servings = Number.isFinite(Number(recipeObj.servings)) ? Math.max(1, Math.round(Number(recipeObj.servings))) : null;
   const serving_notes = String(recipeObj.serving_notes ?? "").trim() || null;
   const gi_notes = String(recipeObj.gi_notes ?? "").trim() || null;
+  const image_url = String(recipeObj.image_url ?? recipeObj.imageUrl ?? "").trim() || null;
   const source = String(recipeObj.source ?? "").trim() || null;
 
   const ingredients = Array.isArray(recipeObj.ingredients) ? recipeObj.ingredients : [];
@@ -154,6 +155,7 @@ function normalizeRecipeInput(recipeObj = {}) {
     tags,
     gi_notes,
     trigger_words,
+    image_url,
     source
   };
 }
@@ -174,6 +176,7 @@ function parseRecipeRow(row) {
     tags: safeJsonParse(row.tags, []),
     gi_notes: String(row.gi_notes ?? "").trim() || null,
     trigger_words: safeJsonParse(row.trigger_words, []),
+    image_url: String(row.image_url ?? "").trim() || null,
     source: String(row.source ?? "").trim() || null,
     recall_count: Number(row.recall_count ?? 0),
     created_at: String(row.created_at ?? "").trim() || null
@@ -214,6 +217,7 @@ export function initDiabeticDb(db) {
       tags TEXT,
       gi_notes TEXT,
       trigger_words TEXT,
+      image_url TEXT,
       source TEXT,
       recall_count INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
@@ -236,6 +240,11 @@ export function initDiabeticDb(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_diabetic_builder_sessions_updated ON diabetic_builder_sessions(updated_at DESC);
   `);
+
+  const recipeColumns = db.prepare("PRAGMA table_info('diabetic_recipes')").all().map((row) => String(row.name ?? ""));
+  if (!recipeColumns.includes("image_url")) {
+    db.exec("ALTER TABLE diabetic_recipes ADD COLUMN image_url TEXT;");
+  }
 }
 
 export function getDiabeticRecipeById(db, recipeId) {
@@ -264,7 +273,8 @@ export function listDiabeticRecipes(db, mealType = "") {
 export function saveDiabeticRecipe(db, recipeObj = {}) {
   initDiabeticDb(db);
   const normalized = normalizeRecipeInput(recipeObj);
-  const existing = db.prepare("SELECT id, recall_count, created_at FROM diabetic_recipes WHERE recipe_id = ?").get(normalized.recipe_id);
+  const existing = db.prepare("SELECT id, recall_count, created_at, image_url FROM diabetic_recipes WHERE recipe_id = ?").get(normalized.recipe_id);
+  const finalImageUrl = normalized.image_url ?? (String(existing?.image_url ?? "").trim() || null);
 
   if (existing?.id) {
     db.prepare(`
@@ -280,6 +290,7 @@ export function saveDiabeticRecipe(db, recipeObj = {}) {
           tags = ?,
           gi_notes = ?,
           trigger_words = ?,
+          image_url = ?,
           source = ?
       WHERE recipe_id = ?
     `).run(
@@ -294,6 +305,7 @@ export function saveDiabeticRecipe(db, recipeObj = {}) {
       JSON.stringify(normalized.tags ?? []),
       normalized.gi_notes,
       JSON.stringify(normalized.trigger_words ?? []),
+      finalImageUrl,
       normalized.source,
       normalized.recipe_id
     );
@@ -301,8 +313,8 @@ export function saveDiabeticRecipe(db, recipeObj = {}) {
     db.prepare(`
       INSERT INTO diabetic_recipes (
         recipe_id, title, meal_type, description, ingredients, substitutes, instructions,
-        servings, serving_notes, tags, gi_notes, trigger_words, source
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        servings, serving_notes, tags, gi_notes, trigger_words, image_url, source
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       normalized.recipe_id,
       normalized.title,
@@ -316,11 +328,21 @@ export function saveDiabeticRecipe(db, recipeObj = {}) {
       JSON.stringify(normalized.tags ?? []),
       normalized.gi_notes,
       JSON.stringify(normalized.trigger_words ?? []),
+      finalImageUrl,
       normalized.source
     );
   }
 
   return getDiabeticRecipeById(db, normalized.recipe_id);
+}
+
+export function setDiabeticRecipeImage(db, recipeId, imageUrl) {
+  initDiabeticDb(db);
+  const recipe_id = String(recipeId ?? "").trim();
+  if (!recipe_id) return null;
+  const image_url = String(imageUrl ?? "").trim() || null;
+  db.prepare("UPDATE diabetic_recipes SET image_url = ? WHERE recipe_id = ?").run(image_url, recipe_id);
+  return getDiabeticRecipeById(db, recipe_id);
 }
 
 function scoreRecipe(recipe, queryTokens, queryText) {

@@ -33,6 +33,7 @@ import {
   getDiabeticRecipeById,
   searchDiabeticRecipes,
   seedDiabeticRecipes,
+  setDiabeticRecipeImage,
   saveDiabeticBuilderSession,
   getDiabeticBuilderSession,
   deleteDiabeticBuilderSession
@@ -40,7 +41,8 @@ import {
 import {
   adaptDiabeticRecipe,
   generateDiabeticRecipe,
-  generateFromBuilderSession
+  generateFromBuilderSession,
+  generateDiabeticRecipeImageToFile
 } from "./strandspace/diabetic-assist.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -253,7 +255,19 @@ async function readStaticFile(urlPath) {
     urlPath === "/"
       ? "/index.html"
       : (urlPath === "/soundspace" || urlPath === "/soundspace/" ? "/soundspace/index.html" : urlPath);
-  const filePath = join(publicDir, cleaned.replace(/^\/+/, ""));
+  const normalizedUrl = String(cleaned ?? "");
+
+  if (normalizedUrl.startsWith("/diabetic-images/")) {
+    const relative = normalizedUrl.replace(/^\/diabetic-images\//, "");
+    const baseDir = join(dataDir, "diabetic-images");
+    const filePath = join(baseDir, relative);
+    if (!normalize(filePath).startsWith(normalize(baseDir))) {
+      throw Object.assign(new Error("Invalid path"), { statusCode: 400 });
+    }
+    return readFile(filePath);
+  }
+
+  const filePath = join(publicDir, normalizedUrl.replace(/^\/+/, ""));
 
   if (!normalize(filePath).startsWith(normalize(publicDir))) {
     throw Object.assign(new Error("Invalid path"), { statusCode: 400 });
@@ -293,6 +307,27 @@ function soundConstructAnswerPayload(source, question, construct, recall) {
     construct,
     recall
   };
+}
+
+async function ensureDiabeticRecipeImage(db, recipe) {
+  if (!recipe || recipe.image_url) {
+    return recipe;
+  }
+
+  const outputDir = String(process.env.DIABETICSPACE_IMAGE_DIR ?? "").trim() || join(dataDir, "diabetic-images");
+
+  try {
+    const result = await generateDiabeticRecipeImageToFile(recipe, { outputDir });
+    if (result?.image_url) {
+      return setDiabeticRecipeImage(db, recipe.recipe_id, result.image_url) ?? recipe;
+    }
+  } catch (error) {
+    if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
+      return recipe;
+    }
+  }
+
+  return recipe;
 }
 
 async function handleApi(req, res) {
@@ -401,7 +436,8 @@ async function handleApi(req, res) {
 
     try {
       const generated = await generateDiabeticRecipe(query, bestMatchRecipe);
-      const saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
+      let saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
+      saved = await ensureDiabeticRecipeImage(db, saved);
       sendJson(res, 200, {
         query,
         meal_type: mealType || null,
@@ -473,7 +509,8 @@ async function handleApi(req, res) {
 
       try {
         const generated = await generateDiabeticRecipe(message, recalled);
-        const saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
+        let saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
+        saved = await ensureDiabeticRecipeImage(db, saved);
         sendJson(res, 200, {
           route: "api_validate",
           recipe: saved,
@@ -494,7 +531,8 @@ async function handleApi(req, res) {
 
     try {
       const generated = await generateDiabeticRecipe(message, null);
-      const saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
+      let saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
+      saved = await ensureDiabeticRecipeImage(db, saved);
       sendJson(res, 200, {
         route: "api_expand",
         recipe: saved,
@@ -528,8 +566,9 @@ async function handleApi(req, res) {
       return;
     }
 
-    const saved = saveDiabeticRecipe(db, payload);
-    sendJson(res, 200, { saved: true, recipe_id: saved?.recipe_id ?? null });
+    let saved = saveDiabeticRecipe(db, payload);
+    saved = await ensureDiabeticRecipeImage(db, saved);
+    sendJson(res, 200, { saved: true, recipe_id: saved?.recipe_id ?? null, image_url: saved?.image_url ?? null });
     return;
   }
 
@@ -588,7 +627,8 @@ async function handleApi(req, res) {
       }
     }
 
-    const saved = saveDiabeticRecipe(db, { ...adapted, recipe_id: candidateId, source: "ai" });
+    let saved = saveDiabeticRecipe(db, { ...adapted, recipe_id: candidateId, source: "ai" });
+    saved = await ensureDiabeticRecipeImage(db, saved);
     sendJson(res, 200, { route: "api_expand", recipe: saved, saved: true });
     return;
   }
@@ -846,7 +886,8 @@ async function handleApi(req, res) {
 
       try {
         const generated = await generateFromBuilderSession(session, recalled);
-        const saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
+        let saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
+        saved = await ensureDiabeticRecipeImage(db, saved);
         deleteDiabeticBuilderSession(db, session_id);
         sendJson(res, 200, {
           route: "api_validate",
@@ -868,7 +909,8 @@ async function handleApi(req, res) {
 
     try {
       const generated = await generateFromBuilderSession(session, null);
-      const saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
+      let saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
+      saved = await ensureDiabeticRecipeImage(db, saved);
       deleteDiabeticBuilderSession(db, session_id);
       sendJson(res, 200, {
         route: "api_expand",

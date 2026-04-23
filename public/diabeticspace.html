@@ -271,8 +271,10 @@
         const routeMeta = routeBadge(route);
         const substitutes = Array.isArray(recipe.substitutes) ? recipe.substitutes : [];
         const tags = Array.isArray(recipe.tags) ? recipe.tags : [];
+        const imageUrl = String(recipe.image_url ?? "").trim();
 
         card.innerHTML = `
+          ${imageUrl ? `<img class="ds-recipe-image" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(recipe.title || "Recipe image")}" loading="lazy" decoding="async" />` : ""}
           <h3>${escapeHtml(recipe.title || "Recipe")}</h3>
           <div class="ds-badges">
             <span class="ds-badge status-badge status-neutral">${escapeHtml(recipe.meal_type || "meal")}</span>
@@ -327,8 +329,21 @@
 
         saveBtn.addEventListener("click", async () => {
           status.textContent = "Saving…";
-          const { response } = await postJson("/api/diabetic/save", recipe);
+          const { response, data } = await postJson("/api/diabetic/save", recipe);
           status.textContent = response.ok ? "Saved locally ✓" : "Save failed";
+          if (response.ok && data?.image_url && !recipe.image_url) {
+            recipe.image_url = data.image_url;
+            const existing = card.querySelector(".ds-recipe-image");
+            if (!existing) {
+              const img = document.createElement("img");
+              img.className = "ds-recipe-image";
+              img.loading = "lazy";
+              img.decoding = "async";
+              img.alt = recipe.title || "Recipe image";
+              img.src = String(data.image_url);
+              card.prepend(img);
+            }
+          }
           void refreshLibrary();
         });
 

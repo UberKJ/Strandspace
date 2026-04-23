@@ -1,10 +1,14 @@
 import OpenAI from "openai";
 import { execFileSync } from "node:child_process";
+import { access, mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 const DEFAULT_MODEL = process.env.DIABETICSPACE_OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-5.4-mini";
+const DEFAULT_IMAGE_MODEL = process.env.DIABETICSPACE_IMAGE_MODEL || "gpt-image-1";
 
 let client = null;
 let mock = null;
+let imageMock = null;
 let resolvedApiKey = null;
 let resolvedApiKeyLoaded = false;
 
@@ -242,3 +246,103 @@ export function __setDiabeticAssistMock(fn) {
   mock = typeof fn === "function" ? fn : null;
 }
 
+export function __setDiabeticImageMock(fn) {
+  imageMock = typeof fn === "function" ? fn : null;
+}
+
+function buildRecipeImagePrompt(recipe) {
+  const title = String(recipe?.title ?? "").trim();
+  const mealType = String(recipe?.meal_type ?? "").trim();
+  const description = String(recipe?.description ?? "").trim();
+  const ingredients = Array.isArray(recipe?.ingredients)
+    ? recipe.ingredients.map((item) => String(item?.name ?? "").trim()).filter(Boolean).slice(0, 10)
+    : [];
+
+  return [
+    "Create a polished, appetizing, photo-realistic food image.",
+    "No text, no watermark, no logos.",
+    "Single dish hero shot, soft studio lighting, shallow depth of field.",
+    mealType ? `Meal type: ${mealType}.` : "",
+    title ? `Dish: ${title}.` : "",
+    description ? `Description: ${description}.` : "",
+    ingredients.length ? `Key ingredients: ${ingredients.join(", ")}.` : ""
+  ].filter(Boolean).join(" ");
+}
+
+function sanitizeRecipeImageFilename(recipeId) {
+  const safe = String(recipeId ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 90);
+  return safe ? `${safe}.png` : `recipe-${Date.now().toString(36)}.png`;
+}
+
+export async function generateDiabeticRecipeImageToFile(recipe, {
+  outputDir = "",
+  model = DEFAULT_IMAGE_MODEL,
+  size = "1024x1024"
+} = {}) {
+  const recipe_id = String(recipe?.recipe_id ?? "").trim();
+  if (!recipe_id) {
+    throw new Error("generateDiabeticRecipeImageToFile: recipe_id is required");
+  }
+
+  const dir = String(outputDir ?? "").trim();
+  if (!dir) {
+    throw new Error("generateDiabeticRecipeImageToFile: outputDir is required");
+  }
+
+  await mkdir(dir, { recursive: true });
+
+  const filename = sanitizeRecipeImageFilename(recipe_id);
+  const filePath = join(dir, filename);
+
+  try {
+    await access(filePath);
+    return { image_url: `/diabetic-images/${filename}`, filePath };
+  } catch {
+    // File doesn't exist yet; continue.
+  }
+
+  const prompt = buildRecipeImagePrompt(recipe);
+
+  if (imageMock) {
+    const buffer = await imageMock({ recipe, prompt, routeLabel: "generateDiabeticRecipeImageToFile" });
+    if (!buffer || !(buffer instanceof Uint8Array)) {
+      throw new Error("generateDiabeticRecipeImageToFile: image mock must return a Uint8Array");
+    }
+    await writeFile(filePath, buffer);
+    return { image_url: `/diabetic-images/${filename}`, filePath };
+  }
+
+  const openai = getClient();
+  const response = await openai.images.generate({
+    model,
+    prompt,
+    size
+  });
+
+  const item = Array.isArray(response?.data) ? response.data[0] : null;
+  const b64 = item?.b64_json ?? item?.b64 ?? null;
+  const url = item?.url ?? null;
+
+  let bytes = null;
+  if (typeof b64 === "string" && b64.trim()) {
+    bytes = Buffer.from(b64, "base64");
+  } else if (typeof url === "string" && url.trim()) {
+    const fetched = await fetch(url);
+    if (!fetched.ok) {
+      throw new Error(`generateDiabeticRecipeImageToFile: failed to fetch image url (HTTP ${fetched.status})`);
+    }
+    bytes = Buffer.from(await fetched.arrayBuffer());
+  }
+
+  if (!bytes || !bytes.length) {
+    throw new Error("generateDiabeticRecipeImageToFile: OpenAI image response was missing image bytes");
+  }
+
+  await writeFile(filePath, bytes);
+  return { image_url: `/diabetic-images/${filename}`, filePath };
+}
