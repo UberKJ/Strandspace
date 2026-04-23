@@ -1,398 +1,208 @@
 # Strandspace Studio
 
-Local-first construct recall for repetitive learned tasks, adaptive workflows, and LLM-assisted expansion.
+Local-first construct recall for repetitive learned tasks, adaptive workflows, and optional LLM-assisted expansion.
 
-Strandspace Studio is a working prototype for local-first semantic memory built around a practical idea:
+Strandspace Studio is a working prototype built around one practical idea:
 
-**When a system has already learned a repeated task, setup, route, or workflow, it should recall that construct locally first instead of rebuilding the answer from scratch every time.**
-
-> Store the pieces. Store the triggers. Store the rules that let meaning form.
+**When a system has already learned a repeated setup, route, workflow, or operating pattern, it should try local recall first instead of rebuilding the answer from scratch every time.**
 
 ---
 
-## Project Status
+## Current Status
 
-Prototype in active development.
+Strandspace Studio is an active prototype with a working browser app, a standalone Soundspace surface, seeded local memory, API-assisted draft expansion, and regression coverage for the main recall flows.
 
-Core recall, routing, learn-back, and compact benchmark flows are working. Regression coverage is active, benchmark behavior has been rewritten around semantically equivalent compact prompts, and payload optimization is still in progress.
+As the code stands today, the application provides:
+
+- a main **Subjectspace** studio for teaching and recalling reusable constructs
+- a standalone **Soundspace** app for live audio and karaoke-style setup recall
+- local-first routing that can recommend direct recall or API validation
+- optional OpenAI-backed assist drafts that can be learned back into local memory
+- a benchmark panel that compares local recall latency against an LLM assist round-trip
+- a SQLite-backed local store with seeded starter data
+- an automated test suite covering the core routes and learning flows
 
 ---
 
 ## What Strandspace Is
 
-Strandspace is **not** trying to replace AI or compete with large language models head-on.
+Strandspace is not trying to replace large language models.
 
-It is a memory-and-construct layer for systems that do repeated work.
+It is a memory-and-construct layer for repeated work.
 
 That includes things like:
 
-- agents that perform learned workflows
-- robots that repeat known tasks with occasional variation
-- route-following systems
-- repetitive setup assistants
-- troubleshooting systems
-- task-based domain assistants
-- any environment where the work is often similar, but never perfectly identical
+- recurring technical setups
+- repeated troubleshooting paths
+- event workflows
+- route-like task sequences
+- domain assistants that answer the same kind of question with small variations
+- agents that should remember what already worked
 
-Most AI systems treat each new question as a fresh event and pay a broad retrieval or reasoning cost again and again.
+The point is simple:
 
-Strandspace takes a different path.
-
-It treats a prompt as an **activation event**, not just a text lookup.
-
-A prompt can trigger:
-
-- **trigger strands** to identify intent
-- **anchor strands** to narrow domain and context
-- **composite constructs** to reactivate reusable learned knowledge
-- an **expression field** to form a temporary answer only when the construct is stable enough
-
-The goal is simple:
-
-**Recall what is already learned. Notice what changed. Adapt only where needed.**
+**Recall what is already learned. Use external reasoning only when local memory is too thin, too narrow, or too uncertain.**
 
 ---
 
-## What Strandspace Is For
+## Current Application Surfaces
 
-Strandspace is designed for **repeated learned behavior**, not open-ended general intelligence.
+### Strandspace Studio
 
-Its sweet spot is:
+The main app at `/` is a subject-agnostic teaching and recall interface.
 
-- repeated questions
-- repeated setups
-- repeated procedures
-- repeated routes
-- stable environments with small changes
-- learned workflows that improve over time
-- systems that should reuse past success instead of improvising every time
+It currently lets you:
 
-This is closer to a dependable task memory than a synthetic human mind.
+- choose an active subject
+- enter a recall prompt
+- inspect the returned answer and activation trace
+- store new constructs with subject, target, objective, context, steps, notes, and tags
+- browse the stored construct library for the active subject
+- compare local recall speed against the LLM assist path
 
-A useful mental model is not “replace the thinker.”
-It is “build the worker that remembers how this job usually goes.”
+The current UI language centers on four layers:
 
----
-
-## Core Thesis
-
-Strandspace is built on one central idea:
-
-> When meaning can be reactivated from a learned construct, the system should recall locally first and spend external tokens only when the local field is not yet sufficient.
-
-That is the heart of the project.
-
-A second practical claim follows from it:
-
-> When the system has already learned a reusable construct, local recall should be cheaper, faster, and more efficient than a full LLM round-trip.
-
-Strandspace does not try to replace LLMs.
-It tries to stop using them as the first hammer for every nail.
-
----
-
-## Current Product Structure
-
-Strandspace Studio currently has two main layers.
-
-### Subjectspace
-
-A generic memory layer that can be taught for almost any domain.
-
-A stored construct can include:
-
-- subject label and subject ID
-- construct label
-- target or focus
-- objective
-- structured context
-- ordered working steps
-- notes
-- tags
-- derived strands
-- provenance
-- learned count
-
-Subjectspace is the general engine.
-
-Teach it a reusable construct, then let future prompts reactivate that construct when the cues match closely enough.
+1. trigger strands
+2. anchor strands
+3. composite constructs
+4. expression field
 
 ### Soundspace
 
-A seeded domain layer built on top of the same recall model.
+The standalone app at `/soundspace` is a domain-specific recall surface for live sound.
 
-It demonstrates how Strandspace can work in:
+It is designed around repeated audio questions such as:
 
-- live sound
-- music engineering
-- karaoke setup workflows
-- microphone gain staging
-- repeatable mixer or monitor scenes
+- mixer setup recall
+- karaoke vocal setup recall
+- music bingo host setups
+- venue-size variations
+- microphone and speaker configuration patterns
 
-Soundspace exists because this kind of work repeats constantly with small changes.
+Soundspace recalls a stored construct first and can generate a missing construct when needed, then store it for future recall.
 
-Most of the time, the system does not need to reinvent the answer.
-It needs to **recall, refine, and reuse**.
+---
+
+## Current Memory Model
+
+The repository currently exposes two working layers in code.
+
+### Subjectspace
+
+Subjectspace is the general-purpose construct memory system.
+
+A stored construct can include fields such as:
+
+- subject label and subject ID
+- construct label
+- target
+- objective
+- structured context
+- working steps
+- notes
+- tags
+- provenance
+
+This is the main reusable memory layer behind Strandspace Studio.
+
+### Soundspace
+
+Soundspace is the seeded domain layer built on the same general recall idea, but with a schema tuned for sound workflows.
+
+A sound construct can include fields such as:
+
+- device brand and model
+- device type
+- source type
+- venue size
+- event type
+- setup guidance
+- tags
+- strands
+- summary text
+
+---
+
+## Current Routing Behavior
+
+The app is built around local-first recall.
+
+From the current code and tests, the active routing behavior includes:
+
+- `local_recall` when the construct is stable enough to answer directly
+- `api_validate` when local recall is usable but narrow or ambiguous
+- API-assisted draft generation when the user explicitly invokes the assist path
+- generated-and-stored behavior in Soundspace when a matching construct does not already exist or generation is forced
+
+That means the live system already does more than simple keyword lookup. It attempts to route between direct reuse, validation, and fresh construct creation.
+
+---
+
+## Current Benchmarking
+
+The current benchmark feature compares:
+
+- **local Strandbase recall**
+- **LLM assist round-trip latency**
+
+The benchmark is tied to the current recall flow and is exposed in the Studio interface through the **Compare local vs LLM** action.
+
+This is important because the application is not only trying to answer correctly. It is also trying to show when repeated recall can be served from local memory much faster than an external call.
+
+---
+
+## OpenAI Assist Integration
+
+OpenAI assist is optional.
+
+When `OPENAI_API_KEY` is configured, the Subjectspace assist route can:
+
+- generate a draft validation or expansion response
+- turn that result into a suggested construct
+- optionally save that construct back into local memory
+
+When the API key is not present, the app reports that assist is unavailable instead of pretending the remote path is active.
+
+---
+
+## What the Current Test Suite Covers
+
+The current automated suite covers **11 passing tests** around the live app surface.
+
+Those tests verify behavior such as:
+
+- serving the main Strandspace Studio interface
+- serving the standalone Soundspace interface
+- exposing seeded subject lists
+- storing and recalling a custom Subjectspace construct
+- routing ambiguous recall toward API validation
+- reporting assist-disabled status when no API key is present
+- comparing local recall against a mocked LLM round-trip
+- returning an OpenAI-backed draft that can be saved into local memory
+- recalling a seeded Soundspace mixer setup
+- learning a new Soundspace construct for later reuse
+- generating and storing a missing Soundspace construct on demand
 
 ---
 
 ## Why This Matters
 
-Traditional AI workflows often:
+A lot of software keeps paying the full retrieval or reasoning cost for work it has effectively already learned.
 
-- do not preserve reusable working structure well
-- resend more context than the question actually needs
-- make repeated domain recall slower and more expensive than necessary
+Strandspace is aimed at a narrower, more practical problem:
 
-Strandspace is aimed at a narrower and more practical problem:
+**How do you let a system remember repeated working patterns, recall them quickly, and only expand outward when the stored memory is not enough?**
 
-**How do you let an agent, assistant, or task system remember known patterns and adapt when reality shifts slightly?**
-
-That matters for real systems because repetition is everywhere.
-
-A route changes.
-A setup changes.
-A scene changes.
-A user asks the same thing with different wording.
-A known workflow returns with one variable moved.
-
-Those are not always “new intelligence” problems.
-Often they are **recall-and-adjust** problems.
-
----
-
-## Routing Logic
-
-Strandspace uses local-first routing instead of defaulting to an external API.
-
-Current routing modes:
-
-- `local_recall`  
-  The construct is stable enough to answer directly.
-
-- `api_validate`  
-  Local recall is usable, but the match is narrow or contested.
-
-- `api_expand`  
-  The system found partial recall, but not enough to trust without help.
-
-- `teach_local`  
-  Local memory is too thin to justify expansion yet.
-
-Before spending tokens externally, the system asks:
-
-**Is local memory already enough?**
-
-That question sits at the center of the whole architecture.
-
----
-
-## Learn-Back Loop
-
-When the API assist path is used, the result does not have to vanish into the fog.
-
-Strandspace can learn the improved answer back into local memory:
-
-1. Local recall tries to answer
-2. API assist is used only when warranted
-3. The validated or expanded construct is optionally saved
-4. Future prompts can recall the refined construct faster
-
-That creates a feedback loop where repeated work becomes progressively cheaper.
-
-In practical terms:
-
-- the first pass may need help
-- the second pass may be narrower
-- later passes may become local-first
-- repeated work becomes a learned construct instead of a recurring expense
-
----
-
-## Compact Prompt Benchmarking
-
-One of the most important updates in the current version is the benchmark rewrite.
-
-The system no longer compares local recall vs LLM using only the original raw user prompt.
-
-Instead, Strandspace now tries to generate a **shorter benchmark prompt** and accepts it only if local recall can prove that the compact prompt lands on the same construct.
-
-### Current benchmark flow
-
-1. Start from the user question
-2. Generate shorter recall candidates from the matched construct
-3. Re-run local recall on those shorter candidates
-4. Accept a compact benchmark prompt only if it recalls the same construct
-5. Time both the local path and the LLM path against that compact, semantically equivalent prompt
-
-This makes benchmarking more meaningful than a stopwatch race.
-
-It asks whether Strandspace can **compress the cue set while preserving recall identity**.
-
-That is a much better test for a learned recall system.
-
----
-
-## Current Validation Status
-
-As of April 15, 2026, the active regression suite passes **11 of 11 tests**.
-
-The suite currently covers:
-
-### App shell and routing surface
-
-- serves the Strandspace Studio interface
-- serves the standalone Soundspace interface
-- exposes seeded subject lists correctly
-
-### Subjectspace local memory
-
-- stores and recalls a custom construct
-- routes ambiguous recall toward API validation
-- reports assist status correctly when the API key is unavailable
-- verifies compact benchmark prompting still recalls the same construct
-- returns an OpenAI-backed draft that can be saved back into local memory
-
-### Soundspace seeded retrieval
-
-- recalls a seeded mixer setup
-- stores a new sound construct for later recall
-- generates and stores a missing sound construct on demand
-
-### Database and cleanup behavior
-
-- test runs use temporary SQLite databases
-- stale test-created data has been cleaned from production storage
-- fallback database selection no longer prefers backup or test databases incorrectly
-
----
-
-## Benchmark Findings
-
-The current prototype shows a strong directional result:
-
-- local Strandspace recall is dramatically faster than an LLM round-trip on repeated prompts
-- compact prompting reduces the user-side cue payload
-- the system can preserve construct identity even when the benchmark prompt is shortened
-
-### Example benchmark capture
-
-A live benchmark shown in the UI reported:
-
-- original prompt: about 23 estimated tokens
-- compact benchmark prompt: about 8 estimated tokens
-- estimated savings: 15 tokens
-- local recall: 4.590 ms
-- LLM assist round-trip: 3388.3 ms
-- observed speedup: 738.2x in favor of local recall
-
-A second verification under a different subject showed:
-
-- original prompt: about 41 estimated tokens
-- compact benchmark prompt: about 9 estimated tokens
-- estimated savings: 32 tokens
-- local recall: 0.388 ms
-- LLM assist round-trip: 5462.432 ms
-
-These results do **not** mean LLM usage has already been minimized end to end.
-
-They **do** mean Strandspace is already shrinking the user-query side of recall and proving that learned constructs can be reactivated cheaply once they stabilize.
-
----
-
-## Important Interpretation Note
-
-Prompt savings and total LLM usage are not the same thing.
-
-Even when the compact benchmark prompt is much shorter, the current API assist path still includes routing data and a local recall snapshot. That means total LLM token usage can still be larger than the final optimized build should allow.
-
-That is not a contradiction.
-It is an engineering signal.
-
-It means:
-
-- Strandspace is already reducing the user-side cue set
-- the current assist payload still carries more context than necessary
-- future optimization should reduce assist packaging further
-
----
-
-## What Strandspace Currently Proves
-
-The current build supports a stronger claim than the earlier prototype:
-
-- a working local semantic memory layer exists
-- reusable constructs can be stored and recalled
-- local-first routing can decide when external help is warranted
-- an assist path can validate or expand an answer
-- the refined answer can be learned back locally
-- compact benchmark prompts can preserve construct identity
-- repeated local recall can be dramatically faster than a full LLM round-trip
-
-This is not just a theory sketch anymore.
-
-It is a working proof of concept with:
-
-- a usable interface
-- a benchmark method
-- regression tests
-- local-first routing
-- a teach-and-reuse loop
-- a domain demonstration in Soundspace
-
----
-
-## What Strandspace Does Not Claim
-
-Strandspace does not currently claim to be:
-
-- AGI
-- a replacement for LLM reasoning
-- a full human-like cognition model
-- a universal answer engine
-
-That is not the point of this project.
-
-The point is narrower and more practical:
-
-**Build a system that remembers repeated patterns, reuses learned constructs, notices changes, and adapts without paying the full reasoning cost every time.**
-
----
-
-## Limitations
-
-This is still a prototype, and the limits matter.
-
-Current limitations include:
-
-- small benchmark sample size
-- prompt-specific results
-- variable LLM timing due to network, provider latency, and model routing
-- API assist calls still send more context than a final optimized build should
-- local memory quality depends on how well constructs are taught
-- the benchmark is not yet a standardized harness
-
-These limits do not erase the signal.
-They define the next engineering steps.
-
----
-
-## Near-Term Roadmap
-
-Planned next steps:
-
-- reduce OpenAI assist payload size
-- add benchmark history logging
-- expand regression coverage for benchmark history and payload size
-- continue cleaning legacy provenance values
-- add more seeded example domains beyond sound and portrait lighting
-- further demonstrate that Subjectspace is truly subject-agnostic
-- formalize strand classes and construct composition rules more clearly
-- improve change detection for repeated workflows with small variations
+That makes it useful for domains where the work is repetitive but not perfectly identical.
 
 ---
 
 ## Quick Start
+
+### Requirements
+
+- Node.js with support for `node:sqlite`
+- an `OPENAI_API_KEY` only if you want the Subjectspace assist path enabled
 
 ### Install
 
@@ -400,11 +210,16 @@ Planned next steps:
 npm install
 ```
 
-### Run the app
+### Run
 
 ```bash
 npm run dev
 ```
+
+The app runs at:
+
+- `http://localhost:3000/`
+- `http://localhost:3000/soundspace`
 
 ### Run tests
 
@@ -414,34 +229,77 @@ npm test
 
 ---
 
+## Key Routes
+
+### App routes
+
+- `/` -> Strandspace Studio
+- `/soundspace` -> standalone Soundspace app
+
+### Subjectspace API
+
+- `GET /api/subjectspace/subjects`
+- `GET /api/subjectspace/library?subjectId=...`
+- `GET /api/subjectspace/assist/status`
+- `GET /api/subjectspace?q=...&subjectId=...`
+- `GET /api/subjectspace/recall?q=...&subjectId=...`
+- `POST /api/subjectspace/learn`
+- `POST /api/subjectspace/assist`
+- `POST /api/subjectspace/compare`
+- `POST /api/subjectspace/answer`
+
+### Soundspace API
+
+- `GET /api/soundspace?q=...`
+- `GET /api/soundspace/recall?q=...`
+- `GET /api/soundspace/library`
+- `POST /api/soundspace/learn`
+- `POST /api/soundspace/answer`
+
+---
+
 ## Repository Layout
 
 ```text
 .
 ├─ README.md
+├─ LICENSE
 ├─ docs/
 │  └─ whitepaper.md
-├─ src/
-└─ tests/
+├─ public/
+│  ├─ index.html
+│  └─ soundspace/
+├─ strandspace/
+│  ├─ openai-assist.js
+│  ├─ sound-llm.js
+│  ├─ soundspace.js
+│  └─ subjectspace.js
+├─ test/
+│  └─ run-tests.mjs
+├─ data/
+└─ server.mjs
 ```
+
+---
+
+## License
+
+This project is licensed under the **GNU General Public License v3.0**.
+
+See `LICENSE` for the full text.
 
 ---
 
 ## White Paper
 
-For the longer technical write-up, see `docs/whitepaper.md`.
+For the longer theory and architecture discussion, see:
 
-The README is the practical front door.
-The white paper remains the deeper theory and architecture document.
+- `docs/whitepaper.md`
+
+The README is the practical front door for the current app.
 
 ---
 
 ## Positioning in One Sentence
 
-**Strandspace is a construct-based memory system for agents and assistants that perform repeated tasks, recall learned patterns locally, and adapt when those patterns change.**
-
----
-
-## About
-
-Local-first Strandspace Studio for recall, learning, repetitive task memory, and LLM-assisted expansion.
+**Strandspace Studio is a local-first construct memory system for repeated tasks that recalls learned patterns, benchmarks local recall against external assist, and stores improved answers for future reuse.**
