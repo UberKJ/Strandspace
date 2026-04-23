@@ -363,6 +363,52 @@
         return `${value.slice(0, max - 1).trim()}…`;
       }
 
+      function tokenizeQuery(query) {
+        return String(query ?? "")
+          .toLowerCase()
+          .split(/[^a-z0-9]+/g)
+          .map((t) => t.trim())
+          .filter((t) => t && t.length >= 3 && !["recipe", "recipes", "food", "make", "want"].includes(t));
+      }
+
+      async function fallbackLocalSearch(query) {
+        const tokens = tokenizeQuery(query);
+        if (!tokens.length) return [];
+
+        const { response, data } = await getJson("/api/diabetic/recipes");
+        if (!response.ok) return [];
+        const recipes = Array.isArray(data.recipes) ? data.recipes : [];
+
+        const matches = [];
+        for (const recipe of recipes) {
+          const title = String(recipe.title ?? "");
+          const mealType = String(recipe.meal_type ?? "");
+          const tags = Array.isArray(recipe.tags) ? recipe.tags.map((t) => String(t ?? "")) : [];
+          let score = 0;
+          for (const token of tokens) {
+            if (title.toLowerCase().includes(token)) score += 4;
+            if (mealType && mealType.toLowerCase() === token) score += 2;
+            if (tags.some((t) => String(t ?? "").toLowerCase().includes(token))) score += 3;
+          }
+          if (score > 0) {
+            matches.push({
+              recipe_id: String(recipe.recipe_id ?? ""),
+              title,
+              meal_type: mealType || null,
+              description: null,
+              servings: recipe.servings ?? null,
+              tags,
+              gi_notes: null,
+              recall_count: 0,
+              match_score: score
+            });
+          }
+        }
+
+        matches.sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0));
+        return matches.slice(0, 10);
+      }
+
       function renderMatchCard(match) {
         const card = document.createElement("article");
         card.className = "ds-match";
@@ -430,6 +476,18 @@
           if (!useAi) {
             const { response, data } = await getJson(`/api/diabetic/search?q=${encodeURIComponent(query)}`);
             if (!response.ok) {
+              if (response.status === 404) {
+                els.searchHint.textContent = "Search API not available on this server yet. Restart the server on the search-refine branch.";
+                const matches = await fallbackLocalSearch(query);
+                if (!matches.length) {
+                  els.searchEmpty.style.display = "";
+                  return;
+                }
+                for (const match of matches) {
+                  els.searchMatches.appendChild(renderMatchCard(match));
+                }
+                return;
+              }
               els.searchHint.textContent = data?.error ? `Search failed: ${data.error}` : `Search failed (HTTP ${response.status}).`;
               return;
             }
@@ -446,7 +504,22 @@
 
           const { response, data } = await postJson("/api/diabetic/search-create", { query, use_ai: true });
 
-          const matches = Array.isArray(data.matches) ? data.matches : [];
+          let matches = Array.isArray(data.matches) ? data.matches : [];
+          if (response.status === 404) {
+            els.searchHint.textContent = "AI search-create API not available on this server yet. Falling back to Quick Ask.";
+            matches = await fallbackLocalSearch(query);
+            const chat = await postJson("/api/diabetic/chat", { message: query });
+            if (chat.response.ok && chat.data?.recipe) {
+              els.aiBlock.style.display = "";
+              const card = renderRecipeCard({
+                recipe: chat.data.recipe,
+                route: chat.data.route || "api_expand",
+                statusText: chat.data.route === "local_recall" ? "" : "Saved locally ✓"
+              });
+              if (card) els.aiRecipe.appendChild(card);
+              void refreshLibrary();
+            }
+          }
           if (!matches.length) {
             els.searchEmpty.style.display = "";
           } else {
@@ -605,4 +678,3 @@
     </script>
   </body>
 </html>
-
