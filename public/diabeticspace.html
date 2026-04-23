@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DiabeticSpace — Strandspace</title>
+    <link rel="stylesheet" href="/style.css?v=diabeticspace-01" />
+    <style>
+      .ds-shell {
+        width: min(1120px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 28px 0 60px;
+      }
+      .ds-header {
+        border: 1px solid var(--border);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        border-radius: var(--radius);
+        padding: 22px 22px 18px;
+        backdrop-filter: blur(18px);
+      }
+      .ds-header h1 {
+        margin: 0;
+        letter-spacing: -0.03em;
+      }
+      .ds-header p {
+        margin: 10px 0 0;
+        color: var(--muted);
+        max-width: 70ch;
+        line-height: 1.5;
+      }
+
+      .ds-toolbar {
+        margin-top: 16px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+      }
+      .ds-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--border);
+        background: var(--panel-strong);
+        border-radius: 999px;
+        padding: 8px 12px;
+        font-weight: 700;
+      }
+      .ds-pill button {
+        border: 0;
+        background: transparent;
+        padding: 8px 10px;
+        border-radius: 999px;
+        cursor: pointer;
+        color: var(--muted);
+        font-weight: 700;
+      }
+      .ds-pill button[aria-pressed="true"] {
+        color: var(--ink);
+        background: rgba(181, 109, 54, 0.14);
+      }
+      .ds-pill button:hover {
+        color: var(--ink);
+      }
+
+      .ds-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-top: 16px;
+      }
+      @media (max-width: 920px) {
+        .ds-grid { grid-template-columns: 1fr; }
+      }
+
+      .ds-panel {
+        border: 1px solid var(--border);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        border-radius: var(--radius);
+        padding: 18px;
+        backdrop-filter: blur(18px);
+      }
+      .ds-panel h2 {
+        margin: 0;
+      }
+      .ds-sub {
+        margin: 8px 0 0;
+        color: var(--muted);
+      }
+
+      .ds-toggle-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 14px;
+      }
+      .ds-toggle-row button {
+        border: 1px solid var(--border);
+        background: var(--panel-strong);
+        color: var(--ink);
+        border-radius: 999px;
+        padding: 10px 12px;
+        cursor: pointer;
+        font-weight: 750;
+      }
+      .ds-toggle-row button[aria-pressed="true"] {
+        border-color: rgba(181, 109, 54, 0.34);
+        background: linear-gradient(135deg, rgba(181, 109, 54, 0.12), rgba(255, 252, 247, 0.94));
+      }
+
+      .ds-chat {
+        margin-top: 14px;
+        display: grid;
+        gap: 10px;
+      }
+      .ds-messages {
+        height: 340px;
+        overflow: auto;
+        border: 1px solid var(--border);
+        background: rgba(255, 252, 247, 0.6);
+        border-radius: 18px;
+        padding: 12px;
+        display: grid;
+        gap: 10px;
+      }
+      .ds-bubble {
+        padding: 10px 12px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: var(--panel-strong);
+        max-width: 92%;
+      }
+      .ds-bubble.user {
+        justify-self: end;
+        background: rgba(181, 109, 54, 0.10);
+      }
+      .ds-bubble.assistant {
+        justify-self: start;
+      }
+
+      .ds-input-row {
+        display: flex;
+        gap: 10px;
+        align-items: stretch;
+      }
+      .ds-input-row input,
+      .ds-input-row textarea {
+        flex: 1;
+        min-height: 44px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: var(--panel-strong);
+        padding: 10px 12px;
+        font: inherit;
+      }
+      .ds-input-row button {
+        min-width: 110px;
+        border-radius: 14px;
+        border: 1px solid rgba(181, 109, 54, 0.5);
+        background: linear-gradient(135deg, rgba(181, 109, 54, 0.92), rgba(111, 63, 32, 0.92));
+        color: white;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .ds-recipes {
+        margin-top: 14px;
+        display: grid;
+        gap: 12px;
+      }
+      .ds-card {
+        border: 1px solid var(--border);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        border-radius: 22px;
+        padding: 16px;
+      }
+      .ds-card h3 {
+        margin: 0;
+      }
+      .ds-badges {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+      .ds-badge {
+        border: 1px solid var(--border);
+        background: rgba(255, 252, 247, 0.72);
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 0.82rem;
+        font-weight: 800;
+        color: var(--muted);
+      }
+      .ds-badge.gi {
+        border-color: rgba(40, 92, 90, 0.25);
+        background: rgba(40, 92, 90, 0.12);
+        color: var(--signal);
+      }
+      .ds-badge.route-local { background: rgba(40, 92, 90, 0.12); border-color: rgba(40, 92, 90, 0.25); color: var(--signal); }
+      .ds-badge.route-validate { background: rgba(181, 109, 54, 0.12); border-color: rgba(181, 109, 54, 0.25); color: var(--accent-deep); }
+      .ds-badge.route-expand { background: rgba(111, 63, 32, 0.10); border-color: rgba(111, 63, 32, 0.22); color: var(--accent-deep); }
+
+      .ds-card p { color: var(--muted); margin: 10px 0 0; line-height: 1.5; }
+      .ds-card ul, .ds-card ol { margin: 10px 0 0; padding-left: 1.25rem; display: grid; gap: 6px; }
+      .ds-card hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
+
+      .ds-card-actions {
+        margin-top: 12px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .ds-card-actions button {
+        border: 1px solid var(--border);
+        background: var(--panel-strong);
+        border-radius: 999px;
+        padding: 10px 12px;
+        cursor: pointer;
+        font-weight: 800;
+      }
+      .ds-card-actions button.save {
+        border-color: rgba(40, 92, 90, 0.35);
+        background: rgba(40, 92, 90, 0.10);
+        color: var(--signal);
+      }
+      .ds-card-actions button.danger {
+        border-color: rgba(220, 38, 38, 0.35);
+        background: rgba(220, 38, 38, 0.10);
+        color: #b91c1c;
+      }
+      .ds-adapt-row {
+        margin-top: 10px;
+        display: flex;
+        gap: 10px;
+        align-items: stretch;
+      }
+      .ds-adapt-row input {
+        flex: 1;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--panel-strong);
+        padding: 10px 12px;
+        font: inherit;
+      }
+      .ds-adapt-row button {
+        border-radius: 999px;
+        border: 1px solid rgba(181, 109, 54, 0.35);
+        background: rgba(181, 109, 54, 0.10);
+        color: var(--accent-deep);
+        font-weight: 900;
+        padding: 10px 12px;
+        cursor: pointer;
+      }
+      .ds-muted {
+        color: var(--muted);
+        font-size: 0.9rem;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="ds-shell">
+      <header class="ds-header">
+        <h1>DiabeticSpace — Diabetic-Friendly Recipe Assistant</h1>
+        <p>
+          Build recipes step by step or ask directly. Approved recipes are saved locally and recalled instantly.
+        </p>
+
+        <div class="ds-toolbar">
+          <div class="ds-pill" aria-label="Mode toggle">
+            <button id="mode-builder" type="button" aria-pressed="true">Guided Builder</button>
+            <button id="mode-quick" type="button" aria-pressed="false">Quick Ask</button>
+          </div>
+
+          <div class="ds-pill" aria-label="Meal filter">
+            <button class="meal-filter" data-meal="" type="button" aria-pressed="true">All</button>
+            <button class="meal-filter" data-meal="breakfast" type="button" aria-pressed="false">Breakfast</button>
+            <button class="meal-filter" data-meal="lunch" type="button" aria-pressed="false">Lunch</button>
+            <button class="meal-filter" data-meal="dinner" type="button" aria-pressed="false">Dinner</button>
+            <button class="meal-filter" data-meal="dessert" type="button" aria-pressed="false">Dessert</button>
+            <button class="meal-filter" data-meal="snack" type="button" aria-pressed="false">Snack</button>
+          </div>
+
+          <div class="ds-muted" id="library-meta">Loading saved recipes…</div>
+        </div>
+      </header>
+
+      <main class="ds-grid">
+        <section class="ds-panel" id="builder-panel">
+          <h2>Guided Builder</h2>
+          <p class="ds-sub">Answer one question at a time, then confirm to build the recipe.</p>
+
+          <div class="ds-toggle-row">
+            <button id="builder-start" type="button">Start Builder</button>
+            <button id="builder-reset" type="button">Reset</button>
+          </div>
+
+          <div class="ds-chat">
+            <div class="ds-messages" id="builder-messages" aria-label="Builder conversation"></div>
+            <div class="ds-input-row">
+              <input id="builder-input" type="text" placeholder="Type your answer…" />
+              <button id="builder-send" type="button">Continue</button>
+            </div>
+            <div class="ds-muted" id="builder-hint"></div>
+          </div>
+        </section>
+
+        <section class="ds-panel" id="quick-panel" style="display:none;">
+          <h2>Quick Ask</h2>
+          <p class="ds-sub">Ask for a diabetic-friendly recipe or a modification, and save what you approve.</p>
+
+          <div class="ds-chat">
+            <div class="ds-messages" id="quick-messages" aria-label="Quick ask messages"></div>
+            <div class="ds-input-row">
+              <input id="quick-input" type="text" placeholder="e.g. low-carb dinner, chocolate dessert, substitute for white flour..." />
+              <button id="quick-send" type="button">Send</button>
+            </div>
+            <div class="ds-muted" id="quick-hint"></div>
+          </div>
+        </section>
+      </main>
+
+      <section class="ds-recipes" id="recipe-cards" aria-label="Recipe responses"></section>
+    </div>
+
+    <script type="module">
+      const els = {
+        modeBuilder: document.getElementById("mode-builder"),
+        modeQuick: document.getElementById("mode-quick"),
+        builderPanel: document.getElementById("builder-panel"),
+        quickPanel: document.getElementById("quick-panel"),
+        mealFilters: Array.from(document.querySelectorAll(".meal-filter")),
+        libraryMeta: document.getElementById("library-meta"),
+        recipeCards: document.getElementById("recipe-cards"),
+        builderStart: document.getElementById("builder-start"),
+        builderReset: document.getElementById("builder-reset"),
+        builderMessages: document.getElementById("builder-messages"),
+        builderInput: document.getElementById("builder-input"),
+        builderSend: document.getElementById("builder-send"),
+        builderHint: document.getElementById("builder-hint"),
+        quickMessages: document.getElementById("quick-messages"),
+        quickInput: document.getElementById("quick-input"),
+        quickSend: document.getElementById("quick-send"),
+        quickHint: document.getElementById("quick-hint")
+      };
+
+      let activeMealFilter = "";
+      let builderSessionId = "";
+      let builderStage = "";
+
+      function escapeHtml(value = "") {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      async function postJson(url, payload) {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload ?? {})
+        });
+        const data = await response.json().catch(() => ({}));
+        return { response, data };
+      }
+
+      async function getJson(url) {
+        const response = await fetch(url);
+        const data = await response.json().catch(() => ({}));
+        return { response, data };
+      }
+
+      function setMode(mode) {
+        const builder = mode === "builder";
+        els.modeBuilder.setAttribute("aria-pressed", builder ? "true" : "false");
+        els.modeQuick.setAttribute("aria-pressed", builder ? "false" : "true");
+        els.builderPanel.style.display = builder ? "" : "none";
+        els.quickPanel.style.display = builder ? "none" : "";
+      }
+
+      function setMealFilter(meal) {
+        activeMealFilter = String(meal ?? "");
+        for (const btn of els.mealFilters) {
+          const value = String(btn.dataset.meal ?? "");
+          btn.setAttribute("aria-pressed", value === activeMealFilter ? "true" : "false");
+        }
+        void refreshLibrary();
+      }
+
+      function appendMessage(container, role, text) {
+        const bubble = document.createElement("div");
+        bubble.className = `ds-bubble ${role}`;
+        bubble.textContent = text;
+        container.appendChild(bubble);
+        container.scrollTop = container.scrollHeight;
+      }
+
+      function routeBadge(route) {
+        if (route === "local_recall") return { label: "⚡ Recalled locally", cls: "route-local" };
+        if (route === "api_validate") return { label: "🔍 AI validated", cls: "route-validate" };
+        return { label: "🤖 AI generated", cls: "route-expand" };
+      }
+
+      function renderRecipeCard({ recipe, route }) {
+        if (!recipe) return null;
+        const card = document.createElement("article");
+        card.className = "ds-card";
+        const routeMeta = routeBadge(route);
+        const substitutes = Array.isArray(recipe.substitutes) ? recipe.substitutes : [];
+        const tags = Array.isArray(recipe.tags) ? recipe.tags : [];
+
+        card.innerHTML = `
+          <h3>${escapeHtml(recipe.title || "Recipe")}</h3>
+          <div class="ds-badges">
+            <span class="ds-badge">${escapeHtml(recipe.meal_type || "meal")}</span>
+            <span class="ds-badge ${routeMeta.cls}">${escapeHtml(routeMeta.label)}</span>
+            ${recipe.gi_notes ? `<span class="ds-badge gi">GI notes</span>` : ""}
+          </div>
+          ${recipe.gi_notes ? `<p><strong>GI notes:</strong> ${escapeHtml(recipe.gi_notes)}</p>` : ""}
+          ${recipe.description ? `<p>${escapeHtml(recipe.description)}</p>` : ""}
+          <hr />
+          <p><strong>Ingredients</strong></p>
+          <ul>
+            ${(Array.isArray(recipe.ingredients) ? recipe.ingredients : []).map((ing) => {
+              const amount = ing?.amount ?? "";
+              const unit = ing?.unit ?? "";
+              const note = ing?.note ? ` (${ing.note})` : "";
+              return `<li>${escapeHtml(`${amount} ${unit} ${ing?.name ?? ""}`.replace(/\\s+/g, " ").trim())}${escapeHtml(note)}</li>`;
+            }).join("")}
+          </ul>
+          ${substitutes.length ? `
+            <p style="margin-top:12px;"><strong>Substitutes</strong></p>
+            <ul>
+              ${substitutes.map((sub) => `<li>${escapeHtml(sub.original)} → ${escapeHtml(sub.substitute)}${sub.reason ? ` (${escapeHtml(sub.reason)})` : ""}</li>`).join("")}
+            </ul>
+          ` : ""}
+          <p style="margin-top:12px;"><strong>Instructions</strong></p>
+          <ol>
+            ${(Array.isArray(recipe.instructions) ? recipe.instructions : []).map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
+          </ol>
+          <p style="margin-top:12px;"><strong>Servings:</strong> ${escapeHtml(recipe.servings ?? "")} ${recipe.serving_notes ? `· ${escapeHtml(recipe.serving_notes)}` : ""}</p>
+          ${tags.length ? `<p><strong>Tags:</strong> ${escapeHtml(tags.join(", "))}</p>` : ""}
+          <div class="ds-card-actions">
+            <button class="save" type="button">Save</button>
+            <button class="danger" type="button">Discard</button>
+            <button class="adapt" type="button">Adapt Recipe</button>
+            <span class="ds-muted status"></span>
+          </div>
+          <div class="ds-adapt-row" style="display:none;">
+            <input class="adapt-input" type="text" placeholder="e.g. make it gluten-free, reduce servings to 2, make it dairy-free" />
+            <button class="adapt-send" type="button">Adapt</button>
+          </div>
+        `;
+
+        const status = card.querySelector(".status");
+        const saveBtn = card.querySelector("button.save");
+        const discardBtn = card.querySelector("button.danger");
+        const adaptBtn = card.querySelector("button.adapt");
+        const adaptRow = card.querySelector(".ds-adapt-row");
+        const adaptInput = card.querySelector(".adapt-input");
+        const adaptSend = card.querySelector(".adapt-send");
+
+        saveBtn.addEventListener("click", async () => {
+          status.textContent = "Saving…";
+          const { response } = await postJson("/api/diabetic/save", recipe);
+          status.textContent = response.ok ? "Saved locally ✓" : "Save failed";
+          void refreshLibrary();
+        });
+
+        discardBtn.addEventListener("click", () => {
+          card.remove();
+        });
+
+        adaptBtn.addEventListener("click", () => {
+          adaptRow.style.display = adaptRow.style.display === "none" ? "" : "none";
+          if (adaptRow.style.display !== "none") adaptInput.focus();
+        });
+
+        adaptSend.addEventListener("click", async () => {
+          const change = String(adaptInput.value ?? "").trim();
+          if (!change) return;
+          status.textContent = "Adapting…";
+          const { response, data } = await postJson("/api/diabetic/adapt", { recipe_id: recipe.recipe_id, change });
+          if (!response.ok) {
+            status.textContent = data?.route === "api_unavailable" ? "OpenAI not configured" : "Adapt failed";
+            return;
+          }
+          status.textContent = "Adapted ✓";
+          const next = renderRecipeCard({ recipe: data.recipe, route: data.route });
+          if (next) {
+            els.recipeCards.prepend(next);
+            next.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        });
+
+        return card;
+      }
+
+      async function refreshLibrary() {
+        const url = activeMealFilter ? `/api/diabetic/recipes?meal_type=${encodeURIComponent(activeMealFilter)}` : "/api/diabetic/recipes";
+        const { response, data } = await getJson(url);
+        if (!response.ok) {
+          els.libraryMeta.textContent = response.status === 404
+            ? "Failed to load recipes (404). Restart the server on the DiabeticSpace branch."
+            : `Failed to load recipes (HTTP ${response.status}).`;
+          return;
+        }
+        const recipes = Array.isArray(data.recipes) ? data.recipes : [];
+        els.libraryMeta.textContent = `${recipes.length} saved recipe${recipes.length === 1 ? "" : "s"}${activeMealFilter ? ` · ${activeMealFilter}` : ""}`;
+      }
+
+      async function startBuilder() {
+        els.builderHint.textContent = "";
+        const { response, data } = await postJson("/api/diabetic/builder/start", builderSessionId ? { session_id: builderSessionId } : {});
+        if (!response.ok) {
+          els.builderHint.textContent = response.status === 404
+            ? "Unable to start builder (404). Restart the server on the DiabeticSpace branch."
+            : (data?.error ? `Unable to start builder: ${data.error}` : `Unable to start builder (HTTP ${response.status}).`);
+          return;
+        }
+        builderSessionId = data.session_id;
+        builderStage = data.stage;
+        appendMessage(els.builderMessages, "assistant", data.prompt || "Start building your recipe.");
+      }
+
+      async function nextBuilder(answer) {
+        if (!builderSessionId) {
+          await startBuilder();
+          return;
+        }
+        const { response, data } = await postJson("/api/diabetic/builder/next", { session_id: builderSessionId, answer });
+        if (!response.ok) {
+          els.builderHint.textContent = data?.error || "Builder error.";
+          return;
+        }
+        builderStage = data.stage;
+        if (data.summary) {
+          const summary = data.summary;
+          appendMessage(els.builderMessages, "assistant", `Review:\nmeal_type: ${summary.meal_type}\ngoal: ${summary.goal}\ninclude: ${(summary.include_items || []).join(", ")}\navoid: ${(summary.avoid_items || []).join(", ")}\nservings: ${summary.servings}\nnotes: ${summary.extra_notes}`);
+          appendMessage(els.builderMessages, "assistant", data.prompt || "Reply 'confirm' to build the recipe.");
+          els.builderHint.innerHTML = `
+            <button type="button" id="builder-confirm">Confirm & Build</button>
+            <span style="margin-left:10px;color:var(--muted);">or use: edit meal_type · goal · include_items · avoid_items · servings · extra_notes</span>
+          `;
+          const confirmBtn = document.getElementById("builder-confirm");
+          confirmBtn.addEventListener("click", async () => {
+            els.builderHint.textContent = "Building…";
+            const { response: completeRes, data: completeData } = await postJson("/api/diabetic/builder/complete", { session_id: builderSessionId });
+            if (!completeRes.ok) {
+              els.builderHint.textContent = completeData?.route === "api_unavailable" ? "OpenAI not configured" : "Build failed.";
+              return;
+            }
+            const card = renderRecipeCard({ recipe: completeData.recipe, route: completeData.route });
+            if (card) els.recipeCards.prepend(card);
+            appendMessage(els.builderMessages, "assistant", "Recipe built. Review the card and save if approved.");
+            builderSessionId = "";
+            builderStage = "";
+            void refreshLibrary();
+          });
+          return;
+        }
+        appendMessage(els.builderMessages, "assistant", data.prompt || "Next step.");
+      }
+
+      async function sendQuickMessage(message) {
+        els.quickHint.textContent = "";
+        appendMessage(els.quickMessages, "user", message);
+        const { response, data } = await postJson("/api/diabetic/chat", { message });
+        if (!response.ok) {
+          const msg = data?.route === "api_unavailable" ? "OpenAI not configured." : (data?.error || "Request failed.");
+          appendMessage(els.quickMessages, "assistant", msg);
+          return;
+        }
+        const card = renderRecipeCard({ recipe: data.recipe, route: data.route });
+        if (card) {
+          els.recipeCards.prepend(card);
+          card.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+        appendMessage(els.quickMessages, "assistant", "Recipe ready below. Save if approved.");
+        void refreshLibrary();
+      }
+
+      els.modeBuilder.addEventListener("click", () => setMode("builder"));
+      els.modeQuick.addEventListener("click", () => setMode("quick"));
+      for (const btn of els.mealFilters) {
+        btn.addEventListener("click", () => setMealFilter(btn.dataset.meal ?? ""));
+      }
+
+      els.builderStart.addEventListener("click", startBuilder);
+      els.builderReset.addEventListener("click", () => {
+        builderSessionId = "";
+        builderStage = "";
+        els.builderMessages.innerHTML = "";
+        els.builderHint.textContent = "";
+      });
+      els.builderSend.addEventListener("click", async () => {
+        const answer = String(els.builderInput.value ?? "").trim();
+        if (!answer) return;
+        els.builderInput.value = "";
+        appendMessage(els.builderMessages, "user", answer);
+        await nextBuilder(answer);
+      });
+
+      els.quickSend.addEventListener("click", async () => {
+        const message = String(els.quickInput.value ?? "").trim();
+        if (!message) return;
+        els.quickInput.value = "";
+        await sendQuickMessage(message);
+      });
+      els.quickInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          els.quickSend.click();
+        }
+      });
+
+      setMode("builder");
+      setMealFilter("");
+      void refreshLibrary();
+    </script>
+  </body>
+</html>

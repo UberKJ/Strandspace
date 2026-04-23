@@ -15,6 +15,7 @@ process.env.STRANDSPACE_DB_PATH = tempDatabasePath;
 
 const { createApp } = await import("../server.mjs");
 const { __setOpenAiAssistMock } = await import("../strandspace/openai-assist.js");
+const { registerDiabeticspaceTests } = await import("./diabeticspace-tests.mjs");
 
 const results = [];
 
@@ -70,6 +71,13 @@ async function createSubjectConstruct(port, overrides = {}) {
   const learned = await response.json();
   return learned.construct;
 }
+
+await registerDiabeticspaceTests({
+  check,
+  withServer,
+  postJson,
+  tempDatabasePath
+});
 
 await check("GET / serves Strandspace Studio", async () => {
   await withServer(async (address) => {

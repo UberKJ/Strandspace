@@ -22,6 +22,7 @@
   "scripts": {
     "start": "node server.mjs",
     "dev": "node server.mjs",
+    "diabetic": "node --watch server.mjs",
     "test": "node test/run-tests.mjs"
   },
   "dependencies": {

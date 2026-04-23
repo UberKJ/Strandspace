@@ -25,6 +25,22 @@ import {
   generateOpenAiSubjectAssist,
   getOpenAiAssistStatus
 } from "./strandspace/openai-assist.js";
+import {
+  initDiabeticDb,
+  recallDiabeticRecipe,
+  saveDiabeticRecipe,
+  listDiabeticRecipes,
+  getDiabeticRecipeById,
+  seedDiabeticRecipes,
+  saveDiabeticBuilderSession,
+  getDiabeticBuilderSession,
+  deleteDiabeticBuilderSession
+} from "./strandspace/diabeticspace.js";
+import {
+  adaptDiabeticRecipe,
+  generateDiabeticRecipe,
+  generateFromBuilderSession
+} from "./strandspace/diabetic-assist.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -226,6 +242,8 @@ function openMemoryDatabase() {
   seedSoundspace(database);
   ensureSubjectspaceTables(database);
   seedSubjectspace(database);
+  initDiabeticDb(database);
+  seedDiabeticRecipes(database);
   return database;
 }
 
@@ -279,6 +297,498 @@ function soundConstructAnswerPayload(source, question, construct, recall) {
 async function handleApi(req, res) {
   const url = new URL(req.url, "http://localhost");
   const db = openMemoryDatabase();
+
+  if (url.pathname === "/api/diabetic/recipes") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    const mealType = String(url.searchParams.get("meal_type") ?? "").trim();
+    sendJson(res, 200, {
+      ok: true,
+      recipes: listDiabeticRecipes(db, mealType)
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/diabetic/recipe") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    const recipeId = String(url.searchParams.get("recipe_id") ?? "").trim();
+    if (!recipeId) {
+      sendJson(res, 400, { error: "recipe_id is required" });
+      return;
+    }
+
+    const recipe = getDiabeticRecipeById(db, recipeId);
+    if (!recipe) {
+      sendJson(res, 404, { error: "Recipe not found" });
+      return;
+    }
+
+    sendJson(res, 200, { ok: true, recipe });
+    return;
+  }
+
+  if (url.pathname === "/api/diabetic/chat") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const message = String(payload.message ?? "").trim();
+    if (!message) {
+      sendJson(res, 400, { error: "message is required" });
+      return;
+    }
+
+    const started = performance.now();
+    const recalled = recallDiabeticRecipe(db, message);
+    const latency_ms = toLatencyMs(performance.now() - started);
+
+    if (recalled) {
+      const recall_count = Number(recalled.recall_count ?? 0);
+      if (recall_count >= 2) {
+        sendJson(res, 200, {
+          route: "local_recall",
+          recipe: recalled,
+          recall_count,
+          latency_ms
+        });
+        return;
+      }
+
+      try {
+        const generated = await generateDiabeticRecipe(message, recalled);
+        const saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
+        sendJson(res, 200, {
+          route: "api_validate",
+          recipe: saved,
+          recall_count: Number(saved?.recall_count ?? recall_count),
+          latency_ms
+        });
+        return;
+      } catch (error) {
+        if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
+          sendJson(res, 503, { error: "OPENAI_API_KEY not configured", route: "api_unavailable" });
+          return;
+        }
+
+        sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+    }
+
+    try {
+      const generated = await generateDiabeticRecipe(message, null);
+      const saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
+      sendJson(res, 200, {
+        route: "api_expand",
+        recipe: saved,
+        recall_count: Number(saved?.recall_count ?? 0),
+        latency_ms
+      });
+      return;
+    } catch (error) {
+      if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
+        sendJson(res, 503, { error: "OPENAI_API_KEY not configured", route: "api_unavailable" });
+        return;
+      }
+
+      sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+  }
+
+  if (url.pathname === "/api/diabetic/save") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const saved = saveDiabeticRecipe(db, payload);
+    sendJson(res, 200, { saved: true, recipe_id: saved?.recipe_id ?? null });
+    return;
+  }
+
+  if (url.pathname === "/api/diabetic/adapt") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const recipeId = String(payload.recipe_id ?? "").trim();
+    const change = String(payload.change ?? "").trim();
+    if (!recipeId) {
+      sendJson(res, 400, { error: "recipe_id is required" });
+      return;
+    }
+    if (!change) {
+      sendJson(res, 400, { error: "change is required" });
+      return;
+    }
+
+    const original = getDiabeticRecipeById(db, recipeId);
+    if (!original) {
+      sendJson(res, 404, { error: "Recipe not found" });
+      return;
+    }
+
+    let adapted;
+    try {
+      adapted = await adaptDiabeticRecipe(change, original);
+    } catch (error) {
+      if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
+        sendJson(res, 503, { error: "OPENAI_API_KEY not configured", route: "api_unavailable" });
+        return;
+      }
+      sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+
+    let candidateId = `${original.recipe_id}-adapted`;
+    let suffix = 1;
+    while (getDiabeticRecipeById(db, candidateId)) {
+      suffix += 1;
+      candidateId = `${original.recipe_id}-adapted-${suffix}`;
+      if (suffix > 25) {
+        sendJson(res, 409, { error: "Unable to allocate unique adapted recipe_id" });
+        return;
+      }
+    }
+
+    const saved = saveDiabeticRecipe(db, { ...adapted, recipe_id: candidateId, source: "ai" });
+    sendJson(res, 200, { route: "api_expand", recipe: saved, saved: true });
+    return;
+  }
+
+  if (url.pathname === "/api/diabetic/builder/start") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const requestedSessionId = String(payload.session_id ?? "").trim();
+    const existing = requestedSessionId ? getDiabeticBuilderSession(db, requestedSessionId) : null;
+    const session_id = existing?.session_id ?? `diabetic-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    const stage = existing?.stage ?? "meal_type";
+
+    const session = existing ?? saveDiabeticBuilderSession(db, {
+      session_id,
+      stage,
+      original_query: ""
+    });
+
+    const prompt = "What kind of meal do you want to build? Breakfast, lunch, dinner, dessert, or snack?";
+    sendJson(res, 200, { session_id, stage, prompt, session });
+    return;
+  }
+
+  if (url.pathname === "/api/diabetic/builder/next") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const session_id = String(payload.session_id ?? "").trim();
+    const answer = String(payload.answer ?? "").trim();
+    if (!session_id) {
+      sendJson(res, 400, { error: "session_id is required" });
+      return;
+    }
+    if (!answer) {
+      sendJson(res, 400, { error: "answer is required" });
+      return;
+    }
+
+    const session = getDiabeticBuilderSession(db, session_id);
+    if (!session) {
+      sendJson(res, 404, { error: "Session not found" });
+      return;
+    }
+
+    const promptsByStage = {
+      meal_type: "What kind of meal do you want to build? Breakfast, lunch, dinner, dessert, or snack?",
+      goal: "What is the main goal for this recipe? Examples: low-carb, high-protein, lower calorie, gluten-free, budget-friendly.",
+      include_items: "What ingredients do you want to include? You can list several separated by commas.",
+      avoid_items: "What ingredients or limits should I avoid? Examples: sugar, white flour, rice, potatoes, dairy, gluten.",
+      servings: "How many servings do you want?",
+      extra_notes: "Any extra notes? Examples: quick meal, one-pan, air fryer, no seafood, more flavor, kid-friendly."
+    };
+
+    const stageOrder = ["meal_type", "goal", "include_items", "avoid_items", "servings", "extra_notes", "review"];
+    const currentStage = session.stage;
+
+    if (currentStage === "review") {
+      const normalized = answer.toLowerCase();
+      if (normalized === "confirm") {
+        sendJson(res, 200, {
+          session_id,
+          stage: "review",
+          summary: {
+            meal_type: session.meal_type,
+            goal: session.goal,
+            include_items: session.include_items,
+            avoid_items: session.avoid_items,
+            servings: session.servings,
+            extra_notes: session.extra_notes
+          },
+          prompt: "Confirmed. Now call /api/diabetic/builder/complete to build the recipe."
+        });
+        return;
+      }
+
+      if (normalized.startsWith("edit ")) {
+        const field = normalized.slice(5).trim();
+        const allowed = new Set(["meal_type", "goal", "include_items", "avoid_items", "servings", "extra_notes"]);
+        if (!allowed.has(field)) {
+          sendJson(res, 200, {
+            session_id,
+            stage: "review",
+            summary: {
+              meal_type: session.meal_type,
+              goal: session.goal,
+              include_items: session.include_items,
+              avoid_items: session.avoid_items,
+              servings: session.servings,
+              extra_notes: session.extra_notes
+            },
+            prompt: "Reply 'confirm' to build the recipe, or say 'edit <field>' to change one part."
+          });
+          return;
+        }
+
+        const updated = saveDiabeticBuilderSession(db, {
+          ...session,
+          stage: field
+        });
+        sendJson(res, 200, {
+          session_id,
+          stage: field,
+          prompt: promptsByStage[field] ?? "Answer the next question.",
+          session: updated
+        });
+        return;
+      }
+
+      sendJson(res, 200, {
+        session_id,
+        stage: "review",
+        summary: {
+          meal_type: session.meal_type,
+          goal: session.goal,
+          include_items: session.include_items,
+          avoid_items: session.avoid_items,
+          servings: session.servings,
+          extra_notes: session.extra_notes
+        },
+        prompt: "Reply 'confirm' to build the recipe, or say 'edit <field>' to change one part."
+      });
+      return;
+    }
+
+    const nextIndex = Math.max(0, stageOrder.indexOf(currentStage)) + 1;
+    const nextStage = stageOrder[nextIndex] ?? "review";
+
+    const patch = { ...session };
+    if (currentStage === "meal_type") {
+      patch.meal_type = answer.toLowerCase().trim();
+    } else if (currentStage === "goal") {
+      patch.goal = answer.trim();
+    } else if (currentStage === "include_items") {
+      patch.include_items = answer.split(",").map((item) => item.trim()).filter(Boolean);
+    } else if (currentStage === "avoid_items") {
+      patch.avoid_items = answer.split(",").map((item) => item.trim()).filter(Boolean);
+    } else if (currentStage === "servings") {
+      const parsed = Number(answer);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        sendJson(res, 200, {
+          session_id,
+          stage: currentStage,
+          prompt: promptsByStage.servings,
+          session
+        });
+        return;
+      }
+      patch.servings = Math.round(parsed);
+    } else if (currentStage === "extra_notes") {
+      patch.extra_notes = answer.trim();
+    }
+
+    patch.stage = nextStage;
+    const saved = saveDiabeticBuilderSession(db, patch);
+
+    if (nextStage === "review") {
+      sendJson(res, 200, {
+        session_id,
+        stage: "review",
+        summary: {
+          meal_type: saved.meal_type,
+          goal: saved.goal,
+          include_items: saved.include_items,
+          avoid_items: saved.avoid_items,
+          servings: saved.servings,
+          extra_notes: saved.extra_notes
+        },
+        prompt: "Reply 'confirm' to build the recipe, or say 'edit <field>' to change one part."
+      });
+      return;
+    }
+
+    sendJson(res, 200, {
+      session_id,
+      stage: nextStage,
+      prompt: promptsByStage[nextStage] ?? "Answer the next question.",
+      session: saved
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/diabetic/builder/complete") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const session_id = String(payload.session_id ?? "").trim();
+    if (!session_id) {
+      sendJson(res, 400, { error: "session_id is required" });
+      return;
+    }
+
+    const session = getDiabeticBuilderSession(db, session_id);
+    if (!session) {
+      sendJson(res, 404, { error: "Session not found" });
+      return;
+    }
+
+    const query = [
+      session.meal_type ? `meal:${session.meal_type}` : "",
+      session.goal ? `goal:${session.goal}` : "",
+      Array.isArray(session.include_items) && session.include_items.length ? `include:${session.include_items.join(", ")}` : "",
+      Array.isArray(session.avoid_items) && session.avoid_items.length ? `avoid:${session.avoid_items.join(", ")}` : "",
+      session.servings ? `servings:${session.servings}` : "",
+      session.extra_notes ? `notes:${session.extra_notes}` : ""
+    ].filter(Boolean).join(" | ");
+
+    const recalled = recallDiabeticRecipe(db, query);
+    if (recalled) {
+      const recall_count = Number(recalled.recall_count ?? 0);
+      if (recall_count >= 2) {
+        deleteDiabeticBuilderSession(db, session_id);
+        sendJson(res, 200, {
+          route: "local_recall",
+          recipe: recalled,
+          recall_count,
+          session_id,
+          completed: true
+        });
+        return;
+      }
+
+      try {
+        const generated = await generateFromBuilderSession(session, recalled);
+        const saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
+        deleteDiabeticBuilderSession(db, session_id);
+        sendJson(res, 200, {
+          route: "api_validate",
+          recipe: saved,
+          recall_count: Number(saved?.recall_count ?? recall_count),
+          session_id,
+          completed: true
+        });
+        return;
+      } catch (error) {
+        if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
+          sendJson(res, 503, { error: "OPENAI_API_KEY not configured", route: "api_unavailable" });
+          return;
+        }
+        sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+    }
+
+    try {
+      const generated = await generateFromBuilderSession(session, null);
+      const saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
+      deleteDiabeticBuilderSession(db, session_id);
+      sendJson(res, 200, {
+        route: "api_expand",
+        recipe: saved,
+        recall_count: Number(saved?.recall_count ?? 0),
+        session_id,
+        completed: true
+      });
+      return;
+    } catch (error) {
+      if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
+        sendJson(res, 503, { error: "OPENAI_API_KEY not configured", route: "api_unavailable" });
+        return;
+      }
+      sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+  }
 
   if (url.pathname === "/api/subjectspace/subjects") {
     if (req.method !== "GET") {
