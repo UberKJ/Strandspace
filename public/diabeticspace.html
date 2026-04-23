@@ -7,16 +7,18 @@
     <link rel="stylesheet" href="/style.css?v=diabeticspace-base" />
     <link rel="stylesheet" href="/diabeticspace.css?v=diabeticspace-refine-01" />
   </head>
-  <body class="diabeticspace">
-    <div class="ds-shell">
-      <header class="ds-header">
-        <div class="ds-header-row">
-          <img class="ds-logo" src="/strandspace-logo.png" alt="Strandspace logo" loading="lazy" />
-          <div>
-            <h1>Diabetic Friendly Recipe Assistant</h1>
-            <p>
-              Build recipes step by step or ask directly. Approved recipes are saved locally and recalled instantly.
-            </p>
+	  <body class="diabeticspace">
+	    <div class="ds-shell">
+	      <header class="ds-header">
+	        <div class="ds-header-row">
+	          <button id="ds-home" class="ds-logo-button" type="button" aria-label="Home">
+	            <img class="ds-logo" src="/strandspace-logo.png" alt="Strandspace logo" loading="lazy" />
+	          </button>
+	          <div>
+	            <h1>Diabetic Friendly Recipe Assistant</h1>
+	            <p>
+	              Build recipes step by step or ask directly. Approved recipes are saved locally and recalled instantly.
+	            </p>
           </div>
         </div>
 
@@ -28,11 +30,11 @@
             <button id="mode-quick" type="button" aria-pressed="false">Quick Ask</button>
           </div>
 
-          <div class="ds-pill" aria-label="Meal filter">
-            <span>Meals</span>
-            <button class="meal-filter" type="button" data-meal="" aria-pressed="true">All</button>
-            <button class="meal-filter" type="button" data-meal="breakfast">Breakfast</button>
-            <button class="meal-filter" type="button" data-meal="lunch">Lunch</button>
+	          <div class="ds-pill ds-meals" aria-label="Meal filter">
+	            <span>Meals</span>
+	            <button class="meal-filter" type="button" data-meal="" aria-pressed="true">All</button>
+	            <button class="meal-filter" type="button" data-meal="breakfast">Breakfast</button>
+	            <button class="meal-filter" type="button" data-meal="lunch">Lunch</button>
             <button class="meal-filter" type="button" data-meal="dinner">Dinner</button>
             <button class="meal-filter" type="button" data-meal="dessert">Dessert</button>
             <button class="meal-filter" type="button" data-meal="snack">Snack</button>
@@ -148,12 +150,13 @@
       <section class="ds-recipes" id="recipe-cards" aria-label="Recipe responses"></section>
     </div>
 
-    <script type="module">
-      const els = {
-        modeSearch: document.getElementById("mode-search"),
-        modeBuilder: document.getElementById("mode-builder"),
-        modeQuick: document.getElementById("mode-quick"),
-        searchPanel: document.getElementById("search-panel"),
+	    <script type="module">
+	      const els = {
+	        home: document.getElementById("ds-home"),
+	        modeSearch: document.getElementById("mode-search"),
+	        modeBuilder: document.getElementById("mode-builder"),
+	        modeQuick: document.getElementById("mode-quick"),
+	        searchPanel: document.getElementById("search-panel"),
         builderPanel: document.getElementById("builder-panel"),
         quickPanel: document.getElementById("quick-panel"),
         mealFilters: Array.from(document.querySelectorAll(".meal-filter")),
@@ -182,10 +185,10 @@
         builderSend: document.getElementById("builder-send"),
         builderHint: document.getElementById("builder-hint"),
         quickMessages: document.getElementById("quick-messages"),
-        quickInput: document.getElementById("quick-input"),
-        quickSend: document.getElementById("quick-send"),
-        quickHint: document.getElementById("quick-hint")
-      };
+	        quickInput: document.getElementById("quick-input"),
+	        quickSend: document.getElementById("quick-send"),
+	        quickHint: document.getElementById("quick-hint")
+	      };
 
       let activeMealFilter = "";
       let builderSessionId = "";
@@ -240,15 +243,42 @@
         }
       }
 
-      function setMealFilter(meal) {
-        clearSelectedRecipe();
-        activeMealFilter = String(meal ?? "");
-        for (const btn of els.mealFilters) {
-          const value = String(btn.dataset.meal ?? "");
-          btn.setAttribute("aria-pressed", value === activeMealFilter ? "true" : "false");
-        }
-        void refreshLibrary();
-      }
+	      function setMealFilter(meal) {
+	        clearSelectedRecipe();
+	        activeMealFilter = String(meal ?? "");
+	        for (const btn of els.mealFilters) {
+	          const value = String(btn.dataset.meal ?? "");
+	          btn.setAttribute("aria-pressed", value === activeMealFilter ? "true" : "false");
+	        }
+	        void refreshLibrary();
+	      }
+
+	      function goHome() {
+	        setMode("search");
+
+	        selectedRecipeId = "";
+	        clearSelectedRecipe();
+	        clearSearchResults();
+
+	        if (els.searchHint) els.searchHint.textContent = "";
+	        if (els.searchInput) els.searchInput.value = "";
+	        if (els.searchUseAi) els.searchUseAi.checked = false;
+
+	        builderSessionId = "";
+	        builderStage = "";
+	        if (els.builderMessages) els.builderMessages.innerHTML = "";
+	        if (els.builderHint) els.builderHint.textContent = "";
+	        if (els.builderInput) els.builderInput.value = "";
+
+	        if (els.quickMessages) els.quickMessages.innerHTML = "";
+	        if (els.quickHint) els.quickHint.textContent = "";
+	        if (els.quickInput) els.quickInput.value = "";
+
+	        if (els.recipeCards) els.recipeCards.innerHTML = "";
+
+	        setMealFilter("");
+	        window.scrollTo({ top: 0, behavior: "smooth" });
+	      }
 
       function appendMessage(container, role, text) {
         const bubble = document.createElement("div");
@@ -771,12 +801,13 @@
         void refreshLibrary();
       }
 
-      els.modeSearch.addEventListener("click", () => setMode("search"));
-      els.modeBuilder.addEventListener("click", () => setMode("builder"));
-      els.modeQuick.addEventListener("click", () => setMode("quick"));
-      for (const btn of els.mealFilters) {
-        btn.addEventListener("click", () => setMealFilter(btn.dataset.meal ?? ""));
-      }
+	      els.modeSearch.addEventListener("click", () => setMode("search"));
+	      els.modeBuilder.addEventListener("click", () => setMode("builder"));
+	      els.modeQuick.addEventListener("click", () => setMode("quick"));
+	      els.home?.addEventListener("click", goHome);
+	      for (const btn of els.mealFilters) {
+	        btn.addEventListener("click", () => setMealFilter(btn.dataset.meal ?? ""));
+	      }
 
       els.selectedClear?.addEventListener("click", () => {
         clearSelectedRecipe();
