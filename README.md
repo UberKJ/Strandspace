@@ -1,199 +1,238 @@
-# Strandspace Studio
+# Strandspace
 
-Local-first construct recall for repetitive learned tasks, adaptive workflows, and optional LLM-assisted expansion.
+Local-first structured memory for repeated tasks, reusable workflows, and domain apps that learn over time.
 
-Strandspace Studio is a working prototype built around one practical idea:
+Strandspace is a working platform for a simple idea:
 
-**When a system has already learned a repeated setup, route, workflow, or operating pattern, it should try local recall first instead of rebuilding the answer from scratch every time.**
+> If a system has already learned a useful setup, recipe, workflow, or troubleshooting path, it should try to recall that construct locally first instead of rebuilding the answer from scratch every time.
 
----
-
-## Current Status
-
-Strandspace Studio is an active prototype with a working browser app, a standalone Soundspace surface, seeded local memory, API-assisted draft expansion, and regression coverage for the main recall flows.
-
-As the code stands today, the application provides:
-
-- a main **Subjectspace** studio for teaching and recalling reusable constructs
-- a standalone **Soundspace** app for live audio and karaoke-style setup recall
-- local-first routing that can recommend direct recall or API validation
-- optional OpenAI-backed assist drafts that can be learned back into local memory
-- a benchmark panel that compares local recall latency against an LLM assist round-trip
-- a SQLite-backed local store with seeded starter data
-- an automated test suite covering the core routes and learning flows
+This repository now contains both the **Strandspace engine** and multiple **apps built on top of it**.
 
 ---
 
 ## What Strandspace Is
 
-Strandspace is not trying to replace large language models.
+Strandspace is **not** trying to replace large language models.
 
-It is a memory-and-construct layer for repeated work.
+It is a **local-first memory layer** for repeated structured work.
 
 That includes things like:
 
-- recurring technical setups
-- repeated troubleshooting paths
+- repeated technical setups
+- recurring troubleshooting paths
+- reusable recipes and variations
 - event workflows
-- route-like task sequences
-- domain assistants that answer the same kind of question with small variations
-- agents that should remember what already worked
+- repeated question-and-answer patterns
+- domain assistants that improve over time
 
-The point is simple:
+The goal is straightforward:
 
-**Recall what is already learned. Use external reasoning only when local memory is too thin, too narrow, or too uncertain.**
+- **recall locally when memory is strong**
+- **use AI only when the local match is thin, partial, or uncertain**
+- **learn improved results back into local memory**
 
 ---
 
-## Current Application Surfaces
+## Why This Repository Matters
+
+Strandspace is no longer just a theory prototype.
+
+The repository currently demonstrates a full working loop:
+
+1. store a structured construct locally
+2. recall it later from a related prompt
+3. adapt or validate it with AI when needed
+4. save the improved version back into memory
+5. recall the improved version faster next time
+
+That means the project is already showing practical behavior, not just abstract architecture.
+
+---
+
+## Current Apps In This Repository
+
+### DiabeticSpace
+
+A health-focused recipe application built on Strandspace.
+
+It currently supports local-first diabetic-friendly recipe recall, recipe search, AI-assisted recipe creation, recipe adaptation, local image handling, saved recipe variants, and builder-style flows for generating new meals.
+
+Examples of the current behavior include:
+
+- creating a first-pass diabetic-friendly recipe with AI
+- saving that recipe into local memory
+- recalling it later from local storage
+- adapting it into a new variant such as adding or changing ingredients
+- storing the changed version for future recall
+
+This is one of the clearest demonstrations of the Strandspace idea because it shows memory, variation, and learn-back behavior in a user-facing app.
 
 ### Strandspace Studio
 
-The main app at `/` is a subject-agnostic teaching and recall interface.
+A general teaching and recall surface for subject-agnostic structured memory.
 
-It currently lets you:
+It lets you:
 
-- choose an active subject
-- enter a recall prompt
-- inspect the returned answer and activation trace
-- store new constructs with subject, target, objective, context, steps, notes, and tags
-- browse the stored construct library for the active subject
-- compare local recall speed against the LLM assist path
-
-The current UI language centers on four layers:
-
-1. trigger strands
-2. anchor strands
-3. composite constructs
-4. expression field
+- choose a subject field
+- store reusable constructs
+- query the local memory layer
+- inspect recall traces and routing
+- compare local recall against an external AI round-trip
 
 ### Soundspace
 
-The standalone app at `/soundspace` is a domain-specific recall surface for live sound.
+A live sound and karaoke-oriented app built on the same local-first recall pattern.
 
-It is designed around repeated audio questions such as:
+It is designed for repeated audio workflows such as:
 
-- mixer setup recall
-- karaoke vocal setup recall
-- music bingo host setups
+- mixer setups
+- karaoke vocal setups
+- host-forward music bingo setups
 - venue-size variations
 - microphone and speaker configuration patterns
 
-Soundspace recalls a stored construct first and can generate a missing construct when needed, then store it for future recall.
+---
+
+## Core Product Pattern
+
+Across the apps in this repository, the core Strandspace pattern is the same:
+
+1. **Teach or generate a construct**
+2. **Store it as structured local memory**
+3. **Recall it from a future prompt**
+4. **Route to AI only when needed**
+5. **Learn improved answers back into memory**
+
+This makes Strandspace useful for work that is repetitive, practical, and only slightly different each time.
 
 ---
 
 ## Current Memory Model
 
-The repository currently exposes two working layers in code.
+Strandspace works with structured constructs rather than raw chat history alone.
 
-### Subjectspace
+A construct can include fields such as:
 
-Subjectspace is the general-purpose construct memory system.
-
-A stored construct can include fields such as:
-
-- subject label and subject ID
-- construct label
+- label
 - target
 - objective
-- structured context
-- working steps
+- context
+- steps
 - notes
 - tags
 - provenance
+- learned count
 
-This is the main reusable memory layer behind Strandspace Studio.
+Depending on the app, domain-specific fields are layered on top of that base pattern.
 
-### Soundspace
+For example:
 
-Soundspace is the seeded domain layer built on the same general recall idea, but with a schema tuned for sound workflows.
-
-A sound construct can include fields such as:
-
-- device brand and model
-- device type
-- source type
-- venue size
-- event type
-- setup guidance
-- tags
-- strands
-- summary text
+- **Soundspace** adds device and event setup details
+- **DiabeticSpace** adds recipe, ingredient, meal-type, and adaptation flows
 
 ---
 
 ## Current Routing Behavior
 
-The app is built around local-first recall.
+The live system uses local-first routing.
 
-From the current code and tests, the active routing behavior includes:
+From the current codebase, the routing behavior includes modes such as:
 
-- `local_recall` when the construct is stable enough to answer directly
-- `api_validate` when local recall is usable but narrow or ambiguous
-- API-assisted draft generation when the user explicitly invokes the assist path
-- generated-and-stored behavior in Soundspace when a matching construct does not already exist or generation is forced
+- `local_recall` when a construct is stable enough to answer directly
+- `api_validate` when local memory is usable but still narrow or ambiguous
+- `api_expand` when the system found partial local memory but needs help to complete the answer
+- `teach_local` when memory is too thin and another local example should be captured first
 
-That means the live system already does more than simple keyword lookup. It attempts to route between direct reuse, validation, and fresh construct creation.
-
----
-
-## Current Benchmarking
-
-The current benchmark feature compares:
-
-- **local Strandbase recall**
-- **LLM assist round-trip latency**
-
-The benchmark is tied to the current recall flow and is exposed in the Studio interface through the **Compare local vs LLM** action.
-
-This is important because the application is not only trying to answer correctly. It is also trying to show when repeated recall can be served from local memory much faster than an external call.
+This is important because the system is not designed to call an external model by default.
+It first asks whether local memory is already sufficient.
 
 ---
 
-## OpenAI Assist Integration
+## What Makes Strandspace Different
 
-OpenAI assist is optional.
+Strandspace is not just generic text search.
 
-When `OPENAI_API_KEY` is configured, the Subjectspace assist route can:
+It is trying to preserve **reusable working structure**.
 
-- generate a draft validation or expansion response
-- turn that result into a suggested construct
-- optionally save that construct back into local memory
+Instead of paying the full cost of broad reasoning every time, the platform tries to:
 
-When the API key is not present, the app reports that assist is unavailable instead of pretending the remote path is active.
+- identify the repeated task
+- reactivate the right stored construct
+- emit a usable answer from local memory
+- escalate outward only when needed
 
----
-
-## What the Current Test Suite Covers
-
-The current automated suite covers **11 passing tests** around the live app surface.
-
-Those tests verify behavior such as:
-
-- serving the main Strandspace Studio interface
-- serving the standalone Soundspace interface
-- exposing seeded subject lists
-- storing and recalling a custom Subjectspace construct
-- routing ambiguous recall toward API validation
-- reporting assist-disabled status when no API key is present
-- comparing local recall against a mocked LLM round-trip
-- returning an OpenAI-backed draft that can be saved into local memory
-- recalling a seeded Soundspace mixer setup
-- learning a new Soundspace construct for later reuse
-- generating and storing a missing Soundspace construct on demand
+In practice, that means it behaves more like a **memory layer for repeated work** than a general-purpose chatbot.
 
 ---
 
-## Why This Matters
+## Current Status
 
-A lot of software keeps paying the full retrieval or reasoning cost for work it has effectively already learned.
+This repository is an active working prototype and platform lab.
 
-Strandspace is aimed at a narrower, more practical problem:
+It already includes:
 
-**How do you let a system remember repeated working patterns, recall them quickly, and only expand outward when the stored memory is not enough?**
+- a browser app surface
+- a subject-agnostic construct memory system
+- a standalone Soundspace app
+- a working DiabeticSpace application
+- local SQLite-backed memory
+- optional OpenAI-assisted generation and validation
+- learn-back flows that save improved results locally
+- automated tests covering the main app and recall behaviors
 
-That makes it useful for domains where the work is repetitive but not perfectly identical.
+This also means the project is still evolving.
+
+Some parts are already proving the concept well, while other parts still need:
+
+- cleanup
+- rewrites
+- sharper product boundaries
+- documentation updates
+- polish around app packaging and UX
+
+---
+
+## Practical Positioning
+
+The best way to understand Strandspace is this:
+
+**Strandspace is a local-first structured memory engine for apps that need to remember and adapt repeated tasks.**
+
+That makes it especially useful for:
+
+- repeated operational knowledge
+- recurring setup patterns
+- personal or domain-specific recipe memory
+- troubleshooting systems
+- task assistants that should improve with use
+
+---
+
+## Repository Layout
+
+```text
+.
+├─ README.md
+├─ LICENSE
+├─ docs/
+│  └─ whitepaper.md
+├─ public/
+│  ├─ index.html
+│  ├─ studio.html
+│  └─ soundspace/
+├─ strandspace/
+│  ├─ openai-assist.js
+│  ├─ sound-llm.js
+│  ├─ soundspace.js
+│  ├─ subjectspace.js
+│  ├─ diabeticspace.js
+│  └─ diabetic-assist.js
+├─ test/
+│  ├─ run-tests.mjs
+│  └─ diabeticspace-tests.mjs
+├─ data/
+└─ server.mjs
+```
 
 ---
 
@@ -202,7 +241,7 @@ That makes it useful for domains where the work is repetitive but not perfectly 
 ### Requirements
 
 - Node.js with support for `node:sqlite`
-- an `OPENAI_API_KEY` only if you want the Subjectspace assist path enabled
+- an `OPENAI_API_KEY` only if you want the AI-assisted routes enabled
 
 ### Install
 
@@ -216,12 +255,7 @@ npm install
 npm run dev
 ```
 
-The app runs at:
-
-- `http://localhost:3000/`
-- `http://localhost:3000/soundspace`
-
-### Run tests
+### Test
 
 ```bash
 npm test
@@ -229,12 +263,13 @@ npm test
 
 ---
 
-## Key Routes
+## Current App Routes
 
-### App routes
+### Main surfaces
 
-- `/` -> Strandspace Studio
-- `/soundspace` -> standalone Soundspace app
+- `/` -> DiabeticSpace launcher/app surface
+- `/studio.html` -> Strandspace Studio
+- `/soundspace` -> Soundspace
 
 ### Subjectspace API
 
@@ -256,29 +291,41 @@ npm test
 - `POST /api/soundspace/learn`
 - `POST /api/soundspace/answer`
 
+### DiabeticSpace API
+
+- `GET /api/diabetic/recipes`
+- `GET /api/diabetic/recipe?recipe_id=...`
+- `GET /api/diabetic/search?q=...`
+- `POST /api/diabetic/search-create`
+- `POST /api/diabetic/chat`
+- `POST /api/diabetic/save`
+- `POST /api/diabetic/adapt`
+- `POST /api/diabetic/ensure-image`
+- `POST /api/diabetic/builder/start`
+- `POST /api/diabetic/builder/next`
+- `POST /api/diabetic/builder/complete`
+
 ---
 
-## Repository Layout
+## What To Expect Next
 
-```text
-.
-├─ README.md
-├─ LICENSE
-├─ docs/
-│  └─ whitepaper.md
-├─ public/
-│  ├─ index.html
-│  └─ soundspace/
-├─ strandspace/
-│  ├─ openai-assist.js
-│  ├─ sound-llm.js
-│  ├─ soundspace.js
-│  └─ subjectspace.js
-├─ test/
-│  └─ run-tests.mjs
-├─ data/
-└─ server.mjs
-```
+The near-term direction for this repository is:
+
+- continue proving the Strandspace engine through real apps
+- polish one app surface into a cleaner user-facing product
+- keep improving local-first recall and adaptation behavior
+- reduce unnecessary external-token use when local memory is already strong
+- improve documentation so the platform and app layers are easier to understand
+
+---
+
+## White Paper
+
+For the longer architecture and theory discussion, see:
+
+- `docs/whitepaper.md`
+
+The README is intended to be the practical front door for the current repository and the apps it contains.
 
 ---
 
@@ -290,16 +337,6 @@ See `LICENSE` for the full text.
 
 ---
 
-## White Paper
+## In One Sentence
 
-For the longer theory and architecture discussion, see:
-
-- `docs/whitepaper.md`
-
-The README is the practical front door for the current app.
-
----
-
-## Positioning in One Sentence
-
-**Strandspace Studio is a local-first construct memory system for repeated tasks that recalls learned patterns, benchmarks local recall against external assist, and stores improved answers for future reuse.**
+**Strandspace is a local-first structured memory platform that stores reusable constructs, recalls them quickly, routes to AI only when needed, and powers apps that learn through repeated use.**
