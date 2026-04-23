@@ -285,7 +285,7 @@ body.diabeticspace {
 .ds-search-results {
   margin-top: 16px;
   display: grid;
-  grid-template-columns: 0.95fr 1.05fr 0.95fr;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 16px;
 }
 
@@ -299,6 +299,18 @@ body.diabeticspace {
   margin: 0 0 10px;
   font-size: 1.05rem;
   color: rgba(246, 244, 255, 0.92);
+}
+
+.ds-selected-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.ds-selected-head .ds-results-title {
+  margin: 0;
 }
 
 .ds-empty {

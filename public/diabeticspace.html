@@ -74,13 +74,21 @@
           <div class="ds-muted" id="search-hint"></div>
 
           <div class="ds-search-results" aria-label="Search results">
-            <div class="ds-results-block">
+            <div class="ds-results-block" id="selected-block" style="display:none;">
+              <div class="ds-selected-head">
+                <h3 class="ds-results-title">Selected Recipe</h3>
+                <button id="selected-clear" type="button" class="ghost-action">Choose another</button>
+              </div>
+              <div id="selected-recipe"></div>
+            </div>
+
+            <div class="ds-results-block" id="browse-block">
               <h3 class="ds-results-title" id="browse-title">Saved recipes</h3>
               <div class="ds-match-grid" id="browse-list"></div>
               <p class="ds-sub ds-empty" id="browse-empty" style="display:none;">No saved recipes in this meal type yet.</p>
             </div>
 
-            <div class="ds-results-block">
+            <div class="ds-results-block" id="matches-block">
               <h3 class="ds-results-title">Local Matches</h3>
               <div class="ds-match-grid" id="search-matches"></div>
               <p class="ds-sub ds-empty" id="search-empty" style="display:none;">No strong local matches found.</p>
@@ -154,9 +162,14 @@
         searchInput: document.getElementById("search-input"),
         searchButton: document.getElementById("search-button"),
         searchUseAi: document.getElementById("search-use-ai"),
+        selectedBlock: document.getElementById("selected-block"),
+        selectedRecipe: document.getElementById("selected-recipe"),
+        selectedClear: document.getElementById("selected-clear"),
+        browseBlock: document.getElementById("browse-block"),
         browseList: document.getElementById("browse-list"),
         browseEmpty: document.getElementById("browse-empty"),
         browseTitle: document.getElementById("browse-title"),
+        matchesBlock: document.getElementById("matches-block"),
         searchMatches: document.getElementById("search-matches"),
         searchHint: document.getElementById("search-hint"),
         searchEmpty: document.getElementById("search-empty"),
@@ -178,6 +191,7 @@
       let builderSessionId = "";
       let builderStage = "";
       let cachedLibrary = [];
+      let selectedRecipeId = "";
 
       function escapeHtml(value = "") {
         return String(value ?? "")
@@ -227,6 +241,7 @@
       }
 
       function setMealFilter(meal) {
+        clearSelectedRecipe();
         activeMealFilter = String(meal ?? "");
         for (const btn of els.mealFilters) {
           const value = String(btn.dataset.meal ?? "");
@@ -361,8 +376,39 @@
         renderBrowseList();
       }
 
+      function updateSearchVisibility() {
+        const hasSelection = Boolean(selectedRecipeId);
+
+        if (els.selectedBlock) {
+          els.selectedBlock.style.display = hasSelection ? "" : "none";
+        }
+
+        if (els.browseBlock) {
+          els.browseBlock.style.display = (!hasSelection && Boolean(activeMealFilter)) ? "" : "none";
+        }
+
+        if (els.matchesBlock) {
+          els.matchesBlock.style.display = hasSelection ? "none" : "";
+        }
+
+        if (els.aiBlock) {
+          els.aiBlock.style.display = hasSelection ? "none" : els.aiBlock.style.display;
+        }
+      }
+
       function renderBrowseList() {
         if (!els.browseList) return;
+        updateSearchVisibility();
+        if (!activeMealFilter) {
+          els.browseList.innerHTML = "";
+          if (els.browseEmpty) {
+            els.browseEmpty.style.display = "none";
+          }
+          if (els.browseTitle) {
+            els.browseTitle.textContent = "Saved recipes";
+          }
+          return;
+        }
         els.browseList.innerHTML = "";
 
         const mealLabel = activeMealFilter ? activeMealFilter : "all";
@@ -391,6 +437,48 @@
           const item = renderMatchCard(match);
           if (item) els.browseList.appendChild(item);
         }
+      }
+
+      function clearSelectedRecipe() {
+        selectedRecipeId = "";
+        if (els.selectedRecipe) {
+          els.selectedRecipe.innerHTML = "";
+        }
+        updateSearchVisibility();
+      }
+
+      function selectRecipeCard(recipe, { route = "local_recall", statusText = "" } = {}) {
+        if (!recipe?.recipe_id) return;
+        selectedRecipeId = String(recipe.recipe_id);
+        if (els.selectedRecipe) {
+          els.selectedRecipe.innerHTML = "";
+          const card = renderRecipeCard({ recipe, route, statusText });
+          if (card) {
+            els.selectedRecipe.appendChild(card);
+            const discardBtn = card.querySelector("button.discard");
+            if (discardBtn) {
+              discardBtn.addEventListener("click", () => {
+                selectedRecipeId = "";
+                updateSearchVisibility();
+                renderBrowseList();
+              }, { once: true });
+            }
+          }
+        }
+        updateSearchVisibility();
+        els.selectedBlock?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+      }
+
+      async function selectRecipeById(recipeId) {
+        const id = String(recipeId ?? "").trim();
+        if (!id) return;
+        els.searchHint.textContent = "";
+        const { response, data } = await getJson(`/api/diabetic/recipe?recipe_id=${encodeURIComponent(id)}`);
+        if (!response.ok) {
+          els.searchHint.textContent = data?.error ? `Unable to load recipe: ${data.error}` : `Unable to load recipe (HTTP ${response.status}).`;
+          return;
+        }
+        selectRecipeCard(data.recipe, { route: "local_recall", statusText: "Saved locally ✓" });
       }
 
       function clearSearchResults() {
@@ -488,16 +576,7 @@
           button.disabled = true;
           button.textContent = "Loading…";
           try {
-            const { response, data } = await getJson(`/api/diabetic/recipe?recipe_id=${encodeURIComponent(match.recipe_id)}`);
-            if (!response.ok) {
-              els.searchHint.textContent = data?.error ? `Unable to load recipe: ${data.error}` : `Unable to load recipe (HTTP ${response.status}).`;
-              return;
-            }
-            const next = renderRecipeCard({ recipe: data.recipe, route: "local_recall", statusText: "Saved locally ✓" });
-            if (next) {
-              els.recipeCards.prepend(next);
-              next.scrollIntoView({ behavior: "smooth", block: "start" });
-            }
+            await selectRecipeById(match.recipe_id);
           } finally {
             button.disabled = false;
             button.textContent = "Show Recipe";
@@ -509,6 +588,7 @@
 
       async function runSearch() {
         const query = String(els.searchInput.value ?? "").trim();
+        clearSelectedRecipe();
         clearSearchResults();
         els.searchHint.textContent = "";
         if (!query) {
@@ -682,6 +762,11 @@
       for (const btn of els.mealFilters) {
         btn.addEventListener("click", () => setMealFilter(btn.dataset.meal ?? ""));
       }
+
+      els.selectedClear?.addEventListener("click", () => {
+        clearSelectedRecipe();
+        renderBrowseList();
+      });
 
       els.searchButton.addEventListener("click", runSearch);
       els.searchInput.addEventListener("keydown", (event) => {
