@@ -67,7 +67,7 @@ body.diabeticspace {
   right: -54px;
   width: 420px;
   height: 420px;
-  background-image: url("/strandspace-logo.png");
+  background-image: url("./strandspace-logo.png");
   background-repeat: no-repeat;
   background-position: top right;
   background-size: contain;
@@ -137,6 +137,66 @@ body.diabeticspace {
   z-index: 1;
 }
 
+.ds-telemetry {
+  position: relative;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 22px;
+  border: 1px solid rgba(170, 150, 255, 0.18);
+  background: rgba(13, 12, 36, 0.46);
+  z-index: 1;
+}
+
+.ds-telemetry-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ds-spinner {
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+  border-radius: 999px;
+  border: 2px solid rgba(199, 190, 228, 0.26);
+  border-top-color: var(--ds-accent-3);
+  opacity: 0;
+  animation: ds-spin 0.9s linear infinite;
+}
+
+.ds-telemetry.loading .ds-spinner {
+  opacity: 1;
+}
+
+.ds-telemetry-title,
+.ds-telemetry-detail {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.ds-telemetry-title {
+  color: rgba(246, 244, 255, 0.92);
+  font-weight: 760;
+}
+
+.ds-telemetry-detail {
+  color: rgba(199, 190, 228, 0.78);
+  font-size: 0.92rem;
+}
+
+.ds-telemetry.error {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.ds-telemetry.error .ds-telemetry-title {
+  color: rgba(255, 226, 226, 0.96);
+}
+
+.ds-telemetry.error .ds-telemetry-detail {
+  color: rgba(255, 226, 226, 0.76);
+}
+
 .ds-pill {
   display: inline-flex;
   align-items: center;
@@ -187,6 +247,12 @@ body.diabeticspace {
   margin-top: 16px;
   display: grid;
   gap: 16px;
+}
+
+@keyframes ds-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .ds-panel {

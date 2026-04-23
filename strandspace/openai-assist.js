@@ -8,6 +8,30 @@ let mockAssistRunner = null;
 let resolvedApiKey = null;
 let resolvedApiKeyLoaded = false;
 
+function normalizeUsage(usage = null) {
+  if (!usage || typeof usage !== "object") {
+    return null;
+  }
+
+  const inputTokensRaw = usage.input_tokens ?? usage.inputTokens ?? usage.prompt_tokens ?? null;
+  const outputTokensRaw = usage.output_tokens ?? usage.outputTokens ?? usage.completion_tokens ?? null;
+  const totalTokensRaw = usage.total_tokens ?? usage.totalTokens ?? null;
+
+  const inputTokens = Number.isFinite(Number(inputTokensRaw)) ? Number(inputTokensRaw) : null;
+  const outputTokens = Number.isFinite(Number(outputTokensRaw)) ? Number(outputTokensRaw) : null;
+  const totalTokens = Number.isFinite(Number(totalTokensRaw))
+    ? Number(totalTokensRaw)
+    : Number.isFinite(inputTokens) || Number.isFinite(outputTokens)
+      ? Number((inputTokens ?? 0) + (outputTokens ?? 0))
+      : null;
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens
+  };
+}
+
 function normalizeArray(value, limit = 12) {
   if (!Array.isArray(value)) {
     return [];
@@ -327,6 +351,7 @@ export async function generateOpenAiSubjectAssist({
   return {
     responseId: response.id,
     model: response.model ?? DEFAULT_MODEL,
+    usage: normalizeUsage(response.usage),
     assist
   };
 }

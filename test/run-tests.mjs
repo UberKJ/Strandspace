@@ -82,9 +82,19 @@ await registerDiabeticspaceTests({
   tempDatabasePath
 });
 
-await check("GET / serves Strandspace Studio", async () => {
+await check("GET / serves DiabeticSpace launcher", async () => {
   await withServer(async (address) => {
     const response = await fetch(`http://127.0.0.1:${address.port}/`);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /DiabeticSpace/);
+    assert.match(html, /diabeticspace\.html/);
+  });
+});
+
+await check("GET /studio.html serves Strandspace Studio", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(`http://127.0.0.1:${address.port}/studio.html`);
     assert.equal(response.status, 200);
     const html = await response.text();
     assert.match(html, /Strandspace Studio/);

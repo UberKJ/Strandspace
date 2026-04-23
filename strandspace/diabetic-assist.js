@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { execFileSync } from "node:child_process";
 import { access, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { performance } from "node:perf_hooks";
 
 const DEFAULT_MODEL = process.env.DIABETICSPACE_OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-5.4-mini";
 const DEFAULT_IMAGE_MODEL = process.env.DIABETICSPACE_IMAGE_MODEL || "gpt-image-1";
@@ -11,6 +12,30 @@ let mock = null;
 let imageMock = null;
 let resolvedApiKey = null;
 let resolvedApiKeyLoaded = false;
+
+function normalizeUsage(usage = null) {
+  if (!usage || typeof usage !== "object") {
+    return null;
+  }
+
+  const inputTokensRaw = usage.input_tokens ?? usage.inputTokens ?? usage.prompt_tokens ?? null;
+  const outputTokensRaw = usage.output_tokens ?? usage.outputTokens ?? usage.completion_tokens ?? null;
+  const totalTokensRaw = usage.total_tokens ?? usage.totalTokens ?? null;
+
+  const inputTokens = Number.isFinite(Number(inputTokensRaw)) ? Number(inputTokensRaw) : null;
+  const outputTokens = Number.isFinite(Number(outputTokensRaw)) ? Number(outputTokensRaw) : null;
+  const totalTokens = Number.isFinite(Number(totalTokensRaw))
+    ? Number(totalTokensRaw)
+    : Number.isFinite(inputTokens) || Number.isFinite(outputTokens)
+      ? Number((inputTokens ?? 0) + (outputTokens ?? 0))
+      : null;
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens
+  };
+}
 
 function canUseWindowsEnvFallback() {
   return process.platform === "win32" && process.env.DIABETICSPACE_DISABLE_USER_ENV_LOOKUP !== "1";
@@ -175,10 +200,23 @@ async function runOpenAi({
   routeLabel
 }) {
   if (mock) {
-    return mock({ systemPrompt, input, routeLabel });
+    const recipe = await mock({ systemPrompt, input, routeLabel });
+    return {
+      recipe,
+      llm: {
+        provider: "openai",
+        model: DEFAULT_MODEL,
+        latencyMs: null,
+        responseId: null,
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null
+      }
+    };
   }
 
   const openai = getClient();
+  const started = performance.now();
   const response = await openai.responses.create({
     model: DEFAULT_MODEL,
     store: false,
@@ -194,7 +232,21 @@ async function runOpenAi({
     }
   });
 
-  return parseJsonOrThrow(response.output_text, routeLabel);
+  const recipe = parseJsonOrThrow(response.output_text, routeLabel);
+  const usage = normalizeUsage(response.usage);
+
+  return {
+    recipe,
+    llm: {
+      provider: "openai",
+      model: response.model ?? DEFAULT_MODEL,
+      latencyMs: Number((performance.now() - started).toFixed(3)),
+      responseId: response.id ?? null,
+      inputTokens: usage?.inputTokens ?? null,
+      outputTokens: usage?.outputTokens ?? null,
+      totalTokens: usage?.totalTokens ?? null
+    }
+  };
 }
 
 export async function generateDiabeticRecipe(userMessage, localRecallResult) {
@@ -294,6 +346,7 @@ export async function generateDiabeticRecipeImageToFile(recipe, {
     throw new Error("generateDiabeticRecipeImageToFile: outputDir is required");
   }
 
+  const started = performance.now();
   await mkdir(dir, { recursive: true });
 
   const filename = sanitizeRecipeImageFilename(recipe_id);
@@ -301,7 +354,12 @@ export async function generateDiabeticRecipeImageToFile(recipe, {
 
   try {
     await access(filePath);
-    return { image_url: `/diabetic-images/${filename}`, filePath };
+    return {
+      image_url: `diabetic-images/${filename}`,
+      filePath,
+      model,
+      latencyMs: Number((performance.now() - started).toFixed(3))
+    };
   } catch {
     // File doesn't exist yet; continue.
   }
@@ -314,7 +372,12 @@ export async function generateDiabeticRecipeImageToFile(recipe, {
       throw new Error("generateDiabeticRecipeImageToFile: image mock must return a Uint8Array");
     }
     await writeFile(filePath, buffer);
-    return { image_url: `/diabetic-images/${filename}`, filePath };
+    return {
+      image_url: `diabetic-images/${filename}`,
+      filePath,
+      model,
+      latencyMs: Number((performance.now() - started).toFixed(3))
+    };
   }
 
   const openai = getClient();
@@ -344,5 +407,10 @@ export async function generateDiabeticRecipeImageToFile(recipe, {
   }
 
   await writeFile(filePath, bytes);
-  return { image_url: `/diabetic-images/${filename}`, filePath };
+  return {
+    image_url: `diabetic-images/${filename}`,
+    filePath,
+    model,
+    latencyMs: Number((performance.now() - started).toFixed(3))
+  };
 }

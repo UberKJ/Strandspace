@@ -10,6 +10,9 @@ const traceSummaryEl = document.getElementById("trace-summary");
 const speedMetaEl = document.getElementById("speed-meta");
 const speedReportEl = document.getElementById("speed-report");
 const speedCompareButton = document.getElementById("speed-compare-button");
+const llmActivityEl = document.getElementById("llm-activity");
+const llmMetaEl = document.getElementById("llm-meta");
+const llmDetailEl = document.getElementById("llm-detail");
 const libraryMetaEl = document.getElementById("library-meta");
 const libraryListEl = document.getElementById("library-list");
 const learnForm = document.getElementById("learn-form");
@@ -38,6 +41,17 @@ let latestComparison = null;
 let benchmarkState = {
   phase: "idle",
   message: ""
+};
+let llmActivity = {
+  phase: "idle",
+  kind: "",
+  provider: "",
+  model: "",
+  latencyMs: null,
+  inputTokens: null,
+  outputTokens: null,
+  totalTokens: null,
+  message: "No LLM requests yet."
 };
 
 function escapeHtml(value) {
@@ -78,6 +92,99 @@ function formatMilliseconds(value) {
   }
 
   return `${Number(value).toFixed(Number(value) >= 10 ? 1 : 3)} ms`;
+}
+
+function formatTokens(value) {
+  if (!Number.isFinite(Number(value))) {
+    return "n/a";
+  }
+
+  return `${Math.round(Number(value))}`;
+}
+
+function renderLlmActivity() {
+  if (!llmActivityEl || !llmMetaEl || !llmDetailEl) {
+    return;
+  }
+
+  const phase = llmActivity.phase;
+  llmActivityEl.className = `llm-activity${phase === "loading" ? " loading" : ""}${phase === "error" ? " error" : ""}`;
+
+  if (phase === "loading") {
+    llmMetaEl.textContent = llmActivity.model ? `LLM running on ${llmActivity.model}...` : "LLM running...";
+    llmDetailEl.textContent = llmActivity.message || "Sending request...";
+    return;
+  }
+
+  if (phase === "error") {
+    llmMetaEl.textContent = "LLM request failed.";
+    llmDetailEl.textContent = llmActivity.message || "The LLM request failed.";
+    return;
+  }
+
+  if (phase === "done") {
+    const modelLabel = llmActivity.model ? ` • ${llmActivity.model}` : "";
+    llmMetaEl.textContent = `${llmActivity.kind || "LLM"} finished in ${formatMilliseconds(llmActivity.latencyMs)}${modelLabel}.`;
+    llmDetailEl.textContent = `Tokens in ${formatTokens(llmActivity.inputTokens)} • out ${formatTokens(llmActivity.outputTokens)} • total ${formatTokens(llmActivity.totalTokens)}.`;
+    return;
+  }
+
+  llmMetaEl.textContent = "LLM idle.";
+  llmDetailEl.textContent = llmActivity.message || "No LLM requests yet.";
+}
+
+function startLlmActivity({ kind = "LLM", provider = "", model = "", message = "" } = {}) {
+  llmActivity = {
+    phase: "loading",
+    kind,
+    provider,
+    model,
+    latencyMs: null,
+    inputTokens: null,
+    outputTokens: null,
+    totalTokens: null,
+    message: message || "Sending request..."
+  };
+  renderLlmActivity();
+}
+
+function finishLlmActivity({ kind = "LLM", provider = "", model = "", latencyMs = null, inputTokens = null, outputTokens = null, totalTokens = null, message = "" } = {}) {
+  llmActivity = {
+    phase: "done",
+    kind,
+    provider,
+    model,
+    latencyMs,
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    message: message || ""
+  };
+  renderLlmActivity();
+}
+
+function idleLlmActivity(message = "No LLM requests yet.") {
+  llmActivity = {
+    phase: "idle",
+    kind: "",
+    provider: "",
+    model: assistStatus.model ?? "",
+    latencyMs: null,
+    inputTokens: null,
+    outputTokens: null,
+    totalTokens: null,
+    message
+  };
+  renderLlmActivity();
+}
+
+function failLlmActivity(message = "The LLM request failed.") {
+  llmActivity = {
+    ...llmActivity,
+    phase: "error",
+    message
+  };
+  renderLlmActivity();
 }
 
 function previewQuestion(value = "", limit = 112) {
@@ -217,6 +324,9 @@ async function loadAssistStatus() {
   }
 
   subjectMetaEl.textContent = subjectMetaText();
+  if (llmActivity.phase === "idle") {
+    idleLlmActivity(assistStatus.enabled ? "No LLM requests yet." : assistStatus.reason);
+  }
   renderSpeedReport();
 }
 
@@ -510,6 +620,7 @@ function renderSpeedReport() {
         <div class="speed-notes">
           <span>${escapeHtml(llm.model ?? "API")}</span>
           <span>${escapeHtml(llm.apiAction ?? (llm.enabled ? "assist" : "unavailable"))}</span>
+          <span>Tokens in ${escapeHtml(formatTokens(llm.inputTokens))}</span>
         </div>
       </article>
     </div>
@@ -814,6 +925,12 @@ async function runApiAssist() {
   }
 
   recallMetaEl.textContent = "Running OpenAI assist...";
+  startLlmActivity({
+    kind: "OpenAI assist",
+    provider: "openai",
+    model: assistStatus.model,
+    message: "Requesting API validation/expansion..."
+  });
 
   try {
     latestAssist = await postJson("/api/subjectspace/assist", {
@@ -821,10 +938,21 @@ async function runApiAssist() {
       question: lastQuestion
     });
 
+    const llm = latestAssist.llm ?? {};
+    finishLlmActivity({
+      kind: "OpenAI assist",
+      provider: llm.provider ?? "openai",
+      model: llm.model ?? assistStatus.model,
+      latencyMs: llm.latencyMs ?? null,
+      inputTokens: llm.inputTokens ?? null,
+      outputTokens: llm.outputTokens ?? null,
+      totalTokens: llm.totalTokens ?? null
+    });
     recallMetaEl.textContent = `API assist returned ${latestAssist.assist?.apiAction ?? "a draft"}.`;
     renderAnswer(lastPayload);
   } catch (error) {
     recallMetaEl.textContent = error instanceof Error ? error.message : "API assist failed.";
+    failLlmActivity(error instanceof Error ? error.message : "API assist failed.");
     latestAssist = null;
     renderAnswer(lastPayload);
   }
@@ -870,6 +998,16 @@ async function runSpeedCompare() {
       : "Timing local Strandbase recall. API assist is currently unavailable."
   };
   renderSpeedReport();
+  if (assistStatus.enabled) {
+    startLlmActivity({
+      kind: "LLM benchmark",
+      provider: "openai",
+      model: assistStatus.model,
+      message: "Timing LLM assist round-trip..."
+    });
+  } else {
+    idleLlmActivity(assistStatus.reason);
+  }
 
   try {
     latestComparison = await postJson("/api/subjectspace/compare", {
@@ -882,6 +1020,19 @@ async function runSpeedCompare() {
       message: latestComparison.comparison?.summary ?? "Benchmark complete."
     };
     recallMetaEl.textContent = latestComparison.comparison?.summary ?? "Benchmark complete.";
+    if (latestComparison.llm?.enabled) {
+      finishLlmActivity({
+        kind: "LLM benchmark",
+        provider: latestComparison.llm?.provider ?? "openai",
+        model: latestComparison.llm?.model ?? assistStatus.model,
+        latencyMs: latestComparison.llm?.latencyMs ?? null,
+        inputTokens: latestComparison.llm?.inputTokens ?? null,
+        outputTokens: latestComparison.llm?.outputTokens ?? null,
+        totalTokens: latestComparison.llm?.totalTokens ?? null
+      });
+    } else if (assistStatus.enabled) {
+      idleLlmActivity(latestComparison.llm?.error ?? latestComparison.llm?.reason ?? "LLM benchmark did not run.");
+    }
   } catch (error) {
     latestComparison = null;
     benchmarkState = {
@@ -889,6 +1040,9 @@ async function runSpeedCompare() {
       message: error instanceof Error ? error.message : "Unable to benchmark this prompt."
     };
     recallMetaEl.textContent = "Benchmark failed.";
+    if (assistStatus.enabled) {
+      failLlmActivity(error instanceof Error ? error.message : "Unable to benchmark this prompt.");
+    }
   }
 
   renderSpeedReport();

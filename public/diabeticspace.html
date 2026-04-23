@@ -4,15 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Diabetic Friendly Recipe Assistant — Strandspace</title>
-    <link rel="stylesheet" href="/style.css?v=diabeticspace-base" />
-    <link rel="stylesheet" href="/diabeticspace.css?v=diabeticspace-refine-01" />
+    <link rel="stylesheet" href="./style.css?v=diabeticspace-base-02" />
+    <link rel="stylesheet" href="./diabeticspace.css?v=diabeticspace-refine-02" />
   </head>
 	  <body class="diabeticspace">
 	    <div class="ds-shell">
 	      <header class="ds-header">
 	        <div class="ds-header-row">
 	          <button id="ds-home" class="ds-logo-button" type="button" aria-label="Home">
-	            <img class="ds-logo" src="/strandspace-logo.png" alt="Strandspace logo" loading="lazy" />
+	            <img class="ds-logo" src="./strandspace-logo.png" alt="Strandspace logo" loading="lazy" />
 	          </button>
 	          <div>
 	            <h1>Diabetic Friendly Recipe Assistant</h1>
@@ -44,6 +44,16 @@
             <span id="library-meta">Loading recipes...</span>
           </div>
         </div>
+
+        <section id="ai-telemetry" class="ds-telemetry" aria-live="polite">
+          <div class="ds-telemetry-row">
+            <span class="ds-spinner" aria-hidden="true"></span>
+            <div>
+              <p id="ai-telemetry-title" class="ds-telemetry-title">AI idle.</p>
+              <p id="ai-telemetry-detail" class="ds-telemetry-detail">No AI work yet.</p>
+            </div>
+          </div>
+        </section>
       </header>
 
       <main class="ds-main">
@@ -162,6 +172,9 @@
         mealFilters: Array.from(document.querySelectorAll(".meal-filter")),
         libraryMeta: document.getElementById("library-meta"),
         recipeCards: document.getElementById("recipe-cards"),
+        aiTelemetry: document.getElementById("ai-telemetry"),
+        aiTelemetryTitle: document.getElementById("ai-telemetry-title"),
+        aiTelemetryDetail: document.getElementById("ai-telemetry-detail"),
         searchInput: document.getElementById("search-input"),
         searchButton: document.getElementById("search-button"),
         searchUseAi: document.getElementById("search-use-ai"),
@@ -203,6 +216,84 @@
           .replaceAll(">", "&gt;")
           .replaceAll('"', "&quot;")
           .replaceAll("'", "&#39;");
+      }
+
+      function formatMilliseconds(value) {
+        if (!Number.isFinite(Number(value))) {
+          return "n/a";
+        }
+
+        const numeric = Number(value);
+        return `${numeric.toFixed(numeric >= 10 ? 1 : 3)} ms`;
+      }
+
+      function formatTokens(value) {
+        if (!Number.isFinite(Number(value))) {
+          return "n/a";
+        }
+
+        return `${Math.round(Number(value))}`;
+      }
+
+      function normalizeAssetUrl(url) {
+        const trimmed = String(url ?? "").trim();
+        if (!trimmed) return "";
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
+        if (trimmed.startsWith("/")) return `.${trimmed}`;
+        return trimmed;
+      }
+
+      function setTelemetry({ phase = "idle", title = "", detail = "" } = {}) {
+        if (!els.aiTelemetry || !els.aiTelemetryTitle || !els.aiTelemetryDetail) return;
+        els.aiTelemetry.className = `ds-telemetry${phase === "loading" ? " loading" : ""}${phase === "error" ? " error" : ""}`;
+        els.aiTelemetryTitle.textContent = title || "AI idle.";
+        els.aiTelemetryDetail.textContent = detail || "No AI work yet.";
+      }
+
+      function summarizeMetrics(metrics = null) {
+        const localMs = metrics?.local?.latencyMs ?? null;
+        const llmMs = metrics?.llm?.latencyMs ?? null;
+        const imageMs = metrics?.image?.latencyMs ?? null;
+        const parts = [];
+        if (Number.isFinite(Number(localMs))) parts.push(`Local ${formatMilliseconds(localMs)}`);
+        if (Number.isFinite(Number(llmMs))) parts.push(`LLM ${formatMilliseconds(llmMs)}`);
+        if (Number.isFinite(Number(imageMs))) parts.push(`Image ${formatMilliseconds(imageMs)}`);
+        return parts.join(" • ");
+      }
+
+      function summarizeTokens(llm = null) {
+        if (!llm) return "";
+        if (!Number.isFinite(Number(llm.inputTokens)) && !Number.isFinite(Number(llm.totalTokens))) return "";
+        return `Tokens in ${formatTokens(llm.inputTokens)} • out ${formatTokens(llm.outputTokens)} • total ${formatTokens(llm.totalTokens)}`;
+      }
+
+      function startAiTelemetry(kind, message) {
+        setTelemetry({
+          phase: "loading",
+          title: kind || "AI working...",
+          detail: message || "Sending request..."
+        });
+      }
+
+      function finishTelemetry(kind, payload = {}) {
+        const metrics = payload?.metrics ?? null;
+        const route = String(payload?.route ?? "").trim();
+        const llm = metrics?.llm ?? null;
+        const timing = summarizeMetrics(metrics);
+        const tokens = summarizeTokens(llm);
+        setTelemetry({
+          phase: "idle",
+          title: `${kind || "Done"}${route ? ` • ${route}` : ""}${timing ? ` • ${timing}` : ""}`,
+          detail: tokens || (metrics?.image?.imageUrl ? `Image: ${metrics.image.imageUrl}` : "Ready.")
+        });
+      }
+
+      function failTelemetry(kind, message) {
+        setTelemetry({
+          phase: "error",
+          title: kind || "AI failed.",
+          detail: message || "Request failed."
+        });
       }
 
       async function postJson(url, payload) {
@@ -301,7 +392,7 @@
         const routeMeta = routeBadge(route);
         const substitutes = Array.isArray(recipe.substitutes) ? recipe.substitutes : [];
         const tags = Array.isArray(recipe.tags) ? recipe.tags : [];
-        const imageUrl = String(recipe.image_url ?? "").trim();
+        const imageUrl = normalizeAssetUrl(recipe.image_url);
 
         card.innerHTML = `
           ${imageUrl ? `<img class="ds-recipe-image" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(recipe.title || "Recipe image")}" loading="lazy" decoding="async" />` : ""}
@@ -359,6 +450,10 @@
 
         saveBtn.addEventListener("click", async () => {
           status.textContent = "Saving…";
+          const needsImage = !String(recipe.image_url ?? "").trim();
+          if (needsImage) {
+            startAiTelemetry("Generating image", "Creating a recipe photo...");
+          }
           const { response, data } = await postJson("/api/diabetic/save", recipe);
           status.textContent = response.ok ? "Saved locally ✓" : "Save failed";
           if (response.ok && data?.image_url && !recipe.image_url) {
@@ -370,8 +465,15 @@
               img.loading = "lazy";
               img.decoding = "async";
               img.alt = recipe.title || "Recipe image";
-              img.src = String(data.image_url);
+              img.src = normalizeAssetUrl(data.image_url);
               card.prepend(img);
+            }
+          }
+          if (needsImage) {
+            if (response.ok) {
+              finishTelemetry("Saved", data);
+            } else {
+              failTelemetry("Save failed", data?.error || "Unable to save recipe.");
             }
           }
           void refreshLibrary();
@@ -390,9 +492,11 @@
           const change = String(adaptInput.value ?? "").trim();
           if (!change) return;
           status.textContent = "Adapting…";
+          startAiTelemetry("Adapting recipe", "Calling AI to revise the recipe...");
           const { response, data } = await postJson("/api/diabetic/adapt", { recipe_id: recipe.recipe_id, change });
           if (!response.ok) {
             status.textContent = data?.route === "api_unavailable" ? "OpenAI not configured" : "Adapt failed";
+            failTelemetry("Adapt failed", data?.error || "Request failed.");
             return;
           }
           status.textContent = "Adapted ✓";
@@ -401,6 +505,7 @@
             els.recipeCards.prepend(next);
             next.scrollIntoView({ behavior: "smooth", block: "start" });
           }
+          finishTelemetry("Adapted", data);
         });
 
         return card;
@@ -663,8 +768,10 @@
                 return;
               }
               els.searchHint.textContent = data?.error ? `Search failed: ${data.error}` : `Search failed (HTTP ${response.status}).`;
+              failTelemetry("Search failed", data?.error || `HTTP ${response.status}`);
               return;
             }
+            finishTelemetry("Local search", data);
             const matches = Array.isArray(data.matches) ? data.matches : [];
             if (!matches.length) {
               els.searchEmpty.style.display = "";
@@ -676,6 +783,7 @@
             return;
           }
 
+          startAiTelemetry("Searching with AI", "Finding local matches and generating a new recipe...");
           const { response, data } = await postJson("/api/diabetic/search-create", {
             query,
             use_ai: true,
@@ -686,6 +794,7 @@
           if (response.status === 404) {
             els.searchHint.textContent = "AI search-create API not available on this server yet. Falling back to Quick Ask.";
             matches = await fallbackLocalSearch(query);
+            startAiTelemetry("Quick Ask", "Generating a recipe with AI...");
             const chat = await postJson("/api/diabetic/chat", { message: query });
             if (chat.response.ok && chat.data?.recipe) {
               els.aiBlock.style.display = "";
@@ -696,6 +805,9 @@
               });
               if (card) els.aiRecipe.appendChild(card);
               void refreshLibrary();
+              finishTelemetry("Quick Ask", chat.data);
+            } else if (!chat.response.ok) {
+              failTelemetry("Quick Ask failed", chat.data?.error || `HTTP ${chat.response.status}`);
             }
           }
           if (!matches.length) {
@@ -709,8 +821,10 @@
           if (!response.ok) {
             if (data?.route === "api_unavailable") {
               els.searchHint.textContent = "Local matches were found, but OpenAI is not configured.";
+              failTelemetry("AI unavailable", "OpenAI is not configured.");
             } else {
               els.searchHint.textContent = data?.error ? `Search failed: ${data.error}` : `Search failed (HTTP ${response.status}).`;
+              failTelemetry("Search failed", data?.error || `HTTP ${response.status}`);
             }
           }
 
@@ -719,9 +833,11 @@
             const card = renderRecipeCard({ recipe: data.recipe, route: "api_expand", statusText: "Saved locally ✓" });
             if (card) els.aiRecipe.appendChild(card);
             void refreshLibrary();
+            finishTelemetry("Search with AI", data);
           } else if (useAi && matches.length) {
             if (data?.ai_error) {
               els.searchHint.textContent = "Local matches were found, but AI could not create a new recipe.";
+              failTelemetry("AI error", data.ai_error);
             }
           }
         } finally {
@@ -766,9 +882,11 @@
           const confirmBtn = document.getElementById("builder-confirm");
           confirmBtn.addEventListener("click", async () => {
             els.builderHint.textContent = "Building…";
+            startAiTelemetry("Building recipe", "Generating a recipe with AI...");
             const { response: completeRes, data: completeData } = await postJson("/api/diabetic/builder/complete", { session_id: builderSessionId });
             if (!completeRes.ok) {
               els.builderHint.textContent = completeData?.route === "api_unavailable" ? "OpenAI not configured" : "Build failed.";
+              failTelemetry("Build failed", completeData?.error || `HTTP ${completeRes.status}`);
               return;
             }
             const card = renderRecipeCard({ recipe: completeData.recipe, route: completeData.route });
@@ -777,6 +895,7 @@
             builderSessionId = "";
             builderStage = "";
             void refreshLibrary();
+            finishTelemetry("Built", completeData);
           });
           return;
         }
@@ -786,10 +905,12 @@
       async function sendQuickMessage(message) {
         els.quickHint.textContent = "";
         appendMessage(els.quickMessages, "user", message);
+        startAiTelemetry("Quick Ask", "Generating a recipe with AI...");
         const { response, data } = await postJson("/api/diabetic/chat", { message });
         if (!response.ok) {
           const msg = data?.route === "api_unavailable" ? "OpenAI not configured." : (data?.error || "Request failed.");
           appendMessage(els.quickMessages, "assistant", msg);
+          failTelemetry("Quick Ask failed", data?.error || `HTTP ${response.status}`);
           return;
         }
         const card = renderRecipeCard({ recipe: data.recipe, route: data.route });
@@ -799,6 +920,7 @@
         }
         appendMessage(els.quickMessages, "assistant", "Recipe ready below. Save if approved.");
         void refreshLibrary();
+        finishTelemetry("Quick Ask", data);
       }
 
 	      els.modeSearch.addEventListener("click", () => setMode("search"));

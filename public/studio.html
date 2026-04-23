@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Strandspace Studio</title>
-    <link rel="stylesheet" href="/style.css?v=2026-04-15-speed-compare-02" />
-    <script type="module" src="/app.js?v=2026-04-15-speed-compare-02" defer></script>
+    <link rel="stylesheet" href="./style.css?v=2026-04-23-telemetry-01" />
+    <script type="module" src="./app.js?v=2026-04-23-telemetry-01" defer></script>
   </head>
   <body>
     <main class="studio-shell">
@@ -41,6 +41,16 @@
           </form>
 
           <div id="example-row" class="example-row" aria-label="Example recall prompts"></div>
+
+          <section id="llm-activity" class="llm-activity" aria-live="polite">
+            <div class="llm-activity-row">
+              <span class="llm-spinner" aria-hidden="true"></span>
+              <div class="llm-activity-copy">
+                <p id="llm-meta" class="meta">LLM idle.</p>
+                <p id="llm-detail" class="meta llm-detail">No LLM requests yet.</p>
+              </div>
+            </div>
+          </section>
         </div>
 
         <div class="hero-stage">

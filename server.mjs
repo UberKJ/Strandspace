@@ -257,8 +257,10 @@ async function readStaticFile(urlPath) {
       : (urlPath === "/soundspace" || urlPath === "/soundspace/" ? "/soundspace/index.html" : urlPath);
   const normalizedUrl = String(cleaned ?? "");
 
-  if (normalizedUrl.startsWith("/diabetic-images/")) {
-    const relative = normalizedUrl.replace(/^\/diabetic-images\//, "");
+  const diabeticImageMarker = "/diabetic-images/";
+  const diabeticImageIndex = normalizedUrl.indexOf(diabeticImageMarker);
+  if (diabeticImageIndex >= 0) {
+    const relative = normalizedUrl.slice(diabeticImageIndex + diabeticImageMarker.length);
     const baseDir = join(dataDir, "diabetic-images");
     const filePath = join(baseDir, relative);
     if (!normalize(filePath).startsWith(normalize(baseDir))) {
@@ -279,6 +281,14 @@ async function readStaticFile(urlPath) {
 async function handleStatic(req, res) {
   const url = new URL(req.url, "http://localhost");
   const pathname = decodeURIComponent(url.pathname);
+  if (pathname === "/soundspace") {
+    res.writeHead(302, {
+      Location: "/soundspace/",
+      "Cache-Control": "no-store"
+    });
+    res.end();
+    return;
+  }
   const resolvedPath =
     pathname === "/"
       ? "/index.html"
@@ -310,8 +320,12 @@ function soundConstructAnswerPayload(source, question, construct, recall) {
 }
 
 async function ensureDiabeticRecipeImage(db, recipe) {
-  if (!recipe || recipe.image_url) {
-    return recipe;
+  if (!recipe) {
+    return { recipe: null, image: null };
+  }
+
+  if (recipe.image_url) {
+    return { recipe, image: null };
   }
 
   const outputDir = String(process.env.DIABETICSPACE_IMAGE_DIR ?? "").trim() || join(dataDir, "diabetic-images");
@@ -319,15 +333,24 @@ async function ensureDiabeticRecipeImage(db, recipe) {
   try {
     const result = await generateDiabeticRecipeImageToFile(recipe, { outputDir });
     if (result?.image_url) {
-      return setDiabeticRecipeImage(db, recipe.recipe_id, result.image_url) ?? recipe;
+      const updated = setDiabeticRecipeImage(db, recipe.recipe_id, result.image_url) ?? recipe;
+      return {
+        recipe: updated,
+        image: {
+          provider: "openai",
+          model: result.model ?? null,
+          latencyMs: result.latencyMs ?? null,
+          imageUrl: result.image_url
+        }
+      };
     }
   } catch (error) {
     if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
-      return recipe;
+      return { recipe, image: null };
     }
   }
 
-  return recipe;
+  return { recipe, image: null };
 }
 
 async function handleApi(req, res) {
@@ -386,11 +409,21 @@ async function handleApi(req, res) {
     }
 
     const mealType = String(url.searchParams.get("meal_type") ?? "").trim();
-    const matches = searchDiabeticRecipes(db, query, { mealType });
+    const localSearch = measureSync(() => searchDiabeticRecipes(db, query, { mealType }));
+    const matches = localSearch.result;
     sendJson(res, 200, {
       query,
+      meal_type: mealType || null,
       matches,
-      count: matches.length
+      count: matches.length,
+      metrics: {
+        local: {
+          kind: "search",
+          latencyMs: localSearch.latencyMs
+        },
+        llm: null,
+        image: null
+      }
     });
     return;
   }
@@ -419,7 +452,8 @@ async function handleApi(req, res) {
       return;
     }
 
-    const matches = searchDiabeticRecipes(db, query, { mealType });
+    const localSearch = measureSync(() => searchDiabeticRecipes(db, query, { mealType }));
+    const matches = localSearch.result;
 
     if (!use_ai) {
       sendJson(res, 200, {
@@ -427,7 +461,15 @@ async function handleApi(req, res) {
         meal_type: mealType || null,
         matches,
         ai_used: false,
-        recipe: null
+        recipe: null,
+        metrics: {
+          local: {
+            kind: "search-create",
+            latencyMs: localSearch.latencyMs
+          },
+          llm: null,
+          image: null
+        }
       });
       return;
     }
@@ -436,14 +478,23 @@ async function handleApi(req, res) {
 
     try {
       const generated = await generateDiabeticRecipe(query, bestMatchRecipe);
-      let saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
-      saved = await ensureDiabeticRecipeImage(db, saved);
+      let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
+      const ensured = await ensureDiabeticRecipeImage(db, saved);
+      saved = ensured.recipe;
       sendJson(res, 200, {
         query,
         meal_type: mealType || null,
         matches,
         ai_used: true,
-        recipe: saved
+        recipe: saved,
+        metrics: {
+          local: {
+            kind: "search-create",
+            latencyMs: localSearch.latencyMs
+          },
+          llm: generated.llm ?? null,
+          image: ensured.image ?? null
+        }
       });
       return;
     } catch (error) {
@@ -453,7 +504,15 @@ async function handleApi(req, res) {
           route: "api_unavailable",
           query,
           meal_type: mealType || null,
-          matches
+          matches,
+          metrics: {
+            local: {
+              kind: "search-create",
+              latencyMs: localSearch.latencyMs
+            },
+            llm: null,
+            image: null
+          }
         });
         return;
       }
@@ -464,7 +523,15 @@ async function handleApi(req, res) {
         matches,
         ai_used: true,
         recipe: null,
-        ai_error: error instanceof Error ? error.message : String(error)
+        ai_error: error instanceof Error ? error.message : String(error),
+        metrics: {
+          local: {
+            kind: "search-create",
+            latencyMs: localSearch.latencyMs
+          },
+          llm: null,
+          image: null
+        }
       });
       return;
     }
@@ -498,55 +565,124 @@ async function handleApi(req, res) {
     if (recalled) {
       const recall_count = Number(recalled.recall_count ?? 0);
       if (recall_count >= 2) {
+        const ensured = await ensureDiabeticRecipeImage(db, recalled);
         sendJson(res, 200, {
           route: "local_recall",
-          recipe: recalled,
+          recipe: ensured.recipe,
           recall_count,
-          latency_ms
+          latency_ms,
+          metrics: {
+            local: {
+              kind: "chat-recall",
+              latencyMs: latency_ms
+            },
+            llm: null,
+            image: ensured.image ?? null
+          }
         });
         return;
       }
 
       try {
         const generated = await generateDiabeticRecipe(message, recalled);
-        let saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
-        saved = await ensureDiabeticRecipeImage(db, saved);
+        let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
+        const ensured = await ensureDiabeticRecipeImage(db, saved);
+        saved = ensured.recipe;
         sendJson(res, 200, {
           route: "api_validate",
           recipe: saved,
           recall_count: Number(saved?.recall_count ?? recall_count),
-          latency_ms
+          latency_ms,
+          metrics: {
+            local: {
+              kind: "chat-recall",
+              latencyMs: latency_ms
+            },
+            llm: generated.llm ?? null,
+            image: ensured.image ?? null
+          }
         });
         return;
       } catch (error) {
         if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
-          sendJson(res, 503, { error: "OPENAI_API_KEY not configured", route: "api_unavailable" });
+          sendJson(res, 503, {
+            error: "OPENAI_API_KEY not configured",
+            route: "api_unavailable",
+            metrics: {
+              local: {
+                kind: "chat-recall",
+                latencyMs: latency_ms
+              },
+              llm: null,
+              image: null
+            }
+          });
           return;
         }
 
-        sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
+        sendJson(res, 500, {
+          error: error instanceof Error ? error.message : String(error),
+          metrics: {
+            local: {
+              kind: "chat-recall",
+              latencyMs: latency_ms
+            },
+            llm: null,
+            image: null
+          }
+        });
         return;
       }
     }
 
     try {
       const generated = await generateDiabeticRecipe(message, null);
-      let saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
-      saved = await ensureDiabeticRecipeImage(db, saved);
+      let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
+      const ensured = await ensureDiabeticRecipeImage(db, saved);
+      saved = ensured.recipe;
       sendJson(res, 200, {
         route: "api_expand",
         recipe: saved,
         recall_count: Number(saved?.recall_count ?? 0),
-        latency_ms
+        latency_ms,
+        metrics: {
+          local: {
+            kind: "chat-recall",
+            latencyMs: latency_ms
+          },
+          llm: generated.llm ?? null,
+          image: ensured.image ?? null
+        }
       });
       return;
     } catch (error) {
       if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
-        sendJson(res, 503, { error: "OPENAI_API_KEY not configured", route: "api_unavailable" });
+        sendJson(res, 503, {
+          error: "OPENAI_API_KEY not configured",
+          route: "api_unavailable",
+          metrics: {
+            local: {
+              kind: "chat-recall",
+              latencyMs: latency_ms
+            },
+            llm: null,
+            image: null
+          }
+        });
         return;
       }
 
-      sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
+      sendJson(res, 500, {
+        error: error instanceof Error ? error.message : String(error),
+        metrics: {
+          local: {
+            kind: "chat-recall",
+            latencyMs: latency_ms
+          },
+          llm: null,
+          image: null
+        }
+      });
       return;
     }
   }
@@ -566,9 +702,23 @@ async function handleApi(req, res) {
       return;
     }
 
-    let saved = saveDiabeticRecipe(db, payload);
-    saved = await ensureDiabeticRecipeImage(db, saved);
-    sendJson(res, 200, { saved: true, recipe_id: saved?.recipe_id ?? null, image_url: saved?.image_url ?? null });
+    const localSave = measureSync(() => saveDiabeticRecipe(db, payload));
+    let saved = localSave.result;
+    const ensured = await ensureDiabeticRecipeImage(db, saved);
+    saved = ensured.recipe;
+    sendJson(res, 200, {
+      saved: true,
+      recipe_id: saved?.recipe_id ?? null,
+      image_url: saved?.image_url ?? null,
+      metrics: {
+        local: {
+          kind: "save",
+          latencyMs: localSave.latencyMs
+        },
+        llm: null,
+        image: ensured.image ?? null
+      }
+    });
     return;
   }
 
@@ -605,11 +755,22 @@ async function handleApi(req, res) {
     }
 
     let adapted;
+    let llm = null;
     try {
-      adapted = await adaptDiabeticRecipe(change, original);
+      const result = await adaptDiabeticRecipe(change, original);
+      adapted = result.recipe;
+      llm = result.llm ?? null;
     } catch (error) {
       if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
-        sendJson(res, 503, { error: "OPENAI_API_KEY not configured", route: "api_unavailable" });
+        sendJson(res, 503, {
+          error: "OPENAI_API_KEY not configured",
+          route: "api_unavailable",
+          metrics: {
+            local: null,
+            llm: null,
+            image: null
+          }
+        });
         return;
       }
       sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
@@ -628,8 +789,18 @@ async function handleApi(req, res) {
     }
 
     let saved = saveDiabeticRecipe(db, { ...adapted, recipe_id: candidateId, source: "ai" });
-    saved = await ensureDiabeticRecipeImage(db, saved);
-    sendJson(res, 200, { route: "api_expand", recipe: saved, saved: true });
+    const ensured = await ensureDiabeticRecipeImage(db, saved);
+    saved = ensured.recipe;
+    sendJson(res, 200, {
+      route: "api_expand",
+      recipe: saved,
+      saved: true,
+      metrics: {
+        local: null,
+        llm,
+        image: ensured.image ?? null
+      }
+    });
     return;
   }
 
@@ -869,37 +1040,67 @@ async function handleApi(req, res) {
       session.extra_notes ? `notes:${session.extra_notes}` : ""
     ].filter(Boolean).join(" | ");
 
-    const recalled = recallDiabeticRecipe(db, query);
+    const localRecall = measureSync(() => recallDiabeticRecipe(db, query));
+    const recalled = localRecall.result;
     if (recalled) {
       const recall_count = Number(recalled.recall_count ?? 0);
       if (recall_count >= 2) {
+        const ensured = await ensureDiabeticRecipeImage(db, recalled);
         deleteDiabeticBuilderSession(db, session_id);
         sendJson(res, 200, {
           route: "local_recall",
-          recipe: recalled,
+          recipe: ensured.recipe,
           recall_count,
           session_id,
-          completed: true
+          completed: true,
+          metrics: {
+            local: {
+              kind: "builder-recall",
+              latencyMs: localRecall.latencyMs
+            },
+            llm: null,
+            image: ensured.image ?? null
+          }
         });
         return;
       }
 
       try {
         const generated = await generateFromBuilderSession(session, recalled);
-        let saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
-        saved = await ensureDiabeticRecipeImage(db, saved);
+        let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
+        const ensured = await ensureDiabeticRecipeImage(db, saved);
+        saved = ensured.recipe;
         deleteDiabeticBuilderSession(db, session_id);
         sendJson(res, 200, {
           route: "api_validate",
           recipe: saved,
           recall_count: Number(saved?.recall_count ?? recall_count),
           session_id,
-          completed: true
+          completed: true,
+          metrics: {
+            local: {
+              kind: "builder-recall",
+              latencyMs: localRecall.latencyMs
+            },
+            llm: generated.llm ?? null,
+            image: ensured.image ?? null
+          }
         });
         return;
       } catch (error) {
         if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
-          sendJson(res, 503, { error: "OPENAI_API_KEY not configured", route: "api_unavailable" });
+          sendJson(res, 503, {
+            error: "OPENAI_API_KEY not configured",
+            route: "api_unavailable",
+            metrics: {
+              local: {
+                kind: "builder-recall",
+                latencyMs: localRecall.latencyMs
+              },
+              llm: null,
+              image: null
+            }
+          });
           return;
         }
         sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
@@ -909,20 +1110,40 @@ async function handleApi(req, res) {
 
     try {
       const generated = await generateFromBuilderSession(session, null);
-      let saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
-      saved = await ensureDiabeticRecipeImage(db, saved);
+      let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
+      const ensured = await ensureDiabeticRecipeImage(db, saved);
+      saved = ensured.recipe;
       deleteDiabeticBuilderSession(db, session_id);
       sendJson(res, 200, {
         route: "api_expand",
         recipe: saved,
         recall_count: Number(saved?.recall_count ?? 0),
         session_id,
-        completed: true
+        completed: true,
+        metrics: {
+          local: {
+            kind: "builder-recall",
+            latencyMs: localRecall.latencyMs
+          },
+          llm: generated.llm ?? null,
+          image: ensured.image ?? null
+        }
       });
       return;
     } catch (error) {
       if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
-        sendJson(res, 503, { error: "OPENAI_API_KEY not configured", route: "api_unavailable" });
+        sendJson(res, 503, {
+          error: "OPENAI_API_KEY not configured",
+          route: "api_unavailable",
+          metrics: {
+            local: {
+              kind: "builder-recall",
+              latencyMs: localRecall.latencyMs
+            },
+            llm: null,
+            image: null
+          }
+        });
         return;
       }
       sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
@@ -1083,6 +1304,7 @@ async function handleApi(req, res) {
     const subjectLabel = resolveSubjectspaceLabel(db, subjectId, recall, subjects);
 
     let assistResult;
+    const llmStarted = performance.now();
     try {
       assistResult = await generateOpenAiSubjectAssist({
         question,
@@ -1094,10 +1316,19 @@ async function handleApi(req, res) {
       sendJson(res, 502, {
         error: error instanceof Error ? error.message : String(error),
         config,
-        recall
+        recall,
+        llm: {
+          provider: config.provider,
+          model: config.model,
+          latencyMs: toLatencyMs(performance.now() - llmStarted),
+          inputTokens: null,
+          outputTokens: null,
+          totalTokens: null
+        }
       });
       return;
     }
+    const llmLatencyMs = toLatencyMs(performance.now() - llmStarted);
 
     const suggestedConstruct = buildSuggestedConstructFromAssist({
       subjectId: subjectId || recall.matched?.subjectId || undefined,
@@ -1118,6 +1349,14 @@ async function handleApi(req, res) {
       config: {
         ...config,
         model: assistResult.model ?? config.model
+      },
+      llm: {
+        provider: config.provider,
+        model: assistResult.model ?? config.model,
+        latencyMs: llmLatencyMs,
+        inputTokens: assistResult.usage?.inputTokens ?? null,
+        outputTokens: assistResult.usage?.outputTokens ?? null,
+        totalTokens: assistResult.usage?.totalTokens ?? null
       },
       recall,
       assist: assistResult.assist,
@@ -1164,6 +1403,9 @@ async function handleApi(req, res) {
       model: config.model,
       mode: "assist_round_trip",
       latencyMs: null,
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
       apiAction: null,
       constructLabel: null,
       reason: config.reason,
@@ -1184,6 +1426,9 @@ async function handleApi(req, res) {
           ...llm,
           model: assistResult.model ?? llm.model,
           latencyMs: toLatencyMs(performance.now() - started),
+          inputTokens: assistResult.usage?.inputTokens ?? null,
+          outputTokens: assistResult.usage?.outputTokens ?? null,
+          totalTokens: assistResult.usage?.totalTokens ?? null,
           apiAction: assistResult.assist?.apiAction ?? null,
           constructLabel: assistResult.assist?.constructLabel ?? null
         };

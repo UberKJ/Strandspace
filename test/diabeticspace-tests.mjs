@@ -284,7 +284,7 @@ export async function registerDiabeticspaceTests({
       assert.equal(payload.route, "api_expand");
       assert.ok(payload.recipe.recipe_id.startsWith("ai-expand-"));
       assert.ok(payload.recipe.image_url);
-      assert.match(String(payload.recipe.image_url), /^\/diabetic-images\/.+\.png$/);
+      assert.match(String(payload.recipe.image_url), /^(?:\/)?diabetic-images\/.+\.png$/);
 
       const filename = String(payload.recipe.image_url).split("/").pop();
       const dir = String(process.env.DIABETICSPACE_IMAGE_DIR ?? "");

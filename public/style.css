@@ -260,6 +260,50 @@ h3 {
   gap: 10px;
 }
 
+.llm-activity {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(71, 48, 31, 0.12);
+  background: rgba(255, 253, 249, 0.72);
+}
+
+.llm-activity-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.llm-activity.loading {
+  border-color: rgba(181, 109, 54, 0.22);
+  background: rgba(255, 247, 236, 0.78);
+}
+
+.llm-activity.error {
+  border-color: rgba(181, 109, 54, 0.32);
+  background: rgba(181, 109, 54, 0.08);
+}
+
+.llm-spinner {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border-radius: 999px;
+  border: 2px solid rgba(71, 48, 31, 0.18);
+  border-top-color: var(--accent);
+  opacity: 0;
+  animation: spin 0.9s linear infinite;
+}
+
+.llm-activity.loading .llm-spinner {
+  opacity: 1;
+}
+
+.llm-detail {
+  font-size: 0.9rem;
+}
+
 .example-pill {
   min-height: 42px;
   padding: 0 16px;
@@ -821,6 +865,12 @@ h3 {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
