@@ -312,6 +312,59 @@
         return { response, data };
       }
 
+      async function ensureImageForRecipe(recipe, card, statusEl) {
+        if (!recipe || !card) return;
+        if (!recipe.recipe_id) return;
+        if (String(recipe.image_url ?? "").trim()) return;
+        if (card.dataset.imageEnsured === "1") return;
+        card.dataset.imageEnsured = "1";
+
+        if (statusEl) {
+          statusEl.textContent = "Generating image…";
+        }
+
+        startAiTelemetry("Generating image", `Creating a photo for "${recipe.title || recipe.recipe_id}"...`);
+        const { response, data } = await postJson("/api/diabetic/ensure-image", { recipe_id: recipe.recipe_id });
+        if (!response.ok) {
+          const msg = data?.route === "api_unavailable"
+            ? "OpenAI not configured."
+            : (data?.error || `HTTP ${response.status}`);
+          if (statusEl) {
+            statusEl.textContent = msg;
+          }
+          failTelemetry("Image failed", msg);
+          return;
+        }
+
+        const imageUrl = normalizeAssetUrl(data?.recipe?.image_url ?? data?.image_url ?? "");
+        if (imageUrl) {
+          recipe.image_url = data.recipe?.image_url ?? recipe.image_url;
+          const existing = card.querySelector(".ds-recipe-image");
+          if (!existing) {
+            const img = document.createElement("img");
+            img.className = "ds-recipe-image";
+            img.loading = "lazy";
+            img.decoding = "async";
+            img.alt = recipe.title || "Recipe image";
+            img.src = imageUrl;
+            card.prepend(img);
+          } else {
+            existing.src = imageUrl;
+          }
+          if (statusEl) {
+            statusEl.textContent = "Image saved ✓";
+            setTimeout(() => {
+              if (statusEl.textContent === "Image saved ✓") statusEl.textContent = "";
+            }, 1600);
+          }
+        } else if (statusEl) {
+          statusEl.textContent = "Image unavailable";
+        }
+
+        finishTelemetry("Image ready", data);
+        void refreshLibrary();
+      }
+
       function setMode(mode) {
         const search = mode === "search";
         const builder = mode === "builder";
@@ -507,6 +560,10 @@
           }
           finishTelemetry("Adapted", data);
         });
+
+        if (!imageUrl) {
+          void ensureImageForRecipe(recipe, card, status);
+        }
 
         return card;
       }

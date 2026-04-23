@@ -235,6 +235,41 @@ export async function registerDiabeticspaceTests({
     });
   });
 
+  await check("POST /api/diabetic/ensure-image generates and persists image_url", async () => {
+    process.env.OPENAI_API_KEY = "test-key";
+    __setDiabeticImageMock(() => Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+Xo2YAAAAASUVORK5CYII=",
+      "base64"
+    ));
+
+    const recipeId = `ensure-image-${Date.now()}`;
+    const db = new DatabaseSync(tempDatabasePath);
+    saveDiabeticRecipe(db, { ...buildMockRecipe({ recipe_id: recipeId, title: "Ensure Image Recipe", meal_type: "dinner" }), source: "seed" });
+    db.close();
+
+    await withServer(async (address) => {
+      const response = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/ensure-image`, { recipe_id: recipeId });
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.ok, true);
+      assert.ok(payload.recipe?.image_url);
+
+      const filename = String(payload.recipe.image_url).split("/").pop();
+      const dir = String(process.env.DIABETICSPACE_IMAGE_DIR ?? "");
+      assert.ok(dir);
+      await access(join(dir, filename));
+
+      const followup = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/recipe?recipe_id=${encodeURIComponent(recipeId)}`);
+      assert.equal(followup.status, 200);
+      const followupPayload = await followup.json();
+      assert.equal(followupPayload.recipe.recipe_id, recipeId);
+      assert.equal(followupPayload.recipe.image_url, payload.recipe.image_url);
+    });
+
+    __setDiabeticImageMock(null);
+    delete process.env.OPENAI_API_KEY;
+  });
+
   await check("recallDiabeticRecipe finds seeded recipe from matching query", async () => {
     const db = new DatabaseSync(tempDatabasePath);
     initDiabeticDb(db);

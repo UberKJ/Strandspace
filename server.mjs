@@ -395,6 +395,80 @@ async function handleApi(req, res) {
     return;
   }
 
+  if (url.pathname === "/api/diabetic/ensure-image") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const recipeId = String(payload.recipe_id ?? payload.recipeId ?? "").trim();
+    if (!recipeId) {
+      sendJson(res, 400, { error: "recipe_id is required" });
+      return;
+    }
+
+    const recipe = getDiabeticRecipeById(db, recipeId);
+    if (!recipe) {
+      sendJson(res, 404, { error: "Recipe not found" });
+      return;
+    }
+
+    if (recipe.image_url) {
+      sendJson(res, 200, {
+        ok: true,
+        created: false,
+        recipe,
+        metrics: {
+          local: null,
+          llm: null,
+          image: null
+        }
+      });
+      return;
+    }
+
+    const outputDir = String(process.env.DIABETICSPACE_IMAGE_DIR ?? "").trim() || join(dataDir, "diabetic-images");
+
+    try {
+      const result = await generateDiabeticRecipeImageToFile(recipe, { outputDir });
+      const updated = setDiabeticRecipeImage(db, recipe.recipe_id, result.image_url) ?? recipe;
+      sendJson(res, 200, {
+        ok: true,
+        created: true,
+        recipe: updated,
+        metrics: {
+          local: null,
+          llm: null,
+          image: {
+            provider: "openai",
+            model: result.model ?? null,
+            latencyMs: result.latencyMs ?? null,
+            imageUrl: result.image_url
+          }
+        }
+      });
+      return;
+    } catch (error) {
+      if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
+        sendJson(res, 503, { error: "OPENAI_API_KEY not configured", route: "api_unavailable" });
+        return;
+      }
+
+      sendJson(res, 502, { error: error instanceof Error ? error.message : String(error), route: "image_failed" });
+      return;
+    }
+    return;
+  }
+
   if (url.pathname === "/api/diabetic/search") {
     if (req.method !== "GET") {
       res.writeHead(405, { Allow: "GET" });
