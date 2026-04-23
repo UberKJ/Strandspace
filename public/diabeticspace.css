@@ -57,6 +57,25 @@ body.diabeticspace {
     radial-gradient(circle at 78% 30%, rgba(236, 72, 153, 0.18), transparent 62%);
   pointer-events: none;
   opacity: 0.9;
+  z-index: 0;
+}
+
+.ds-header::after {
+  content: "";
+  position: absolute;
+  top: -42px;
+  right: -54px;
+  width: 420px;
+  height: 420px;
+  background-image: url("/strandspace-logo.png");
+  background-repeat: no-repeat;
+  background-position: top right;
+  background-size: contain;
+  opacity: 0.22;
+  filter: saturate(1.1) contrast(1.02);
+  mix-blend-mode: screen;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .ds-header-row {
@@ -64,6 +83,7 @@ body.diabeticspace {
   display: flex;
   gap: 14px;
   align-items: center;
+  z-index: 1;
 }
 
 .ds-logo {
@@ -96,6 +116,7 @@ body.diabeticspace {
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+  z-index: 1;
 }
 
 .ds-pill {
@@ -519,6 +540,14 @@ body.diabeticspace {
   .ds-header-row {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .ds-header::after {
+    width: 320px;
+    height: 320px;
+    top: -34px;
+    right: -70px;
+    opacity: 0.16;
   }
 
   .ds-logo {
