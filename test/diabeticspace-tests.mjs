@@ -95,6 +95,102 @@ export async function registerDiabeticspaceTests({
     });
   });
 
+  await check("GET /api/diabetic/search?q=salmon returns matches array and count", async () => {
+    await withServer(async (address) => {
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/search?q=salmon`);
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.query, "salmon");
+      assert.ok(Array.isArray(payload.matches));
+      assert.equal(payload.count, payload.matches.length);
+      assert.ok(payload.matches.length >= 1);
+    });
+  });
+
+  await check("GET /api/diabetic/search returns ordered likely matches", async () => {
+    await withServer(async (address) => {
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/search?q=salmon%20dinner`);
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      const matches = Array.isArray(payload.matches) ? payload.matches : [];
+      assert.ok(matches.length >= 1);
+      assert.equal(matches[0].recipe_id, "baked-lemon-herb-salmon");
+      assert.ok(Number(matches[0].match_score) > 0);
+    });
+  });
+
+  await check("GET /api/diabetic/search with no good matches returns empty array", async () => {
+    await withServer(async (address) => {
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/search?q=zxqv-not-a-food`);
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.ok(Array.isArray(payload.matches));
+      assert.equal(payload.matches.length, 0);
+      assert.equal(payload.count, 0);
+    });
+  });
+
+  await check("POST /api/diabetic/search-create with use_ai=false returns local matches and recipe=null", async () => {
+    await withServer(async (address) => {
+      const response = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/search-create`, {
+        query: "salmon",
+        use_ai: false
+      });
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.ai_used, false);
+      assert.equal(payload.recipe, null);
+      assert.ok(Array.isArray(payload.matches));
+      assert.ok(payload.matches.length >= 1);
+    });
+  });
+
+  await check("POST /api/diabetic/search-create with use_ai=true and OPENAI_API_KEY missing returns 503 plus local matches", async () => {
+    const previousKey = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    process.env.DIABETICSPACE_DISABLE_USER_ENV_LOOKUP = "1";
+    await withServer(async (address) => {
+      const response = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/search-create`, {
+        query: "salmon",
+        use_ai: true
+      });
+      assert.equal(response.status, 503);
+      const payload = await response.json();
+      assert.equal(payload.route, "api_unavailable");
+      assert.equal(payload.query, "salmon");
+      assert.ok(Array.isArray(payload.matches));
+      assert.ok(payload.matches.length >= 1);
+    });
+    delete process.env.DIABETICSPACE_DISABLE_USER_ENV_LOOKUP;
+    if (previousKey) {
+      process.env.OPENAI_API_KEY = previousKey;
+    }
+  });
+
+  await check("POST /api/diabetic/search-create with use_ai=true uses best local match as context", async () => {
+    process.env.OPENAI_API_KEY = "test-key";
+    let capturedInput = "";
+    __setDiabeticAssistMock(({ input }) => {
+      capturedInput = String(input ?? "");
+      return buildMockRecipe({ recipe_id: `search-ai-${Date.now()}`, title: "Search AI Recipe", meal_type: "dinner" });
+    });
+    await withServer(async (address) => {
+      const response = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/search-create`, {
+        query: "salmon dinner",
+        use_ai: true
+      });
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.ai_used, true);
+      assert.ok(payload.recipe);
+      assert.ok(Array.isArray(payload.matches));
+      assert.ok(payload.matches.length >= 1);
+      assert.match(capturedInput, /baked-lemon-herb-salmon/);
+    });
+    __setDiabeticAssistMock(null);
+    delete process.env.OPENAI_API_KEY;
+  });
+
   await check("POST /api/diabetic/save stores recipe and returns saved: true", async () => {
     await withServer(async (address) => {
       const recipe = buildMockRecipe({ recipe_id: `test-save-${Date.now()}` });

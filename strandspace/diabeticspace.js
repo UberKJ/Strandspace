@@ -31,6 +31,53 @@ function tokenizeWords(text = "") {
     .filter(Boolean);
 }
 
+const SEARCH_STOPWORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "but",
+  "by",
+  "for",
+  "from",
+  "how",
+  "i",
+  "in",
+  "is",
+  "it",
+  "make",
+  "me",
+  "my",
+  "no",
+  "not",
+  "of",
+  "on",
+  "or",
+  "our",
+  "recipe",
+  "recipes",
+  "the",
+  "this",
+  "to",
+  "want",
+  "we",
+  "with",
+  "without",
+  "you",
+  "your",
+  "food"
+]);
+
+function tokenizeSearchQuery(text = "") {
+  const tokens = tokenizeWords(text)
+    .map(normalizeToken)
+    .filter((token) => token && token.length >= 3 && !SEARCH_STOPWORDS.has(token));
+  return uniqueStrings(tokens, 32);
+}
+
 function uniqueStrings(list = [], limit = 48) {
   const seen = new Set();
   const out = [];
@@ -314,6 +361,41 @@ function scoreRecipe(recipe, queryTokens, queryText) {
   return score;
 }
 
+function scoreRecipeSearchMatch(recipe, queryTokens, queryText) {
+  let score = scoreRecipe(recipe, queryTokens, queryText);
+
+  const ingredientTokens = new Set(
+    (Array.isArray(recipe.ingredients) ? recipe.ingredients : [])
+      .flatMap((ing) => tokenizeWords(ing?.name ?? ""))
+      .map(normalizeToken)
+      .filter(Boolean)
+  );
+
+  const descriptionTokens = new Set(tokenizeWords(recipe.description ?? ""));
+
+  let ingredientHits = 0;
+  let descriptionHits = 0;
+
+  for (const token of queryTokens) {
+    if (ingredientTokens.has(token)) {
+      ingredientHits += 1;
+    }
+    if (descriptionTokens.has(token)) {
+      descriptionHits += 1;
+    }
+  }
+
+  score += ingredientHits * 2;
+  score += descriptionHits * 1;
+
+  const normalizedQuery = String(queryText ?? "").toLowerCase().trim();
+  if (normalizedQuery && recipe.description && recipe.description.toLowerCase().includes(normalizedQuery)) {
+    score += 2;
+  }
+
+  return score;
+}
+
 export function recallDiabeticRecipe(db, query = "") {
   initDiabeticDb(db);
   const q = String(query ?? "").trim();
@@ -342,6 +424,44 @@ export function recallDiabeticRecipe(db, query = "") {
 
   db.prepare("UPDATE diabetic_recipes SET recall_count = recall_count + 1 WHERE recipe_id = ?").run(best.recipe_id);
   return getDiabeticRecipeById(db, best.recipe_id);
+}
+
+export function searchDiabeticRecipes(db, query = "") {
+  initDiabeticDb(db);
+  const q = String(query ?? "").trim();
+  if (!q) return [];
+
+  const queryTokens = tokenizeSearchQuery(q);
+  if (!queryTokens.length) return [];
+
+  const rows = db.prepare("SELECT * FROM diabetic_recipes").all();
+  const matches = [];
+
+  for (const row of rows) {
+    const recipe = parseRecipeRow(row);
+    if (!recipe) continue;
+    const match_score = scoreRecipeSearchMatch(recipe, queryTokens, q);
+    if (match_score <= 0) continue;
+    matches.push({
+      recipe_id: recipe.recipe_id,
+      title: recipe.title,
+      meal_type: recipe.meal_type,
+      description: recipe.description,
+      servings: recipe.servings,
+      tags: Array.isArray(recipe.tags) ? recipe.tags : [],
+      gi_notes: recipe.gi_notes,
+      recall_count: Number(recipe.recall_count ?? 0),
+      match_score
+    });
+  }
+
+  matches.sort((a, b) => {
+    if (b.match_score !== a.match_score) return b.match_score - a.match_score;
+    if ((b.recall_count ?? 0) !== (a.recall_count ?? 0)) return (b.recall_count ?? 0) - (a.recall_count ?? 0);
+    return String(a.title ?? "").localeCompare(String(b.title ?? ""));
+  });
+
+  return matches.slice(0, 10);
 }
 
 export function saveDiabeticBuilderSession(db, sessionObj = {}) {

@@ -4,321 +4,127 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DiabeticSpace — Strandspace</title>
-    <link rel="stylesheet" href="/style.css?v=diabeticspace-01" />
-    <style>
-      .ds-shell {
-        width: min(1120px, calc(100% - 32px));
-        margin: 0 auto;
-        padding: 28px 0 60px;
-      }
-      .ds-header {
-        border: 1px solid var(--border);
-        background: var(--panel);
-        box-shadow: var(--shadow);
-        border-radius: var(--radius);
-        padding: 22px 22px 18px;
-        backdrop-filter: blur(18px);
-      }
-      .ds-header h1 {
-        margin: 0;
-        letter-spacing: -0.03em;
-      }
-      .ds-header p {
-        margin: 10px 0 0;
-        color: var(--muted);
-        max-width: 70ch;
-        line-height: 1.5;
-      }
-
-      .ds-toolbar {
-        margin-top: 16px;
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 10px;
-      }
-      .ds-pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        border: 1px solid var(--border);
-        background: var(--panel-strong);
-        border-radius: 999px;
-        padding: 8px 12px;
-        font-weight: 700;
-      }
-      .ds-pill button {
-        border: 0;
-        background: transparent;
-        padding: 8px 10px;
-        border-radius: 999px;
-        cursor: pointer;
-        color: var(--muted);
-        font-weight: 700;
-      }
-      .ds-pill button[aria-pressed="true"] {
-        color: var(--ink);
-        background: rgba(181, 109, 54, 0.14);
-      }
-      .ds-pill button:hover {
-        color: var(--ink);
-      }
-
-      .ds-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-        margin-top: 16px;
-      }
-      @media (max-width: 920px) {
-        .ds-grid { grid-template-columns: 1fr; }
-      }
-
-      .ds-panel {
-        border: 1px solid var(--border);
-        background: var(--panel);
-        box-shadow: var(--shadow);
-        border-radius: var(--radius);
-        padding: 18px;
-        backdrop-filter: blur(18px);
-      }
-      .ds-panel h2 {
-        margin: 0;
-      }
-      .ds-sub {
-        margin: 8px 0 0;
-        color: var(--muted);
-      }
-
-      .ds-toggle-row {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-        margin-top: 14px;
-      }
-      .ds-toggle-row button {
-        border: 1px solid var(--border);
-        background: var(--panel-strong);
-        color: var(--ink);
-        border-radius: 999px;
-        padding: 10px 12px;
-        cursor: pointer;
-        font-weight: 750;
-      }
-      .ds-toggle-row button[aria-pressed="true"] {
-        border-color: rgba(181, 109, 54, 0.34);
-        background: linear-gradient(135deg, rgba(181, 109, 54, 0.12), rgba(255, 252, 247, 0.94));
-      }
-
-      .ds-chat {
-        margin-top: 14px;
-        display: grid;
-        gap: 10px;
-      }
-      .ds-messages {
-        height: 340px;
-        overflow: auto;
-        border: 1px solid var(--border);
-        background: rgba(255, 252, 247, 0.6);
-        border-radius: 18px;
-        padding: 12px;
-        display: grid;
-        gap: 10px;
-      }
-      .ds-bubble {
-        padding: 10px 12px;
-        border-radius: 14px;
-        border: 1px solid var(--border);
-        background: var(--panel-strong);
-        max-width: 92%;
-      }
-      .ds-bubble.user {
-        justify-self: end;
-        background: rgba(181, 109, 54, 0.10);
-      }
-      .ds-bubble.assistant {
-        justify-self: start;
-      }
-
-      .ds-input-row {
-        display: flex;
-        gap: 10px;
-        align-items: stretch;
-      }
-      .ds-input-row input,
-      .ds-input-row textarea {
-        flex: 1;
-        min-height: 44px;
-        border-radius: 14px;
-        border: 1px solid var(--border);
-        background: var(--panel-strong);
-        padding: 10px 12px;
-        font: inherit;
-      }
-      .ds-input-row button {
-        min-width: 110px;
-        border-radius: 14px;
-        border: 1px solid rgba(181, 109, 54, 0.5);
-        background: linear-gradient(135deg, rgba(181, 109, 54, 0.92), rgba(111, 63, 32, 0.92));
-        color: white;
-        font-weight: 800;
-        cursor: pointer;
-      }
-
-      .ds-recipes {
-        margin-top: 14px;
-        display: grid;
-        gap: 12px;
-      }
-      .ds-card {
-        border: 1px solid var(--border);
-        background: var(--panel);
-        box-shadow: var(--shadow);
-        border-radius: 22px;
-        padding: 16px;
-      }
-      .ds-card h3 {
-        margin: 0;
-      }
-      .ds-badges {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-        margin-top: 10px;
-      }
-      .ds-badge {
-        border: 1px solid var(--border);
-        background: rgba(255, 252, 247, 0.72);
-        border-radius: 999px;
-        padding: 6px 10px;
-        font-size: 0.82rem;
-        font-weight: 800;
-        color: var(--muted);
-      }
-      .ds-badge.gi {
-        border-color: rgba(40, 92, 90, 0.25);
-        background: rgba(40, 92, 90, 0.12);
-        color: var(--signal);
-      }
-      .ds-badge.route-local { background: rgba(40, 92, 90, 0.12); border-color: rgba(40, 92, 90, 0.25); color: var(--signal); }
-      .ds-badge.route-validate { background: rgba(181, 109, 54, 0.12); border-color: rgba(181, 109, 54, 0.25); color: var(--accent-deep); }
-      .ds-badge.route-expand { background: rgba(111, 63, 32, 0.10); border-color: rgba(111, 63, 32, 0.22); color: var(--accent-deep); }
-
-      .ds-card p { color: var(--muted); margin: 10px 0 0; line-height: 1.5; }
-      .ds-card ul, .ds-card ol { margin: 10px 0 0; padding-left: 1.25rem; display: grid; gap: 6px; }
-      .ds-card hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
-
-      .ds-card-actions {
-        margin-top: 12px;
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        align-items: center;
-      }
-      .ds-card-actions button {
-        border: 1px solid var(--border);
-        background: var(--panel-strong);
-        border-radius: 999px;
-        padding: 10px 12px;
-        cursor: pointer;
-        font-weight: 800;
-      }
-      .ds-card-actions button.save {
-        border-color: rgba(40, 92, 90, 0.35);
-        background: rgba(40, 92, 90, 0.10);
-        color: var(--signal);
-      }
-      .ds-card-actions button.danger {
-        border-color: rgba(220, 38, 38, 0.35);
-        background: rgba(220, 38, 38, 0.10);
-        color: #b91c1c;
-      }
-      .ds-adapt-row {
-        margin-top: 10px;
-        display: flex;
-        gap: 10px;
-        align-items: stretch;
-      }
-      .ds-adapt-row input {
-        flex: 1;
-        border-radius: 999px;
-        border: 1px solid var(--border);
-        background: var(--panel-strong);
-        padding: 10px 12px;
-        font: inherit;
-      }
-      .ds-adapt-row button {
-        border-radius: 999px;
-        border: 1px solid rgba(181, 109, 54, 0.35);
-        background: rgba(181, 109, 54, 0.10);
-        color: var(--accent-deep);
-        font-weight: 900;
-        padding: 10px 12px;
-        cursor: pointer;
-      }
-      .ds-muted {
-        color: var(--muted);
-        font-size: 0.9rem;
-        margin-top: 8px;
-      }
-    </style>
+    <link rel="stylesheet" href="/style.css?v=diabeticspace-base" />
+    <link rel="stylesheet" href="/diabeticspace.css?v=diabeticspace-refine-01" />
   </head>
-  <body>
+  <body class="diabeticspace">
     <div class="ds-shell">
       <header class="ds-header">
-        <h1>DiabeticSpace — Diabetic-Friendly Recipe Assistant</h1>
-        <p>
-          Build recipes step by step or ask directly. Approved recipes are saved locally and recalled instantly.
-        </p>
+        <div class="ds-header-row">
+          <img class="ds-logo" src="/strandspace-logo.png" alt="Strandspace logo" loading="lazy" />
+          <div>
+            <h1>DiabeticSpace — Diabetic-Friendly Recipe Assistant</h1>
+            <p>
+              Build recipes step by step or ask directly. Approved recipes are saved locally and recalled instantly.
+            </p>
+          </div>
+        </div>
 
         <div class="ds-toolbar">
           <div class="ds-pill" aria-label="Mode toggle">
-            <button id="mode-builder" type="button" aria-pressed="true">Guided Builder</button>
+            <span>Mode</span>
+            <button id="mode-search" type="button" aria-pressed="true">Search</button>
+            <button id="mode-builder" type="button" aria-pressed="false">Guided Builder</button>
             <button id="mode-quick" type="button" aria-pressed="false">Quick Ask</button>
           </div>
 
           <div class="ds-pill" aria-label="Meal filter">
-            <button class="meal-filter" data-meal="" type="button" aria-pressed="true">All</button>
-            <button class="meal-filter" data-meal="breakfast" type="button" aria-pressed="false">Breakfast</button>
-            <button class="meal-filter" data-meal="lunch" type="button" aria-pressed="false">Lunch</button>
-            <button class="meal-filter" data-meal="dinner" type="button" aria-pressed="false">Dinner</button>
-            <button class="meal-filter" data-meal="dessert" type="button" aria-pressed="false">Dessert</button>
-            <button class="meal-filter" data-meal="snack" type="button" aria-pressed="false">Snack</button>
+            <span>Meals</span>
+            <button class="meal-filter" type="button" data-meal="" aria-pressed="true">All</button>
+            <button class="meal-filter" type="button" data-meal="breakfast">Breakfast</button>
+            <button class="meal-filter" type="button" data-meal="lunch">Lunch</button>
+            <button class="meal-filter" type="button" data-meal="dinner">Dinner</button>
+            <button class="meal-filter" type="button" data-meal="dessert">Dessert</button>
+            <button class="meal-filter" type="button" data-meal="snack">Snack</button>
           </div>
 
-          <div class="ds-muted" id="library-meta">Loading saved recipes…</div>
+          <div class="ds-pill" aria-label="Saved recipe count">
+            <span id="library-meta">Loading recipes...</span>
+          </div>
         </div>
       </header>
 
-      <main class="ds-grid">
-        <section class="ds-panel" id="builder-panel">
-          <h2>Guided Builder</h2>
-          <p class="ds-sub">Answer one question at a time, then confirm to build the recipe.</p>
-
-          <div class="ds-toggle-row">
-            <button id="builder-start" type="button">Start Builder</button>
-            <button id="builder-reset" type="button">Reset</button>
+      <main class="ds-main">
+        <section class="ds-panel" id="search-panel">
+          <div class="ds-panel-head">
+            <div>
+              <h2>Recipe Search</h2>
+              <p class="ds-sub">Search saved diabetic-friendly recipes first. Optionally ask AI to create a new one from your search.</p>
+            </div>
           </div>
 
+          <div class="ds-search-row">
+            <input
+              id="search-input"
+              type="text"
+              class="ds-input"
+              placeholder="Search for low-carb dinner, salmon, pancakes, berry yogurt, chocolate dessert..."
+              autocomplete="off"
+            />
+            <button id="search-button" type="button" class="primary-action">Search</button>
+          </div>
+
+          <label class="ds-check">
+            <input id="search-use-ai" type="checkbox" />
+            <span>Also use AI to create a new possible recipe from this search</span>
+          </label>
+          <p class="ds-sub ds-sub-small">
+            Local recipe matches are shown first. If checked, AI can propose a new recipe and save it locally.
+          </p>
+          <div class="ds-muted" id="search-hint"></div>
+
+          <div class="ds-search-results" aria-label="Search results">
+            <div class="ds-results-block">
+              <h3 class="ds-results-title">Local Matches</h3>
+              <div class="ds-match-grid" id="search-matches"></div>
+              <p class="ds-sub ds-empty" id="search-empty" style="display:none;">No strong local matches found.</p>
+            </div>
+
+            <div class="ds-results-block" id="ai-block" style="display:none;">
+              <h3 class="ds-results-title">AI Suggested Recipe</h3>
+              <div id="ai-recipe"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="ds-panel" id="builder-panel" style="display:none;">
+          <div class="ds-panel-head">
+            <div>
+              <h2>Guided Builder</h2>
+              <p class="ds-sub">Answer one question at a time, then confirm to build the recipe.</p>
+            </div>
+            <div class="ds-actions">
+              <button id="builder-start" type="button" class="primary-action">Start Builder</button>
+              <button id="builder-reset" type="button" class="ghost-action">Reset</button>
+            </div>
+          </div>
           <div class="ds-chat">
             <div class="ds-messages" id="builder-messages" aria-label="Builder conversation"></div>
             <div class="ds-input-row">
-              <input id="builder-input" type="text" placeholder="Type your answer…" />
-              <button id="builder-send" type="button">Continue</button>
+              <input id="builder-input" type="text" class="ds-input" placeholder="Type your answer..." />
+              <button id="builder-send" type="button" class="primary-action">Continue</button>
             </div>
             <div class="ds-muted" id="builder-hint"></div>
           </div>
         </section>
 
         <section class="ds-panel" id="quick-panel" style="display:none;">
-          <h2>Quick Ask</h2>
-          <p class="ds-sub">Ask for a diabetic-friendly recipe or a modification, and save what you approve.</p>
-
+          <div class="ds-panel-head">
+            <div>
+              <h2>Quick Ask</h2>
+              <p class="ds-sub">Ask for a recipe or a substitute idea directly.</p>
+            </div>
+          </div>
           <div class="ds-chat">
-            <div class="ds-messages" id="quick-messages" aria-label="Quick ask messages"></div>
+            <div class="ds-messages" id="quick-messages" aria-label="Quick ask conversation"></div>
             <div class="ds-input-row">
-              <input id="quick-input" type="text" placeholder="e.g. low-carb dinner, chocolate dessert, substitute for white flour..." />
-              <button id="quick-send" type="button">Send</button>
+              <input
+                id="quick-input"
+                type="text"
+                class="ds-input"
+                placeholder="e.g. low-carb dinner, chocolate dessert, substitute for white flour..."
+              />
+              <button id="quick-send" type="button" class="primary-action">Send</button>
             </div>
             <div class="ds-muted" id="quick-hint"></div>
           </div>
@@ -330,13 +136,23 @@
 
     <script type="module">
       const els = {
+        modeSearch: document.getElementById("mode-search"),
         modeBuilder: document.getElementById("mode-builder"),
         modeQuick: document.getElementById("mode-quick"),
+        searchPanel: document.getElementById("search-panel"),
         builderPanel: document.getElementById("builder-panel"),
         quickPanel: document.getElementById("quick-panel"),
         mealFilters: Array.from(document.querySelectorAll(".meal-filter")),
         libraryMeta: document.getElementById("library-meta"),
         recipeCards: document.getElementById("recipe-cards"),
+        searchInput: document.getElementById("search-input"),
+        searchButton: document.getElementById("search-button"),
+        searchUseAi: document.getElementById("search-use-ai"),
+        searchMatches: document.getElementById("search-matches"),
+        searchHint: document.getElementById("search-hint"),
+        searchEmpty: document.getElementById("search-empty"),
+        aiBlock: document.getElementById("ai-block"),
+        aiRecipe: document.getElementById("ai-recipe"),
         builderStart: document.getElementById("builder-start"),
         builderReset: document.getElementById("builder-reset"),
         builderMessages: document.getElementById("builder-messages"),
@@ -379,11 +195,25 @@
       }
 
       function setMode(mode) {
+        const search = mode === "search";
         const builder = mode === "builder";
+        const quick = mode === "quick";
+
+        els.modeSearch.setAttribute("aria-pressed", search ? "true" : "false");
         els.modeBuilder.setAttribute("aria-pressed", builder ? "true" : "false");
-        els.modeQuick.setAttribute("aria-pressed", builder ? "false" : "true");
+        els.modeQuick.setAttribute("aria-pressed", quick ? "true" : "false");
+
+        els.searchPanel.style.display = search ? "" : "none";
         els.builderPanel.style.display = builder ? "" : "none";
-        els.quickPanel.style.display = builder ? "none" : "";
+        els.quickPanel.style.display = quick ? "" : "none";
+
+        if (search) {
+          setTimeout(() => els.searchInput?.focus?.(), 0);
+        } else if (builder) {
+          setTimeout(() => els.builderInput?.focus?.(), 0);
+        } else if (quick) {
+          setTimeout(() => els.quickInput?.focus?.(), 0);
+        }
       }
 
       function setMealFilter(meal) {
@@ -409,7 +239,7 @@
         return { label: "🤖 AI generated", cls: "route-expand" };
       }
 
-      function renderRecipeCard({ recipe, route }) {
+      function renderRecipeCard({ recipe, route, statusText = "" }) {
         if (!recipe) return null;
         const card = document.createElement("article");
         card.className = "ds-card";
@@ -420,9 +250,9 @@
         card.innerHTML = `
           <h3>${escapeHtml(recipe.title || "Recipe")}</h3>
           <div class="ds-badges">
-            <span class="ds-badge">${escapeHtml(recipe.meal_type || "meal")}</span>
-            <span class="ds-badge ${routeMeta.cls}">${escapeHtml(routeMeta.label)}</span>
-            ${recipe.gi_notes ? `<span class="ds-badge gi">GI notes</span>` : ""}
+            <span class="ds-badge status-badge status-neutral">${escapeHtml(recipe.meal_type || "meal")}</span>
+            <span class="ds-badge status-badge ${escapeHtml(routeMeta.cls)}">${escapeHtml(routeMeta.label)}</span>
+            ${recipe.gi_notes ? `<span class="ds-badge status-badge status-success">GI notes</span>` : ""}
           </div>
           ${recipe.gi_notes ? `<p><strong>GI notes:</strong> ${escapeHtml(recipe.gi_notes)}</p>` : ""}
           ${recipe.description ? `<p>${escapeHtml(recipe.description)}</p>` : ""}
@@ -437,36 +267,38 @@
             }).join("")}
           </ul>
           ${substitutes.length ? `
-            <p style="margin-top:12px;"><strong>Substitutes</strong></p>
+            <p class="ds-section-space"><strong>Substitutes</strong></p>
             <ul>
               ${substitutes.map((sub) => `<li>${escapeHtml(sub.original)} → ${escapeHtml(sub.substitute)}${sub.reason ? ` (${escapeHtml(sub.reason)})` : ""}</li>`).join("")}
             </ul>
           ` : ""}
-          <p style="margin-top:12px;"><strong>Instructions</strong></p>
+          <p class="ds-section-space"><strong>Instructions</strong></p>
           <ol>
             ${(Array.isArray(recipe.instructions) ? recipe.instructions : []).map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
           </ol>
-          <p style="margin-top:12px;"><strong>Servings:</strong> ${escapeHtml(recipe.servings ?? "")} ${recipe.serving_notes ? `· ${escapeHtml(recipe.serving_notes)}` : ""}</p>
+          <p class="ds-section-space"><strong>Servings:</strong> ${escapeHtml(recipe.servings ?? "")} ${recipe.serving_notes ? `· ${escapeHtml(recipe.serving_notes)}` : ""}</p>
           ${tags.length ? `<p><strong>Tags:</strong> ${escapeHtml(tags.join(", "))}</p>` : ""}
           <div class="ds-card-actions">
-            <button class="save" type="button">Save</button>
-            <button class="danger" type="button">Discard</button>
-            <button class="adapt" type="button">Adapt Recipe</button>
+            <button class="save primary-action" type="button">Save</button>
+            <button class="discard ghost-action" type="button">Discard</button>
+            <button class="adapt ghost-action" type="button">Adapt Recipe</button>
             <span class="ds-muted status"></span>
           </div>
           <div class="ds-adapt-row" style="display:none;">
-            <input class="adapt-input" type="text" placeholder="e.g. make it gluten-free, reduce servings to 2, make it dairy-free" />
-            <button class="adapt-send" type="button">Adapt</button>
+            <input class="adapt-input ds-input" type="text" placeholder="e.g. make it gluten-free, reduce servings to 2, make it dairy-free" />
+            <button class="adapt-send ghost-action" type="button">Adapt</button>
           </div>
         `;
 
         const status = card.querySelector(".status");
         const saveBtn = card.querySelector("button.save");
-        const discardBtn = card.querySelector("button.danger");
+        const discardBtn = card.querySelector("button.discard");
         const adaptBtn = card.querySelector("button.adapt");
         const adaptRow = card.querySelector(".ds-adapt-row");
         const adaptInput = card.querySelector(".adapt-input");
         const adaptSend = card.querySelector(".adapt-send");
+
+        status.textContent = statusText;
 
         saveBtn.addEventListener("click", async () => {
           status.textContent = "Saving…";
@@ -517,6 +349,136 @@
         els.libraryMeta.textContent = `${recipes.length} saved recipe${recipes.length === 1 ? "" : "s"}${activeMealFilter ? ` · ${activeMealFilter}` : ""}`;
       }
 
+      function clearSearchResults() {
+        els.searchMatches.innerHTML = "";
+        els.searchEmpty.style.display = "none";
+        els.aiBlock.style.display = "none";
+        els.aiRecipe.innerHTML = "";
+      }
+
+      function truncate(text, max = 120) {
+        const value = String(text ?? "").trim();
+        if (!value) return "";
+        if (value.length <= max) return value;
+        return `${value.slice(0, max - 1).trim()}…`;
+      }
+
+      function renderMatchCard(match) {
+        const card = document.createElement("article");
+        card.className = "ds-match";
+
+        const tags = Array.isArray(match.tags) ? match.tags : [];
+        const score = Number(match.match_score ?? 0);
+
+        card.innerHTML = `
+          <div class="ds-match-head">
+            <div>
+              <h4>${escapeHtml(match.title || "Recipe")}</h4>
+              <div class="ds-badges">
+                <span class="ds-badge status-badge status-neutral">${escapeHtml(match.meal_type || "meal")}</span>
+                ${Number.isFinite(score) ? `<span class="ds-badge status-badge status-neutral">score ${escapeHtml(score.toFixed(0))}</span>` : ""}
+              </div>
+            </div>
+            <button type="button" class="ghost-action show-recipe">Show Recipe</button>
+          </div>
+          ${match.description ? `<p class="ds-match-desc">${escapeHtml(truncate(match.description, 140))}</p>` : ""}
+          <div class="ds-match-meta">
+            ${match.servings ? `<span class="ds-muted">${escapeHtml(`${match.servings} servings`)}</span>` : ""}
+            ${match.gi_notes ? `<span class="ds-muted">${escapeHtml(truncate(match.gi_notes, 66))}</span>` : ""}
+            ${tags.length ? `<span class="ds-muted">${escapeHtml(tags.slice(0, 4).join(", "))}</span>` : ""}
+          </div>
+        `;
+
+        const button = card.querySelector(".show-recipe");
+        button.addEventListener("click", async () => {
+          button.disabled = true;
+          button.textContent = "Loading…";
+          try {
+            const { response, data } = await getJson(`/api/diabetic/recipe?recipe_id=${encodeURIComponent(match.recipe_id)}`);
+            if (!response.ok) {
+              els.searchHint.textContent = data?.error ? `Unable to load recipe: ${data.error}` : `Unable to load recipe (HTTP ${response.status}).`;
+              return;
+            }
+            const next = renderRecipeCard({ recipe: data.recipe, route: "local_recall", statusText: "Saved locally ✓" });
+            if (next) {
+              els.recipeCards.prepend(next);
+              next.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+          } finally {
+            button.disabled = false;
+            button.textContent = "Show Recipe";
+          }
+        });
+
+        return card;
+      }
+
+      async function runSearch() {
+        const query = String(els.searchInput.value ?? "").trim();
+        clearSearchResults();
+        els.searchHint.textContent = "";
+        if (!query) {
+          els.searchHint.textContent = "Type a recipe idea to search.";
+          return;
+        }
+
+        els.searchButton.disabled = true;
+        els.searchButton.textContent = "Searching…";
+
+        try {
+          const useAi = Boolean(els.searchUseAi.checked);
+          if (!useAi) {
+            const { response, data } = await getJson(`/api/diabetic/search?q=${encodeURIComponent(query)}`);
+            if (!response.ok) {
+              els.searchHint.textContent = data?.error ? `Search failed: ${data.error}` : `Search failed (HTTP ${response.status}).`;
+              return;
+            }
+            const matches = Array.isArray(data.matches) ? data.matches : [];
+            if (!matches.length) {
+              els.searchEmpty.style.display = "";
+              return;
+            }
+            for (const match of matches) {
+              els.searchMatches.appendChild(renderMatchCard(match));
+            }
+            return;
+          }
+
+          const { response, data } = await postJson("/api/diabetic/search-create", { query, use_ai: true });
+
+          const matches = Array.isArray(data.matches) ? data.matches : [];
+          if (!matches.length) {
+            els.searchEmpty.style.display = "";
+          } else {
+            for (const match of matches) {
+              els.searchMatches.appendChild(renderMatchCard(match));
+            }
+          }
+
+          if (!response.ok) {
+            if (data?.route === "api_unavailable") {
+              els.searchHint.textContent = "Local matches were found, but OpenAI is not configured.";
+            } else {
+              els.searchHint.textContent = data?.error ? `Search failed: ${data.error}` : `Search failed (HTTP ${response.status}).`;
+            }
+          }
+
+          if (data?.recipe) {
+            els.aiBlock.style.display = "";
+            const card = renderRecipeCard({ recipe: data.recipe, route: "api_expand", statusText: "Saved locally ✓" });
+            if (card) els.aiRecipe.appendChild(card);
+            void refreshLibrary();
+          } else if (useAi && matches.length) {
+            if (data?.ai_error) {
+              els.searchHint.textContent = "Local matches were found, but AI could not create a new recipe.";
+            }
+          }
+        } finally {
+          els.searchButton.disabled = false;
+          els.searchButton.textContent = "Search";
+        }
+      }
+
       async function startBuilder() {
         els.builderHint.textContent = "";
         const { response, data } = await postJson("/api/diabetic/builder/start", builderSessionId ? { session_id: builderSessionId } : {});
@@ -547,8 +509,8 @@
           appendMessage(els.builderMessages, "assistant", `Review:\nmeal_type: ${summary.meal_type}\ngoal: ${summary.goal}\ninclude: ${(summary.include_items || []).join(", ")}\navoid: ${(summary.avoid_items || []).join(", ")}\nservings: ${summary.servings}\nnotes: ${summary.extra_notes}`);
           appendMessage(els.builderMessages, "assistant", data.prompt || "Reply 'confirm' to build the recipe.");
           els.builderHint.innerHTML = `
-            <button type="button" id="builder-confirm">Confirm & Build</button>
-            <span style="margin-left:10px;color:var(--muted);">or use: edit meal_type · goal · include_items · avoid_items · servings · extra_notes</span>
+            <button type="button" id="builder-confirm" class="primary-action">Confirm & Build</button>
+            <span class="ds-muted ds-inline-help">or use: edit meal_type · goal · include_items · avoid_items · servings · extra_notes</span>
           `;
           const confirmBtn = document.getElementById("builder-confirm");
           confirmBtn.addEventListener("click", async () => {
@@ -588,11 +550,20 @@
         void refreshLibrary();
       }
 
+      els.modeSearch.addEventListener("click", () => setMode("search"));
       els.modeBuilder.addEventListener("click", () => setMode("builder"));
       els.modeQuick.addEventListener("click", () => setMode("quick"));
       for (const btn of els.mealFilters) {
         btn.addEventListener("click", () => setMealFilter(btn.dataset.meal ?? ""));
       }
+
+      els.searchButton.addEventListener("click", runSearch);
+      els.searchInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          els.searchButton.click();
+        }
+      });
 
       els.builderStart.addEventListener("click", startBuilder);
       els.builderReset.addEventListener("click", () => {
@@ -608,6 +579,12 @@
         appendMessage(els.builderMessages, "user", answer);
         await nextBuilder(answer);
       });
+      els.builderInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          els.builderSend.click();
+        }
+      });
 
       els.quickSend.addEventListener("click", async () => {
         const message = String(els.quickInput.value ?? "").trim();
@@ -622,9 +599,10 @@
         }
       });
 
-      setMode("builder");
+      setMode("search");
       setMealFilter("");
       void refreshLibrary();
     </script>
   </body>
 </html>
+

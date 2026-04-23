@@ -31,6 +31,7 @@ import {
   saveDiabeticRecipe,
   listDiabeticRecipes,
   getDiabeticRecipeById,
+  searchDiabeticRecipes,
   seedDiabeticRecipes,
   saveDiabeticBuilderSession,
   getDiabeticBuilderSession,
@@ -334,6 +335,97 @@ async function handleApi(req, res) {
 
     sendJson(res, 200, { ok: true, recipe });
     return;
+  }
+
+  if (url.pathname === "/api/diabetic/search") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
+      res.end();
+      return;
+    }
+
+    const query = String(url.searchParams.get("q") ?? "").trim();
+    if (!query) {
+      sendJson(res, 400, { error: "q is required" });
+      return;
+    }
+
+    const matches = searchDiabeticRecipes(db, query);
+    sendJson(res, 200, {
+      query,
+      matches,
+      count: matches.length
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/diabetic/search-create") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const query = String(payload.query ?? "").trim();
+    const use_ai = Boolean(payload.use_ai);
+
+    if (!query) {
+      sendJson(res, 400, { error: "query is required" });
+      return;
+    }
+
+    const matches = searchDiabeticRecipes(db, query);
+
+    if (!use_ai) {
+      sendJson(res, 200, {
+        query,
+        matches,
+        ai_used: false,
+        recipe: null
+      });
+      return;
+    }
+
+    const bestMatchRecipe = matches.length ? getDiabeticRecipeById(db, matches[0].recipe_id) : null;
+
+    try {
+      const generated = await generateDiabeticRecipe(query, bestMatchRecipe);
+      const saved = saveDiabeticRecipe(db, { ...generated, source: "ai" });
+      sendJson(res, 200, {
+        query,
+        matches,
+        ai_used: true,
+        recipe: saved
+      });
+      return;
+    } catch (error) {
+      if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
+        sendJson(res, 503, {
+          error: "OPENAI_API_KEY not configured",
+          route: "api_unavailable",
+          query,
+          matches
+        });
+        return;
+      }
+
+      sendJson(res, 200, {
+        query,
+        matches,
+        ai_used: true,
+        recipe: null,
+        ai_error: error instanceof Error ? error.message : String(error)
+      });
+      return;
+    }
   }
 
   if (url.pathname === "/api/diabetic/chat") {
