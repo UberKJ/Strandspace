@@ -63,18 +63,18 @@ body.diabeticspace {
   position: relative;
   display: flex;
   gap: 14px;
-  align-items: flex-start;
+  align-items: center;
 }
 
 .ds-logo {
-  width: 46px;
-  height: 46px;
-  border-radius: 14px;
+  width: 80px;
+  height: 80px;
+  border-radius: 22px;
   flex: 0 0 auto;
   object-fit: contain;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.10);
-  box-shadow: 0 12px 34px rgba(139, 92, 246, 0.18);
+  box-shadow: 0 18px 48px rgba(139, 92, 246, 0.20);
 }
 
 .ds-header h1 {
@@ -519,6 +519,12 @@ body.diabeticspace {
   .ds-header-row {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .ds-logo {
+    width: 64px;
+    height: 64px;
+    border-radius: 20px;
   }
 
   .ds-search-row,
