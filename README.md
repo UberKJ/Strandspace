@@ -57,6 +57,8 @@ A health-focused recipe application built on Strandspace.
 
 It currently supports local-first diabetic-friendly recipe recall, recipe search, AI-assisted recipe creation, recipe adaptation, local image handling, saved recipe variants, and builder-style flows for generating new meals.
 
+**Windows local install:** see `docs/windows-installer.md`.
+
 Examples of the current behavior include:
 
 - creating a first-pass diabetic-friendly recipe with AI
