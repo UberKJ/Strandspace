@@ -10,6 +10,8 @@ import {
   createShoppingList,
   createLocalUser,
   createRecipeSharePackage,
+  getDiabeticProviderSetting,
+  listDiabeticProviderSettings,
   deleteShoppingListItem,
   exportDiabeticBackup,
   generateShoppingListFromMealPlan,
@@ -42,6 +44,7 @@ import {
   updateMealPlanItem,
   updateShoppingListItem,
   importRecipeSharePackage,
+  setDiabeticProviderSetting,
   verifyLocalPin
 } from "../strandspace/diabeticspace.js";
 
@@ -49,7 +52,8 @@ import {
   adaptDiabeticRecipe,
   generateDiabeticRecipe,
   generateFromBuilderSession,
-  generateDiabeticRecipeImageToFile
+  generateDiabeticRecipeImageToFile,
+  resolveOpenAiApiKeyFromEnv
 } from "../strandspace/diabetic-assist.js";
 
 function sendJson(res, statusCode, payload) {
@@ -99,6 +103,38 @@ function measureSync(task) {
   };
 }
 
+function resolveOpenAiOverrides(db) {
+  const envApiKey = resolveOpenAiApiKeyFromEnv();
+  const storedApiKey = getDiabeticProviderSetting(db, "openai", "api_key", { includeSensitive: true });
+  const apiKey = envApiKey ? "" : String(storedApiKey ?? "").trim();
+
+  const envModel = String(process.env.DIABETICSPACE_OPENAI_MODEL ?? process.env.OPENAI_MODEL ?? "").trim();
+  const storedModel = getDiabeticProviderSetting(db, "openai", "model", { includeSensitive: true });
+  const model = envModel ? "" : String(storedModel ?? "").trim();
+
+  const envImageModel = String(process.env.DIABETICSPACE_IMAGE_MODEL ?? "").trim();
+  const storedImageModel = getDiabeticProviderSetting(db, "openai", "image_model", { includeSensitive: true });
+  const imageModel = envImageModel ? "" : String(storedImageModel ?? "").trim();
+
+  return {
+    apiKey,
+    model,
+    imageModel,
+    meta: {
+      env: {
+        api_key: Boolean(envApiKey),
+        model: envModel || null,
+        image_model: envImageModel || null
+      },
+      saved: {
+        api_key: Boolean(String(storedApiKey ?? "").trim()),
+        model: Boolean(String(storedModel ?? "").trim()),
+        image_model: Boolean(String(storedImageModel ?? "").trim())
+      }
+    }
+  };
+}
+
 async function ensureDiabeticRecipeImage(db, recipe, dataDir) {
   if (!recipe) {
     return { recipe: null, image: null };
@@ -111,7 +147,8 @@ async function ensureDiabeticRecipeImage(db, recipe, dataDir) {
   const outputDir = String(process.env.DIABETICSPACE_IMAGE_DIR ?? "").trim() || join(dataDir, "diabetic-images");
 
   try {
-    const result = await generateDiabeticRecipeImageToFile(recipe, { outputDir });
+    const openai = resolveOpenAiOverrides(db);
+    const result = await generateDiabeticRecipeImageToFile(recipe, { outputDir, apiKey: openai.apiKey, model: openai.imageModel || undefined });
     if (result?.image_url) {
       const updated = setDiabeticRecipeImage(db, recipe.recipe_id, result.image_url) ?? recipe;
       return {
@@ -511,6 +548,77 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     }
   }
 
+  if (url.pathname === "/api/diabetic/provider-settings") {
+    if (req.method === "GET") {
+      const providerId = String(url.searchParams.get("provider_id") ?? "").trim();
+      if (!providerId) {
+        sendJson(res, 400, { error: "provider_id is required" });
+        return true;
+      }
+
+      try {
+        const rows = listDiabeticProviderSettings(db, providerId);
+        const byKey = new Map(rows.map((row) => [row.key, row]));
+
+        const knownKeys = providerId === "openai" ? ["api_key", "model", "image_model"] : [];
+        for (const key of knownKeys) {
+          if (byKey.has(key)) continue;
+          const sensitive = key.includes("key") || key.includes("token") || key.includes("secret") || key.includes("password");
+          byKey.set(key, {
+            provider_id: providerId,
+            key,
+            sensitive,
+            has_value: false,
+            value: null,
+            updated_at: null
+          });
+        }
+
+        const settings = Array.from(byKey.values()).sort((a, b) => String(a.key).localeCompare(String(b.key)));
+        const meta = providerId === "openai" ? resolveOpenAiOverrides(db).meta : { env: {}, saved: {} };
+        sendJson(res, 200, { ok: true, provider_id: providerId, settings, meta });
+        return true;
+      } catch (error) {
+        sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+        return true;
+      }
+    }
+
+    if (req.method === "POST") {
+      let payload = {};
+      try {
+        payload = await readJsonBody(req);
+      } catch {
+        sendJson(res, 400, { error: "Invalid JSON body" });
+        return true;
+      }
+
+      const providerId = String(payload.provider_id ?? payload.providerId ?? "").trim();
+      const key = String(payload.key ?? "").trim();
+      const value = payload.value ?? null;
+      if (!providerId) {
+        sendJson(res, 400, { error: "provider_id is required" });
+        return true;
+      }
+      if (!key) {
+        sendJson(res, 400, { error: "key is required" });
+        return true;
+      }
+
+      try {
+        const setting = setDiabeticProviderSetting(db, providerId, key, value);
+        sendJson(res, 200, { ok: true, setting });
+        return true;
+      } catch (error) {
+        sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+        return true;
+      }
+    }
+
+    sendMethodNotAllowed(res, "GET, POST");
+    return true;
+  }
+
   if (url.pathname === "/api/diabetic/share/recipe") {
     if (!requireMethod(req, res, "GET")) return true;
     const recipeId = String(url.searchParams.get("recipe_id") ?? "").trim();
@@ -785,9 +893,10 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     }
 
     const outputDir = String(process.env.DIABETICSPACE_IMAGE_DIR ?? "").trim() || join(resolvedDataDir, "diabetic-images");
+    const openai = resolveOpenAiOverrides(db);
 
     try {
-      const result = await generateDiabeticRecipeImageToFile(recipe, { outputDir, force });
+      const result = await generateDiabeticRecipeImageToFile(recipe, { outputDir, force, apiKey: openai.apiKey, model: openai.imageModel || undefined });
       const updated = setDiabeticRecipeImage(db, recipe.recipe_id, result.image_url) ?? recipe;
       sendJson(res, 200, {
         ok: true,
@@ -965,7 +1074,8 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     const bestMatchRecipe = matches.length ? getDiabeticRecipeById(db, matches[0].recipe_id) : null;
 
     try {
-      const generated = await generateDiabeticRecipe(query, bestMatchRecipe);
+      const openai = resolveOpenAiOverrides(db);
+      const generated = await generateDiabeticRecipe(query, bestMatchRecipe, { apiKey: openai.apiKey, model: openai.model });
       let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
       const ensured = await ensureDiabeticRecipeImage(db, saved, resolvedDataDir);
       saved = ensured.recipe;
@@ -1045,6 +1155,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     const started = performance.now();
     const recalled = recallDiabeticRecipe(db, message);
     const latency_ms = toLatencyMs(performance.now() - started);
+    const openai = resolveOpenAiOverrides(db);
 
     if (recalled) {
       const recall_count = Number(recalled.recall_count ?? 0);
@@ -1068,7 +1179,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
       }
 
       try {
-        const generated = await generateDiabeticRecipe(message, recalled);
+        const generated = await generateDiabeticRecipe(message, recalled, { apiKey: openai.apiKey, model: openai.model });
         let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
         const ensured = await ensureDiabeticRecipeImage(db, saved, resolvedDataDir);
         saved = ensured.recipe;
@@ -1120,7 +1231,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     }
 
     try {
-      const generated = await generateDiabeticRecipe(message, null);
+      const generated = await generateDiabeticRecipe(message, null, { apiKey: openai.apiKey, model: openai.model });
       let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
       const ensured = await ensureDiabeticRecipeImage(db, saved, resolvedDataDir);
       saved = ensured.recipe;
@@ -1233,7 +1344,8 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     let adapted;
     let llm = null;
     try {
-      const result = await adaptDiabeticRecipe(change, original);
+      const openai = resolveOpenAiOverrides(db);
+      const result = await adaptDiabeticRecipe(change, original, { apiKey: openai.apiKey, model: openai.model });
       adapted = result.recipe;
       llm = result.llm ?? null;
     } catch (error) {
@@ -1506,6 +1618,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
 
     const localRecall = measureSync(() => recallDiabeticRecipe(db, query));
     const recalled = localRecall.result;
+    const openai = resolveOpenAiOverrides(db);
     if (recalled) {
       const recall_count = Number(recalled.recall_count ?? 0);
       if (recall_count >= 2) {
@@ -1530,7 +1643,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
       }
 
       try {
-        const generated = await generateFromBuilderSession(session, recalled);
+        const generated = await generateFromBuilderSession(session, recalled, { apiKey: openai.apiKey, model: openai.model });
         let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
         const ensured = await ensureDiabeticRecipeImage(db, saved, resolvedDataDir);
         saved = ensured.recipe;
@@ -1573,7 +1686,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     }
 
     try {
-      const generated = await generateFromBuilderSession(session, null);
+      const generated = await generateFromBuilderSession(session, null, { apiKey: openai.apiKey, model: openai.model });
       let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
       const ensured = await ensureDiabeticRecipeImage(db, saved, resolvedDataDir);
       saved = ensured.recipe;

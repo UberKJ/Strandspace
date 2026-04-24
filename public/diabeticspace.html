@@ -281,6 +281,31 @@
 
           <hr style="border:0;border-top:1px solid rgba(170, 150, 255, 0.16); margin: 16px 0;" />
 
+          <h3 style="margin: 10px 0 6px 0;">AI provider (optional)</h3>
+          <p class="ds-sub ds-sub-small">AI features are only used when you explicitly request them. Environment variables take priority over saved settings.</p>
+
+          <div class="ds-actions" style="gap: 12px; align-items: center; margin-top: 10px;">
+            <select id="settings-provider" class="ds-input" style="max-width: 220px;">
+              <option value="openai">OpenAI</option>
+            </select>
+            <button id="settings-provider-refresh" type="button" class="ghost-action">Refresh</button>
+          </div>
+
+          <div class="ds-actions" style="gap: 12px; align-items: center; margin-top: 10px; flex-wrap: wrap;">
+            <input id="settings-provider-api-key" type="password" class="ds-input" placeholder="API key (stored locally, masked)" style="max-width: 360px;" />
+            <button id="settings-provider-save" type="button" class="primary-action">Save</button>
+            <button id="settings-provider-clear" type="button" class="ghost-action">Clear saved key</button>
+          </div>
+
+          <div class="ds-actions" style="gap: 12px; align-items: center; margin-top: 10px; flex-wrap: wrap;">
+            <input id="settings-provider-model" type="text" class="ds-input" placeholder="Model (optional)" style="max-width: 240px;" />
+            <input id="settings-provider-image-model" type="text" class="ds-input" placeholder="Image model (optional)" style="max-width: 240px;" />
+          </div>
+
+          <div class="ds-muted" id="settings-provider-status" style="margin-top: 10px;"></div>
+
+          <hr style="border:0;border-top:1px solid rgba(170, 150, 255, 0.16); margin: 16px 0;" />
+
           <h3 style="margin: 10px 0 6px 0;">Backup</h3>
           <div class="ds-actions" style="margin-top: 10px;">
             <button id="settings-export" type="button" class="primary-action">Export backup</button>
@@ -403,6 +428,14 @@
           settingsUserVerify: document.getElementById("settings-user-verify"),
           settingsPinLock: document.getElementById("settings-pin-lock"),
           settingsUserStatus: document.getElementById("settings-user-status"),
+          settingsProvider: document.getElementById("settings-provider"),
+          settingsProviderRefresh: document.getElementById("settings-provider-refresh"),
+          settingsProviderApiKey: document.getElementById("settings-provider-api-key"),
+          settingsProviderModel: document.getElementById("settings-provider-model"),
+          settingsProviderImageModel: document.getElementById("settings-provider-image-model"),
+          settingsProviderSave: document.getElementById("settings-provider-save"),
+          settingsProviderClear: document.getElementById("settings-provider-clear"),
+          settingsProviderStatus: document.getElementById("settings-provider-status"),
           settingsImportFile: document.getElementById("settings-import-file"),
           settingsImportOverwrite: document.getElementById("settings-import-overwrite"),
           settingsImportApply: document.getElementById("settings-import-apply"),
@@ -688,6 +721,7 @@
         } else if (settings) {
           setTimeout(() => els.settingsExport?.focus?.(), 0);
           void refreshUsers();
+          void refreshProviderSettings();
         }
       }
 
@@ -1484,6 +1518,96 @@
         await refreshShoppingLists();
       }
 
+      async function refreshProviderSettings() {
+        if (!els.settingsProviderStatus) return;
+        const providerId = String(els.settingsProvider?.value ?? "openai").trim() || "openai";
+        els.settingsProviderStatus.textContent = "Loading provider settings...";
+
+        const { response, data } = await getJson(`/api/diabetic/provider-settings?provider_id=${encodeURIComponent(providerId)}`);
+        if (!response.ok) {
+          els.settingsProviderStatus.textContent = data?.error || `Failed to load settings (HTTP ${response.status}).`;
+          return;
+        }
+
+        const settings = Array.isArray(data.settings) ? data.settings : [];
+        const meta = data.meta ?? {};
+        const apiKeyRow = settings.find((row) => row.key === "api_key") ?? null;
+        const modelRow = settings.find((row) => row.key === "model") ?? null;
+        const imageModelRow = settings.find((row) => row.key === "image_model") ?? null;
+
+        const envHasKey = Boolean(meta?.env?.api_key);
+        const savedHasKey = Boolean(apiKeyRow?.has_value);
+
+        if (els.settingsProviderApiKey) {
+          els.settingsProviderApiKey.value = "";
+        }
+        if (els.settingsProviderModel) {
+          els.settingsProviderModel.value = String(modelRow?.value ?? "");
+          els.settingsProviderModel.placeholder = meta?.env?.model ? `Env: ${meta.env.model}` : "Model (optional)";
+        }
+        if (els.settingsProviderImageModel) {
+          els.settingsProviderImageModel.value = String(imageModelRow?.value ?? "");
+          els.settingsProviderImageModel.placeholder = meta?.env?.image_model ? `Env: ${meta.env.image_model}` : "Image model (optional)";
+        }
+
+        const keySource = envHasKey ? "environment" : savedHasKey ? "saved locally" : "not set";
+        els.settingsProviderStatus.textContent = `OpenAI key: ${keySource}.`;
+      }
+
+      async function saveProviderSettings() {
+        if (!els.settingsProviderStatus) return;
+        const providerId = String(els.settingsProvider?.value ?? "openai").trim() || "openai";
+        const apiKey = String(els.settingsProviderApiKey?.value ?? "").trim();
+        const model = String(els.settingsProviderModel?.value ?? "").trim();
+        const imageModel = String(els.settingsProviderImageModel?.value ?? "").trim();
+
+        els.settingsProviderStatus.textContent = "Saving settings...";
+
+        const saves = [];
+        if (apiKey) {
+          saves.push(postJson("/api/diabetic/provider-settings", { provider_id: providerId, key: "api_key", value: apiKey }));
+        }
+        if (model) {
+          saves.push(postJson("/api/diabetic/provider-settings", { provider_id: providerId, key: "model", value: model }));
+        }
+        if (imageModel) {
+          saves.push(postJson("/api/diabetic/provider-settings", { provider_id: providerId, key: "image_model", value: imageModel }));
+        }
+
+        if (!saves.length) {
+          els.settingsProviderStatus.textContent = "Nothing to save.";
+          return;
+        }
+
+        const results = await Promise.all(saves);
+        const failed = results.find((r) => !r.response?.ok);
+        if (failed) {
+          els.settingsProviderStatus.textContent = failed.data?.error || "Save failed.";
+          return;
+        }
+
+        if (els.settingsProviderApiKey) els.settingsProviderApiKey.value = "";
+        els.settingsProviderStatus.textContent = "Saved ✓";
+        setTimeout(() => {
+          if (els.settingsProviderStatus.textContent === "Saved ✓") els.settingsProviderStatus.textContent = "";
+        }, 1200);
+        await refreshProviderSettings();
+      }
+
+      async function clearProviderKey() {
+        const providerId = String(els.settingsProvider?.value ?? "openai").trim() || "openai";
+        const ok = window.confirm("Clear the saved API key for this provider? (Environment variables will still work.)");
+        if (!ok) return;
+        if (els.settingsProviderStatus) els.settingsProviderStatus.textContent = "Clearing saved key...";
+        const { response, data } = await postJson("/api/diabetic/provider-settings", { provider_id: providerId, key: "api_key", value: "" });
+        if (!response.ok) {
+          if (els.settingsProviderStatus) els.settingsProviderStatus.textContent = data?.error || "Clear failed.";
+          return;
+        }
+        if (els.settingsProviderStatus) els.settingsProviderStatus.textContent = "Cleared ✓";
+        await refreshProviderSettings();
+      }
+
       async function previewShareImport(packageJson) {
         if (!els.settingsSharePreview || !els.settingsShareStatus) return;
         const recipe = packageJson?.recipe ?? null;
@@ -2145,6 +2269,29 @@
           await handleImportFile(file);
         });
         els.settingsImportApply?.addEventListener("click", applyImport);
+
+        els.settingsProviderRefresh?.addEventListener("click", refreshProviderSettings);
+        els.settingsProviderSave?.addEventListener("click", saveProviderSettings);
+        els.settingsProviderClear?.addEventListener("click", clearProviderKey);
+        els.settingsProvider?.addEventListener("change", refreshProviderSettings);
+        els.settingsProviderApiKey?.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            els.settingsProviderSave?.click();
+          }
+        });
+        els.settingsProviderModel?.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            els.settingsProviderSave?.click();
+          }
+        });
+        els.settingsProviderImageModel?.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            els.settingsProviderSave?.click();
+          }
+        });
 
         els.settingsShareFile?.addEventListener("change", async (event) => {
           const file = event?.target?.files?.[0] ?? null;

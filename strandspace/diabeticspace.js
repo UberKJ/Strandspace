@@ -55,6 +55,13 @@ export {
 } from "./diabetic/share.js";
 
 export {
+  getDiabeticProviderSetting,
+  isSensitiveSettingKey as isSensitiveDiabeticProviderSettingKey,
+  listDiabeticProviderSettings,
+  setDiabeticProviderSetting
+} from "./diabetic/providers.js";
+
+export {
   createLocalUser,
   getLocalUser,
   listLocalUsers,

@@ -8,6 +8,7 @@ const DEFAULT_MODEL = process.env.DIABETICSPACE_OPENAI_MODEL || process.env.OPEN
 const DEFAULT_IMAGE_MODEL = process.env.DIABETICSPACE_IMAGE_MODEL || "gpt-image-1";
 
 let client = null;
+let clientApiKey = "";
 let mock = null;
 let imageMock = null;
 let resolvedApiKey = null;
@@ -66,7 +67,7 @@ function readWindowsUserEnvironment(name) {
   }
 }
 
-function resolveOpenAiApiKey() {
+export function resolveOpenAiApiKeyFromEnv() {
   const processKey = String(process.env.OPENAI_API_KEY ?? "").trim();
   if (processKey) {
     return processKey;
@@ -96,14 +97,16 @@ function openAiUnavailableError() {
   return error;
 }
 
-function getClient() {
-  const apiKey = resolveOpenAiApiKey();
-  if (!apiKey) {
+function getClient({ apiKey } = {}) {
+  const resolved = String(apiKey ?? "").trim() || resolveOpenAiApiKeyFromEnv();
+  const finalKey = String(resolved ?? "").trim();
+  if (!finalKey) {
     throw openAiUnavailableError();
   }
 
-  if (!client) {
-    client = new OpenAI({ apiKey });
+  if (!client || clientApiKey !== finalKey) {
+    clientApiKey = finalKey;
+    client = new OpenAI({ apiKey: finalKey });
   }
 
   return client;
@@ -197,15 +200,18 @@ function normalizeLocalRecall(localRecallResult) {
 async function runOpenAi({
   systemPrompt,
   input,
-  routeLabel
+  routeLabel,
+  apiKey = "",
+  model = ""
 }) {
+  const chosenModel = String(model ?? "").trim() || DEFAULT_MODEL;
   if (mock) {
     const recipe = await mock({ systemPrompt, input, routeLabel });
     return {
       recipe,
       llm: {
         provider: "openai",
-        model: DEFAULT_MODEL,
+        model: chosenModel,
         latencyMs: null,
         responseId: null,
         inputTokens: null,
@@ -215,10 +221,10 @@ async function runOpenAi({
     };
   }
 
-  const openai = getClient();
+  const openai = getClient({ apiKey });
   const started = performance.now();
   const response = await openai.responses.create({
-    model: DEFAULT_MODEL,
+    model: chosenModel,
     store: false,
     instructions: systemPrompt,
     input,
@@ -239,7 +245,7 @@ async function runOpenAi({
     recipe,
     llm: {
       provider: "openai",
-      model: response.model ?? DEFAULT_MODEL,
+      model: response.model ?? chosenModel,
       latencyMs: Number((performance.now() - started).toFixed(3)),
       responseId: response.id ?? null,
       inputTokens: usage?.inputTokens ?? null,
@@ -249,7 +255,7 @@ async function runOpenAi({
   };
 }
 
-export async function generateDiabeticRecipe(userMessage, localRecallResult) {
+export async function generateDiabeticRecipe(userMessage, localRecallResult, { apiKey = "", model = "" } = {}) {
   const systemPrompt = "You are a diabetic-friendly recipe assistant. You only suggest recipes appropriate for people managing Type 1 or Type 2 diabetes. All recipes must be low glycemic index (GI < 55 preferred), low in added sugar, and blood-sugar friendly. When asked for a recipe, always return a JSON object with these exact keys: recipe_id, title, meal_type, description, ingredients (array of {name,amount,unit,note}), substitutes (array of {original,substitute,reason}), instructions (array of strings), servings, serving_notes, tags (array), gi_notes. Return ONLY the JSON object. No markdown, no explanation.";
   const local = normalizeLocalRecall(localRecallResult);
   const input = [
@@ -260,11 +266,13 @@ export async function generateDiabeticRecipe(userMessage, localRecallResult) {
   return runOpenAi({
     systemPrompt,
     input,
-    routeLabel: "generateDiabeticRecipe"
+    routeLabel: "generateDiabeticRecipe",
+    apiKey,
+    model
   });
 }
 
-export async function adaptDiabeticRecipe(changeRequest, localRecallResult) {
+export async function adaptDiabeticRecipe(changeRequest, localRecallResult, { apiKey = "", model = "" } = {}) {
   const systemPrompt = "You adapt existing diabetic-friendly recipes. Keep the recipe safe for people managing Type 1 or Type 2 diabetes. Preserve the core dish unless the requested change requires otherwise. Return a JSON object with these exact keys: recipe_id, title, meal_type, description, ingredients (array of {name,amount,unit,note}), substitutes (array of {original,substitute,reason}), instructions (array of strings), servings, serving_notes, tags (array), gi_notes. Return ONLY the JSON object. No markdown, no explanation.";
   const local = normalizeLocalRecall(localRecallResult);
   const input = [
@@ -275,11 +283,13 @@ export async function adaptDiabeticRecipe(changeRequest, localRecallResult) {
   return runOpenAi({
     systemPrompt,
     input,
-    routeLabel: "adaptDiabeticRecipe"
+    routeLabel: "adaptDiabeticRecipe",
+    apiKey,
+    model
   });
 }
 
-export async function generateFromBuilderSession(sessionObj, localRecallResult) {
+export async function generateFromBuilderSession(sessionObj, localRecallResult, { apiKey = "", model = "" } = {}) {
   const systemPrompt = "You convert a structured diabetic recipe request into one diabetic-friendly recipe. The request includes meal type, health goal, ingredients to include, ingredients to avoid, servings, and extra notes. Return one JSON object with these exact keys: recipe_id, title, meal_type, description, ingredients (array of {name,amount,unit,note}), substitutes (array of {original,substitute,reason}), instructions (array of strings), servings, serving_notes, tags (array), gi_notes. Return ONLY the JSON object. No markdown, no explanation.";
   const local = normalizeLocalRecall(localRecallResult);
   const input = [
@@ -290,7 +300,9 @@ export async function generateFromBuilderSession(sessionObj, localRecallResult) 
   return runOpenAi({
     systemPrompt,
     input,
-    routeLabel: "generateFromBuilderSession"
+    routeLabel: "generateFromBuilderSession",
+    apiKey,
+    model
   });
 }
 
@@ -335,7 +347,8 @@ export async function generateDiabeticRecipeImageToFile(recipe, {
   outputDir = "",
   model = DEFAULT_IMAGE_MODEL,
   size = "1024x1024",
-  force = false
+  force = false,
+  apiKey = ""
 } = {}) {
   const recipe_id = String(recipe?.recipe_id ?? "").trim();
   if (!recipe_id) {
@@ -383,7 +396,7 @@ export async function generateDiabeticRecipeImageToFile(recipe, {
     };
   }
 
-  const openai = getClient();
+  const openai = getClient({ apiKey });
   const response = await openai.images.generate({
     model,
     prompt,

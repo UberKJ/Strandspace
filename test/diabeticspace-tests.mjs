@@ -859,4 +859,41 @@ export async function registerDiabeticspaceTests({
       assert.equal(privatePayload.recipe.public_share_id, null);
     });
   });
+
+  await check("provider settings: secrets are masked and env takes priority", async () => {
+    await withServer(async (address) => {
+      const originalEnvKey = process.env.OPENAI_API_KEY;
+      const originalDisable = process.env.DIABETICSPACE_DISABLE_USER_ENV_LOOKUP;
+      delete process.env.OPENAI_API_KEY;
+      process.env.DIABETICSPACE_DISABLE_USER_ENV_LOOKUP = "1";
+
+      const setKey = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/provider-settings`, {
+        provider_id: "openai",
+        key: "api_key",
+        value: "sk-test-123"
+      });
+      assert.equal(setKey.status, 200);
+
+      const list1 = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/provider-settings?provider_id=openai`);
+      assert.equal(list1.status, 200);
+      const payload1 = await list1.json();
+      const apiKeyRow1 = (payload1.settings ?? []).find((row) => row.key === "api_key");
+      assert.ok(apiKeyRow1);
+      assert.equal(apiKeyRow1.sensitive, true);
+      assert.equal(apiKeyRow1.has_value, true);
+      assert.equal(apiKeyRow1.value, null);
+      assert.equal(Boolean(payload1.meta?.env?.api_key), false);
+
+      process.env.OPENAI_API_KEY = "env-key";
+      const list2 = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/provider-settings?provider_id=openai`);
+      assert.equal(list2.status, 200);
+      const payload2 = await list2.json();
+      assert.equal(Boolean(payload2.meta?.env?.api_key), true);
+
+      if (originalEnvKey) process.env.OPENAI_API_KEY = originalEnvKey;
+      else delete process.env.OPENAI_API_KEY;
+      if (originalDisable) process.env.DIABETICSPACE_DISABLE_USER_ENV_LOOKUP = originalDisable;
+      else delete process.env.DIABETICSPACE_DISABLE_USER_ENV_LOOKUP;
+    });
+  });
 }
