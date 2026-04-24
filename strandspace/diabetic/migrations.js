@@ -62,6 +62,7 @@ export function runDiabeticMigrations(db) {
         image_url TEXT,
         source TEXT,
         recall_count INTEGER DEFAULT 0,
+        updated_at TEXT DEFAULT (datetime('now')),
         created_at TEXT DEFAULT (datetime('now'))
       );
       CREATE INDEX IF NOT EXISTS idx_diabetic_recipes_meal_type ON diabetic_recipes(meal_type);
@@ -93,8 +94,12 @@ export function runDiabeticMigrations(db) {
       { name: "rating", sql: "rating INTEGER DEFAULT 0" },
       { name: "favorite", sql: "favorite INTEGER DEFAULT 0" },
       { name: "last_cooked_at", sql: "last_cooked_at TEXT" },
-      { name: "updated_at", sql: "updated_at TEXT DEFAULT (datetime('now'))" }
+      // SQLite does not allow adding a column with a non-constant default via ALTER TABLE.
+      // For new DBs, updated_at is created in 001 with DEFAULT (datetime('now')).
+      // For existing DBs, we add updated_at without a default and backfill.
+      { name: "updated_at", sql: "updated_at TEXT" }
     ]);
+    db.exec("UPDATE diabetic_recipes SET updated_at = datetime('now') WHERE updated_at IS NULL OR trim(updated_at) = '';");
     db.exec("CREATE INDEX IF NOT EXISTS idx_diabetic_recipes_favorite ON diabetic_recipes(favorite);");
     db.exec("CREATE INDEX IF NOT EXISTS idx_diabetic_recipes_rating ON diabetic_recipes(rating DESC);");
     db.exec("CREATE INDEX IF NOT EXISTS idx_diabetic_recipes_updated ON diabetic_recipes(updated_at DESC);");
