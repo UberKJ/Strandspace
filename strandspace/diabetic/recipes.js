@@ -26,6 +26,10 @@ function parseRecipeRow(row) {
     rating: Number.isFinite(Number(row.rating)) ? Number(row.rating) : 0,
     favorite: Number(row.favorite ?? 0) ? 1 : 0,
     last_cooked_at: String(row.last_cooked_at ?? "").trim() || null,
+    public_share_id: String(row.public_share_id ?? "").trim() || null,
+    share_status: String(row.share_status ?? "").trim() || "private",
+    license_note: String(row.license_note ?? "").trim() || null,
+    author_name: String(row.author_name ?? "").trim() || null,
     updated_at: String(row.updated_at ?? "").trim() || null,
     created_at: String(row.created_at ?? "").trim() || null
   };

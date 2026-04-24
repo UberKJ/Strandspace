@@ -49,6 +49,12 @@ export {
 export { exportDiabeticBackup, importDiabeticBackup } from "./diabetic/backup.js";
 
 export {
+  createRecipeSharePackage,
+  importRecipeSharePackage,
+  setRecipeShareStatus
+} from "./diabetic/share.js";
+
+export {
   createLocalUser,
   getLocalUser,
   listLocalUsers,

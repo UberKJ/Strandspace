@@ -796,4 +796,67 @@ export async function registerDiabeticspaceTests({
       assert.ok(usersPayload.users.some((u) => u.user_id === userId));
     });
   });
+
+  await check("recipe sharing: export share card, import safely, and set share status", async () => {
+    await withServer(async (address) => {
+      const exportResponse = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/share/recipe?recipe_id=cauliflower-fried-rice`);
+      assert.equal(exportResponse.status, 200);
+      const exported = await exportResponse.json();
+      assert.equal(exported.ok, true);
+      assert.equal(exported.package?.app, "DiabeticSpace");
+      assert.equal(exported.package?.type, "recipe_share");
+      assert.equal(exported.package?.version, 1);
+      assert.equal(exported.package?.recipe?.recipe_id, "cauliflower-fried-rice");
+      assert.equal(exported.package?.recipe?.title?.length > 0, true);
+
+      const importOne = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/share/import`, {
+        packageJson: exported.package,
+        overwrite: false
+      });
+      assert.equal(importOne.status, 200);
+      const importedOne = await importOne.json();
+      assert.equal(importedOne.ok, true);
+      assert.equal(importedOne.duplicated, true);
+      assert.ok(importedOne.imported_as);
+      assert.notEqual(importedOne.imported_as, "cauliflower-fried-rice");
+
+      const importedId = String(importedOne.imported_as);
+      const getImported = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/recipe?recipe_id=${encodeURIComponent(importedId)}`);
+      assert.equal(getImported.status, 200);
+      const importedPayload = await getImported.json();
+      assert.equal(importedPayload.recipe.recipe_id, importedId);
+      assert.equal(importedPayload.recipe.source, "shared");
+      assert.equal(importedPayload.recipe.share_status, "private");
+
+      const importTwo = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/share/import`, {
+        packageJson: exported.package,
+        overwrite: false
+      });
+      assert.equal(importTwo.status, 200);
+      const importedTwo = await importTwo.json();
+      assert.equal(importedTwo.ok, true);
+      assert.ok(importedTwo.imported_as);
+      assert.notEqual(String(importedTwo.imported_as), importedId);
+
+      const setExportable = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/share/status`, {
+        recipe_id: importedId,
+        status: "exportable"
+      });
+      assert.equal(setExportable.status, 200);
+      const exportablePayload = await setExportable.json();
+      assert.equal(exportablePayload.ok, true);
+      assert.equal(exportablePayload.recipe.share_status, "exportable");
+      assert.ok(exportablePayload.recipe.public_share_id);
+
+      const setPrivate = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/share/status`, {
+        recipe_id: importedId,
+        status: "private"
+      });
+      assert.equal(setPrivate.status, 200);
+      const privatePayload = await setPrivate.json();
+      assert.equal(privatePayload.ok, true);
+      assert.equal(privatePayload.recipe.share_status, "private");
+      assert.equal(privatePayload.recipe.public_share_id, null);
+    });
+  });
 }

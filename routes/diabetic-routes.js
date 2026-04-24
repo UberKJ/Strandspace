@@ -9,6 +9,7 @@ import {
   createWeeklyMealPlan,
   createShoppingList,
   createLocalUser,
+  createRecipeSharePackage,
   deleteShoppingListItem,
   exportDiabeticBackup,
   generateShoppingListFromMealPlan,
@@ -31,6 +32,7 @@ import {
   removeMealPlanItem,
   rateDiabeticRecipe,
   searchDiabeticRecipes,
+  setRecipeShareStatus,
   setUserSetting,
   setDiabeticRecipeFavorite,
   setDiabeticRecipeImage,
@@ -39,6 +41,7 @@ import {
   deleteDiabeticBuilderSession,
   updateMealPlanItem,
   updateShoppingListItem,
+  importRecipeSharePackage,
   verifyLocalPin
 } from "../strandspace/diabeticspace.js";
 
@@ -501,6 +504,76 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     try {
       const summary = importDiabeticBackup(db, backup, { overwrite, dry_run });
       sendJson(res, 200, { ok: true, summary });
+      return true;
+    } catch (error) {
+      sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+      return true;
+    }
+  }
+
+  if (url.pathname === "/api/diabetic/share/recipe") {
+    if (!requireMethod(req, res, "GET")) return true;
+    const recipeId = String(url.searchParams.get("recipe_id") ?? "").trim();
+    if (!recipeId) {
+      sendJson(res, 400, { error: "recipe_id is required" });
+      return true;
+    }
+
+    try {
+      const author_name = url.searchParams.get("author_name");
+      const notes = url.searchParams.get("notes");
+      const pkg = createRecipeSharePackage(db, recipeId, { author_name, notes });
+      sendJson(res, 200, { ok: true, package: pkg });
+      return true;
+    } catch (error) {
+      sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+      return true;
+    }
+  }
+
+  if (url.pathname === "/api/diabetic/share/status") {
+    if (!requireMethod(req, res, "POST")) return true;
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return true;
+    }
+
+    const recipeId = String(payload.recipe_id ?? payload.recipeId ?? "").trim();
+    const status = payload.status ?? payload.share_status ?? payload.shareStatus ?? "";
+    if (!recipeId) {
+      sendJson(res, 400, { error: "recipe_id is required" });
+      return true;
+    }
+
+    try {
+      const recipe = setRecipeShareStatus(db, recipeId, status);
+      sendJson(res, 200, { ok: true, recipe });
+      return true;
+    } catch (error) {
+      sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+      return true;
+    }
+  }
+
+  if (url.pathname === "/api/diabetic/share/import") {
+    if (!requireMethod(req, res, "POST")) return true;
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return true;
+    }
+
+    const overwrite = Boolean(payload.overwrite);
+    const packageJson = payload.packageJson ?? payload.package ?? payload;
+
+    try {
+      const result = importRecipeSharePackage(db, packageJson, { overwrite });
+      sendJson(res, 200, { ok: true, ...result });
       return true;
     } catch (error) {
       sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) });

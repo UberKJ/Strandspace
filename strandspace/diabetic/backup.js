@@ -30,6 +30,10 @@ function parseRecipeRowForBackup(row) {
     rating: Number.isFinite(Number(row.rating)) ? Number(row.rating) : 0,
     favorite: Number(row.favorite ?? 0) ? 1 : 0,
     last_cooked_at: String(row.last_cooked_at ?? "").trim() || null,
+    public_share_id: String(row.public_share_id ?? "").trim() || null,
+    share_status: String(row.share_status ?? "").trim() || "private",
+    license_note: String(row.license_note ?? "").trim() || null,
+    author_name: String(row.author_name ?? "").trim() || null,
     updated_at: String(row.updated_at ?? "").trim() || null,
     created_at: String(row.created_at ?? "").trim() || null
   };
@@ -178,8 +182,10 @@ export function importDiabeticBackup(db, backup = {}, { overwrite = false, dry_r
         INSERT INTO diabetic_recipes (
           recipe_id, title, meal_type, description, ingredients, substitutes, instructions,
           servings, serving_notes, tags, gi_notes, trigger_words, image_url, source,
-          recall_count, rating, favorite, last_cooked_at, updated_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          recall_count, rating, favorite, last_cooked_at,
+          public_share_id, share_status, license_note, author_name,
+          updated_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(recipe_id) DO UPDATE SET
           title = excluded.title,
           meal_type = excluded.meal_type,
@@ -198,6 +204,10 @@ export function importDiabeticBackup(db, backup = {}, { overwrite = false, dry_r
           rating = excluded.rating,
           favorite = excluded.favorite,
           last_cooked_at = excluded.last_cooked_at,
+          public_share_id = excluded.public_share_id,
+          share_status = excluded.share_status,
+          license_note = excluded.license_note,
+          author_name = excluded.author_name,
           updated_at = excluded.updated_at
       `).run(
         recipe_id,
@@ -218,6 +228,10 @@ export function importDiabeticBackup(db, backup = {}, { overwrite = false, dry_r
         Number(recipe.rating ?? 0),
         Number(recipe.favorite ?? 0) ? 1 : 0,
         normalizeText(recipe.last_cooked_at),
+        normalizeText(recipe.public_share_id),
+        normalizeText(recipe.share_status) || "private",
+        normalizeText(recipe.license_note),
+        normalizeText(recipe.author_name),
         normalizeText(recipe.updated_at) ?? new Date().toISOString(),
         normalizeText(recipe.created_at)
       );
@@ -450,4 +464,3 @@ export function importDiabeticBackup(db, backup = {}, { overwrite = false, dry_r
 
   return summary;
 }
-

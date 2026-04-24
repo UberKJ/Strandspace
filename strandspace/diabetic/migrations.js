@@ -210,5 +210,17 @@ export function runDiabeticMigrations(db) {
       CREATE INDEX IF NOT EXISTS idx_diabetic_llm_provider_settings_provider ON diabetic_llm_provider_settings(provider_id);
     `);
   });
-}
 
+  apply("008_recipe_sharing_columns", () => {
+    ensureRecipeColumns(db, [
+      { name: "public_share_id", sql: "public_share_id TEXT" },
+      { name: "share_status", sql: "share_status TEXT DEFAULT 'private'" },
+      { name: "license_note", sql: "license_note TEXT" },
+      { name: "author_name", sql: "author_name TEXT" }
+    ]);
+
+    db.exec("UPDATE diabetic_recipes SET share_status = 'private' WHERE share_status IS NULL OR trim(share_status) = '';");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_diabetic_recipes_share_status ON diabetic_recipes(share_status);");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_diabetic_recipes_public_share_id ON diabetic_recipes(public_share_id);");
+  });
+}

@@ -299,6 +299,23 @@
 
           <div class="ds-muted" id="settings-import-status" style="margin-top: 10px;"></div>
           <pre id="settings-import-preview" style="white-space: pre-wrap; margin-top: 10px;"></pre>
+
+          <hr style="border:0;border-top:1px solid rgba(170, 150, 255, 0.16); margin: 16px 0;" />
+
+          <h3 style="margin: 10px 0 6px 0;">Recipe sharing</h3>
+          <p class="ds-sub ds-sub-small">Export a single recipe as a shareable card, or import one you received. Imported recipes are stored locally with source=shared.</p>
+
+          <div class="ds-actions" style="gap: 12px; align-items: center;">
+            <input id="settings-share-file" type="file" accept="application/json" class="ds-input" />
+            <label class="ds-check">
+              <input id="settings-share-overwrite" type="checkbox" />
+              <span>Overwrite duplicates</span>
+            </label>
+            <button id="settings-share-import" type="button" class="ghost-action" disabled>Import shared recipe</button>
+          </div>
+
+          <div class="ds-muted" id="settings-share-status" style="margin-top: 10px;"></div>
+          <pre id="settings-share-preview" style="white-space: pre-wrap; margin-top: 10px;"></pre>
         </section>
       </main>
 
@@ -390,7 +407,12 @@
           settingsImportOverwrite: document.getElementById("settings-import-overwrite"),
           settingsImportApply: document.getElementById("settings-import-apply"),
           settingsImportStatus: document.getElementById("settings-import-status"),
-          settingsImportPreview: document.getElementById("settings-import-preview")
+          settingsImportPreview: document.getElementById("settings-import-preview"),
+          settingsShareFile: document.getElementById("settings-share-file"),
+          settingsShareOverwrite: document.getElementById("settings-share-overwrite"),
+          settingsShareImport: document.getElementById("settings-share-import"),
+          settingsShareStatus: document.getElementById("settings-share-status"),
+          settingsSharePreview: document.getElementById("settings-share-preview")
 	      };
 
       let activeMealFilter = "";
@@ -404,6 +426,7 @@
       let activeShoppingListId = "";
       let cachedShoppingLists = [];
       let pendingImportBackup = null;
+      let pendingSharePackage = null;
 
       function escapeHtml(value = "") {
         return String(value ?? "")
@@ -797,6 +820,7 @@
             <button class="adapt ghost-action" type="button">Adapt Recipe</button>
             <button class="plan ghost-action" type="button">Add to Plan</button>
             <button class="print ghost-action" type="button">Print</button>
+            <button class="share ghost-action" type="button">Share/Export</button>
             <button class="image-create ghost-action" type="button">${imageUrl ? "Regenerate image" : "Create image"}</button>
             <button class="image-upload ghost-action" type="button">Upload image</button>
             <input class="image-upload-input" type="file" accept="image/png,image/jpeg,image/webp" style="display:none;" />
@@ -814,6 +838,7 @@
         const adaptBtn = card.querySelector("button.adapt");
         const planBtn = card.querySelector("button.plan");
         const printBtn = card.querySelector("button.print");
+        const shareBtn = card.querySelector("button.share");
         const adaptRow = card.querySelector(".ds-adapt-row");
         const adaptInput = card.querySelector(".adapt-input");
         const adaptSend = card.querySelector(".adapt-send");
@@ -889,6 +914,10 @@
         printBtn?.addEventListener("click", () => {
           if (!recipe?.recipe_id) return;
           window.open(`/print/recipe.html?recipe_id=${encodeURIComponent(recipe.recipe_id)}`, "_blank");
+        });
+
+        shareBtn?.addEventListener("click", async () => {
+          await exportRecipeSharePackage(recipe, status);
         });
 
         saveBtn.addEventListener("click", async () => {
@@ -1367,6 +1396,35 @@
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
 
+      async function exportRecipeSharePackage(recipe, statusEl) {
+        if (!recipe?.recipe_id) return;
+        const recipeId = String(recipe.recipe_id).trim();
+        if (!recipeId) return;
+        const notes = window.prompt("Notes for this recipe card (optional):", "") ?? "";
+        const authorName = window.prompt("Author name (optional):", String(recipe.author_name ?? "").trim()) ?? "";
+        const params = new URLSearchParams({ recipe_id: recipeId });
+        if (String(notes).trim()) params.set("notes", String(notes).trim());
+        if (String(authorName).trim()) params.set("author_name", String(authorName).trim());
+
+        if (statusEl) statusEl.textContent = "Preparing share card...";
+        const response = await fetch(`/api/diabetic/share/recipe?${params.toString()}`);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          if (statusEl) statusEl.textContent = payload?.error || `Share export failed (HTTP ${response.status}).`;
+          return;
+        }
+
+        const pkg = payload.package ?? payload;
+        const stamped = String(pkg.created_at ?? new Date().toISOString()).slice(0, 19).replaceAll(":", "-");
+        downloadJson(`diabeticspace-recipe-share-${recipeId}-${stamped}.json`, pkg);
+        if (statusEl) {
+          statusEl.textContent = "Share card exported ✓";
+          setTimeout(() => {
+            if (statusEl.textContent === "Share card exported ✓") statusEl.textContent = "";
+          }, 1600);
+        }
+      }
+
       async function exportBackup() {
         if (!els.settingsImportStatus) return;
         els.settingsImportStatus.textContent = "Exporting backup...";
@@ -1424,6 +1482,60 @@
         els.settingsImportApply?.setAttribute("disabled", "");
         await refreshLibrary();
         await refreshShoppingLists();
+      }
+
+      async function previewShareImport(packageJson) {
+        if (!els.settingsSharePreview || !els.settingsShareStatus) return;
+        const recipe = packageJson?.recipe ?? null;
+        const title = String(recipe?.title ?? "").trim();
+        const recipeId = String(recipe?.recipe_id ?? "").trim();
+        const author = String(packageJson?.author_name ?? recipe?.author_name ?? "").trim();
+        const license = String(recipe?.license_note ?? "").trim();
+
+        els.settingsShareStatus.textContent = "Ready to import.";
+        els.settingsSharePreview.textContent = JSON.stringify({
+          app: packageJson?.app,
+          type: packageJson?.type,
+          version: packageJson?.version,
+          recipe_id: recipeId || null,
+          title: title || null,
+          author_name: author || null,
+          license_note: license || null
+        }, null, 2);
+        els.settingsShareImport?.toggleAttribute("disabled", false);
+      }
+
+      async function handleShareFile(file) {
+        if (!file) return;
+        const text = await file.text();
+        let parsed;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          if (els.settingsShareStatus) els.settingsShareStatus.textContent = "Invalid JSON file.";
+          return;
+        }
+        pendingSharePackage = parsed;
+        await previewShareImport(parsed);
+      }
+
+      async function applyShareImport() {
+        if (!pendingSharePackage) return;
+        const overwrite = Boolean(els.settingsShareOverwrite?.checked);
+        if (els.settingsShareStatus) els.settingsShareStatus.textContent = overwrite ? "Importing (overwrite)..." : "Importing...";
+        const { response, data } = await postJson("/api/diabetic/share/import", { packageJson: pendingSharePackage, overwrite });
+        if (!response.ok) {
+          if (els.settingsShareStatus) els.settingsShareStatus.textContent = data?.error || `Import failed (HTTP ${response.status}).`;
+          return;
+        }
+        if (els.settingsShareStatus) {
+          const label = data?.duplicated ? `Imported ✓ (saved as ${data.imported_as})` : "Imported ✓";
+          els.settingsShareStatus.textContent = label;
+        }
+        if (els.settingsSharePreview) els.settingsSharePreview.textContent = JSON.stringify(data, null, 2);
+        pendingSharePackage = null;
+        els.settingsShareImport?.setAttribute("disabled", "");
+        await refreshLibrary();
       }
 
       const ACTIVE_USER_STORAGE_KEY = "diabeticspace.active_user_id";
@@ -2033,6 +2145,19 @@
           await handleImportFile(file);
         });
         els.settingsImportApply?.addEventListener("click", applyImport);
+
+        els.settingsShareFile?.addEventListener("change", async (event) => {
+          const file = event?.target?.files?.[0] ?? null;
+          if (!file) {
+            pendingSharePackage = null;
+            if (els.settingsShareStatus) els.settingsShareStatus.textContent = "";
+            if (els.settingsSharePreview) els.settingsSharePreview.textContent = "";
+            els.settingsShareImport?.setAttribute("disabled", "");
+            return;
+          }
+          await handleShareFile(file);
+        });
+        els.settingsShareImport?.addEventListener("click", applyShareImport);
 
         els.settingsUserRefresh?.addEventListener("click", refreshUsers);
         els.settingsUserSelect?.addEventListener("change", async () => {
