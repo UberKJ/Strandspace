@@ -1,11 +1,15 @@
 import OpenAI from "openai";
 import { execFileSync } from "node:child_process";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 
 const DEFAULT_MODEL = process.env.DIABETICSPACE_OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-5.4-mini";
 const DEFAULT_IMAGE_MODEL = process.env.DIABETICSPACE_IMAGE_MODEL || "gpt-image-1";
+const DEFAULT_IMAGE_MAX_BYTES = 1_000_000;
+const DEFAULT_IMAGE_QUALITY = process.env.DIABETICSPACE_IMAGE_QUALITY || "low";
+const DEFAULT_IMAGE_OUTPUT_FORMAT = process.env.DIABETICSPACE_IMAGE_OUTPUT_FORMAT || "webp";
+const DEFAULT_IMAGE_OUTPUT_COMPRESSION = Number(process.env.DIABETICSPACE_IMAGE_OUTPUT_COMPRESSION ?? 85);
 
 let client = null;
 let mock = null;
@@ -321,20 +325,70 @@ function buildRecipeImagePrompt(recipe) {
   ].filter(Boolean).join(" ");
 }
 
-function sanitizeRecipeImageFilename(recipeId) {
+function sanitizeRecipeImageBasename(recipeId) {
   const safe = String(recipeId ?? "")
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 90);
-  return safe ? `${safe}.png` : `recipe-${Date.now().toString(36)}.png`;
+  return safe ? safe : `recipe-${Date.now().toString(36)}`;
+}
+
+function detectImageExtension(bytes, fallback = ".png") {
+  if (!bytes || bytes.length < 12) return fallback;
+
+  // PNG
+  if (
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return ".png";
+  }
+
+  // JPEG
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return ".jpg";
+  }
+
+  // GIF
+  const header = bytes.subarray(0, 6).toString("ascii");
+  if (header === "GIF87a" || header === "GIF89a") {
+    return ".gif";
+  }
+
+  // WebP: RIFF....WEBP
+  const riff = bytes.subarray(0, 4).toString("ascii");
+  const webp = bytes.subarray(8, 12).toString("ascii");
+  if (riff === "RIFF" && webp === "WEBP") {
+    return ".webp";
+  }
+
+  return fallback;
+}
+
+function extensionForOutputFormat(format = "") {
+  const normalized = String(format ?? "").trim().toLowerCase();
+  if (normalized === "webp") return ".webp";
+  if (normalized === "jpeg" || normalized === "jpg") return ".jpg";
+  if (normalized === "png") return ".png";
+  return ".png";
 }
 
 export async function generateDiabeticRecipeImageToFile(recipe, {
   outputDir = "",
   model = DEFAULT_IMAGE_MODEL,
-  size = "1024x1024"
+  size = "1024x1024",
+  quality = DEFAULT_IMAGE_QUALITY,
+  outputFormat = DEFAULT_IMAGE_OUTPUT_FORMAT,
+  outputCompression = DEFAULT_IMAGE_OUTPUT_COMPRESSION,
+  maxBytes = DEFAULT_IMAGE_MAX_BYTES
 } = {}) {
   const recipe_id = String(recipe?.recipe_id ?? "").trim();
   if (!recipe_id) {
@@ -349,19 +403,26 @@ export async function generateDiabeticRecipeImageToFile(recipe, {
   const started = performance.now();
   await mkdir(dir, { recursive: true });
 
-  const filename = sanitizeRecipeImageFilename(recipe_id);
-  const filePath = join(dir, filename);
+  const basename = sanitizeRecipeImageBasename(recipe_id);
+  const existingExtensions = [".webp", ".png", ".jpg", ".gif"];
+  const limit = Number(maxBytes ?? DEFAULT_IMAGE_MAX_BYTES);
 
-  try {
-    await access(filePath);
-    return {
-      image_url: `diabetic-images/${filename}`,
-      filePath,
-      model,
-      latencyMs: Number((performance.now() - started).toFixed(3))
-    };
-  } catch {
-    // File doesn't exist yet; continue.
+  for (const ext of existingExtensions) {
+    const candidatePath = join(dir, `${basename}${ext}`);
+    try {
+      await access(candidatePath);
+      const info = await stat(candidatePath);
+      if (info.isFile() && info.size > 0 && info.size <= limit) {
+        return {
+          image_url: `diabetic-images/${basename}${ext}`,
+          filePath: candidatePath,
+          model,
+          latencyMs: Number((performance.now() - started).toFixed(3))
+        };
+      }
+    } catch {
+      // ignore
+    }
   }
 
   const prompt = buildRecipeImagePrompt(recipe);
@@ -371,9 +432,14 @@ export async function generateDiabeticRecipeImageToFile(recipe, {
     if (!buffer || !(buffer instanceof Uint8Array)) {
       throw new Error("generateDiabeticRecipeImageToFile: image mock must return a Uint8Array");
     }
+    if (buffer.length > limit) {
+      throw new Error("generateDiabeticRecipeImageToFile: generated image exceeded 1MB limit");
+    }
+    const ext = detectImageExtension(Buffer.from(buffer), ".png");
+    const filePath = join(dir, `${basename}${ext}`);
     await writeFile(filePath, buffer);
     return {
-      image_url: `diabetic-images/${filename}`,
+      image_url: `diabetic-images/${basename}${ext}`,
       filePath,
       model,
       latencyMs: Number((performance.now() - started).toFixed(3))
@@ -381,34 +447,71 @@ export async function generateDiabeticRecipeImageToFile(recipe, {
   }
 
   const openai = getClient();
-  const response = await openai.images.generate({
-    model,
-    prompt,
-    size
-  });
 
-  const item = Array.isArray(response?.data) ? response.data[0] : null;
-  const b64 = item?.b64_json ?? item?.b64 ?? null;
-  const url = item?.url ?? null;
+  async function requestBytes({
+    imageSize,
+    imageQuality,
+    format,
+    compression
+  }) {
+    const response = await openai.images.generate({
+      model,
+      prompt,
+      size: imageSize,
+      quality: imageQuality,
+      output_format: format,
+      output_compression: compression
+    });
 
-  let bytes = null;
-  if (typeof b64 === "string" && b64.trim()) {
-    bytes = Buffer.from(b64, "base64");
-  } else if (typeof url === "string" && url.trim()) {
-    const fetched = await fetch(url);
-    if (!fetched.ok) {
-      throw new Error(`generateDiabeticRecipeImageToFile: failed to fetch image url (HTTP ${fetched.status})`);
+    const item = Array.isArray(response?.data) ? response.data[0] : null;
+    const b64 = item?.b64_json ?? item?.b64 ?? null;
+    const url = item?.url ?? null;
+
+    if (typeof b64 === "string" && b64.trim()) {
+      return Buffer.from(b64, "base64");
     }
-    bytes = Buffer.from(await fetched.arrayBuffer());
-  }
+    if (typeof url === "string" && url.trim()) {
+      const fetched = await fetch(url);
+      if (!fetched.ok) {
+        throw new Error(`generateDiabeticRecipeImageToFile: failed to fetch image url (HTTP ${fetched.status})`);
+      }
+      return Buffer.from(await fetched.arrayBuffer());
+    }
 
-  if (!bytes || !bytes.length) {
     throw new Error("generateDiabeticRecipeImageToFile: OpenAI image response was missing image bytes");
   }
 
+  const normalizedSize = String(size ?? "").trim() || "1024x1024";
+  const normalizedQuality = String(quality ?? "").trim() || "low";
+  const normalizedFormat = String(outputFormat ?? "").trim() || "webp";
+  const normalizedCompression = Number.isFinite(Number(outputCompression)) ? Number(outputCompression) : 85;
+
+  const attempts = [
+    { imageSize: normalizedSize, imageQuality: normalizedQuality, format: normalizedFormat, compression: normalizedCompression },
+    { imageSize: normalizedSize, imageQuality: normalizedQuality, format: normalizedFormat, compression: 95 },
+    { imageSize: normalizedSize, imageQuality: normalizedQuality, format: "jpeg", compression: 90 },
+    { imageSize: normalizedSize, imageQuality: normalizedQuality, format: "jpeg", compression: 97 }
+  ];
+
+  let bytes = null;
+  let finalExt = null;
+  for (const attempt of attempts) {
+    const attemptBytes = await requestBytes(attempt);
+    if (!attemptBytes?.length) continue;
+    if (attemptBytes.length > limit) continue;
+    bytes = attemptBytes;
+    finalExt = detectImageExtension(attemptBytes, extensionForOutputFormat(attempt.format));
+    break;
+  }
+
+  if (!bytes?.length || !finalExt) {
+    throw new Error("generateDiabeticRecipeImageToFile: generated image exceeded 1MB limit");
+  }
+
+  const filePath = join(dir, `${basename}${finalExt}`);
   await writeFile(filePath, bytes);
   return {
-    image_url: `diabetic-images/${filename}`,
+    image_url: `diabetic-images/${basename}${finalExt}`,
     filePath,
     model,
     latencyMs: Number((performance.now() - started).toFixed(3))

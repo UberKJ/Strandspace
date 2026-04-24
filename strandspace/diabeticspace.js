@@ -345,6 +345,16 @@ export function setDiabeticRecipeImage(db, recipeId, imageUrl) {
   return getDiabeticRecipeById(db, recipe_id);
 }
 
+export function deleteDiabeticRecipe(db, recipeId) {
+  initDiabeticDb(db);
+  const recipe_id = String(recipeId ?? "").trim();
+  if (!recipe_id) return null;
+  const existing = getDiabeticRecipeById(db, recipe_id);
+  if (!existing) return null;
+  db.prepare("DELETE FROM diabetic_recipes WHERE recipe_id = ?").run(recipe_id);
+  return existing;
+}
+
 function scoreRecipe(recipe, queryTokens, queryText) {
   const trigger = new Set(Array.isArray(recipe.trigger_words) ? recipe.trigger_words.map(normalizeToken).filter(Boolean) : []);
   const tags = new Set(Array.isArray(recipe.tags) ? recipe.tags.map(normalizeToken).filter(Boolean) : []);

@@ -312,56 +312,193 @@
         return { response, data };
       }
 
+      async function pickImageFile() {
+        return await new Promise((resolve) => {
+          const input = document.createElement("input");
+          input.type = "file";
+          input.accept = "image/*";
+          input.addEventListener("change", () => resolve(input.files?.[0] ?? null), { once: true });
+          input.click();
+        });
+      }
+
+      async function fileToDataUrl(file) {
+        return await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result ?? ""));
+          reader.onerror = () => reject(new Error("Unable to read image file."));
+          reader.readAsDataURL(file);
+        });
+      }
+
+      function wireImageActionBar(bar, recipe, card, statusEl) {
+        if (!bar || bar.dataset.wired === "1") return;
+        bar.dataset.wired = "1";
+
+        const createBtn = bar.querySelector("button.create-image");
+        const uploadBtn = bar.querySelector("button.upload-image");
+
+        const setDisabled = (disabled) => {
+          if (createBtn) createBtn.disabled = disabled;
+          if (uploadBtn) uploadBtn.disabled = disabled;
+        };
+
+        createBtn?.addEventListener("click", async () => {
+          setDisabled(true);
+          try {
+            await ensureImageForRecipe(recipe, card, statusEl);
+          } finally {
+            setDisabled(false);
+          }
+        });
+
+        uploadBtn?.addEventListener("click", async () => {
+          setDisabled(true);
+          try {
+            await uploadImageForRecipe(recipe, card, statusEl);
+          } finally {
+            setDisabled(false);
+          }
+        });
+      }
+
+      function ensureImageActionBar(recipe, card, statusEl) {
+        if (!card) return null;
+        let bar = card.querySelector(".ds-image-actions");
+        if (!bar) {
+          bar = document.createElement("div");
+          bar.className = "ds-image-actions";
+          bar.innerHTML = `
+            <div class="ds-image-actions-copy">
+              <strong>No image yet.</strong>
+              <span>Create one with AI or upload your own (max 1MB).</span>
+            </div>
+            <div class="ds-image-actions-buttons">
+              <button class="create-image ghost-action" type="button">Create image?</button>
+              <button class="upload-image ghost-action" type="button">Upload image</button>
+            </div>
+          `;
+          card.prepend(bar);
+        }
+        wireImageActionBar(bar, recipe, card, statusEl);
+        return bar;
+      }
+
+      function wireRecipeImageRecovery(img, recipe, card, statusEl) {
+        if (!img) return;
+        img.addEventListener("error", () => {
+          img.remove();
+          recipe.image_url = "";
+          if (statusEl) statusEl.textContent = "Image missing. Create or upload a new one.";
+          ensureImageActionBar(recipe, card, statusEl);
+        }, { once: true });
+      }
+
       async function ensureImageForRecipe(recipe, card, statusEl) {
         if (!recipe || !card) return;
         if (!recipe.recipe_id) return;
-        if (String(recipe.image_url ?? "").trim()) return;
-        if (card.dataset.imageEnsured === "1") return;
-        card.dataset.imageEnsured = "1";
 
-        if (statusEl) {
-          statusEl.textContent = "Generating image…";
-        }
-
+        if (statusEl) statusEl.textContent = "Generating image…";
         startAiTelemetry("Generating image", `Creating a photo for "${recipe.title || recipe.recipe_id}"...`);
         const { response, data } = await postJson("/api/diabetic/ensure-image", { recipe_id: recipe.recipe_id });
         if (!response.ok) {
           const msg = data?.route === "api_unavailable"
             ? "OpenAI not configured."
             : (data?.error || `HTTP ${response.status}`);
-          if (statusEl) {
-            statusEl.textContent = msg;
-          }
+          if (statusEl) statusEl.textContent = msg;
           failTelemetry("Image failed", msg);
           return;
         }
 
         const imageUrl = normalizeAssetUrl(data?.recipe?.image_url ?? data?.image_url ?? "");
-        if (imageUrl) {
-          recipe.image_url = data.recipe?.image_url ?? recipe.image_url;
-          const existing = card.querySelector(".ds-recipe-image");
-          if (!existing) {
-            const img = document.createElement("img");
-            img.className = "ds-recipe-image";
-            img.loading = "lazy";
-            img.decoding = "async";
-            img.alt = recipe.title || "Recipe image";
-            img.src = imageUrl;
-            card.prepend(img);
-          } else {
-            existing.src = imageUrl;
-          }
-          if (statusEl) {
-            statusEl.textContent = "Image saved ✓";
-            setTimeout(() => {
-              if (statusEl.textContent === "Image saved ✓") statusEl.textContent = "";
-            }, 1600);
-          }
-        } else if (statusEl) {
-          statusEl.textContent = "Image unavailable";
+        if (!imageUrl) {
+          if (statusEl) statusEl.textContent = "Image unavailable";
+          finishTelemetry("Image ready", data);
+          return;
+        }
+
+        recipe.image_url = data.recipe?.image_url ?? recipe.image_url;
+        card.querySelector(".ds-image-actions")?.remove();
+        const existing = card.querySelector(".ds-recipe-image");
+        if (!existing) {
+          const next = document.createElement("img");
+          next.className = "ds-recipe-image";
+          next.loading = "lazy";
+          next.decoding = "async";
+          next.alt = recipe.title || "Recipe image";
+          next.src = imageUrl;
+          card.prepend(next);
+          wireRecipeImageRecovery(next, recipe, card, statusEl);
+        } else {
+          existing.src = imageUrl;
+        }
+
+        if (statusEl) {
+          statusEl.textContent = "Image saved ✓";
+          setTimeout(() => {
+            if (statusEl.textContent === "Image saved ✓") statusEl.textContent = "";
+          }, 1600);
         }
 
         finishTelemetry("Image ready", data);
+        void refreshLibrary();
+      }
+
+      async function uploadImageForRecipe(recipe, card, statusEl) {
+        if (!recipe?.recipe_id || !card) return;
+        if (statusEl) statusEl.textContent = "Choose an image…";
+
+        const file = await pickImageFile();
+        if (!file) {
+          if (statusEl) statusEl.textContent = "";
+          return;
+        }
+
+        if (file.size > 1_000_000) {
+          if (statusEl) statusEl.textContent = "Image too large (max 1MB).";
+          return;
+        }
+
+        if (statusEl) statusEl.textContent = "Uploading…";
+        const dataUrl = await fileToDataUrl(file);
+        const { response, data } = await postJson("/api/diabetic/upload-image", {
+          recipe_id: recipe.recipe_id,
+          data_url: dataUrl
+        });
+        if (!response.ok) {
+          if (statusEl) statusEl.textContent = data?.error || `Upload failed (HTTP ${response.status}).`;
+          return;
+        }
+
+        const imageUrl = normalizeAssetUrl(data?.recipe?.image_url ?? data?.image_url ?? "");
+        if (!imageUrl) {
+          if (statusEl) statusEl.textContent = "Upload saved but image missing.";
+          return;
+        }
+
+        recipe.image_url = data.recipe?.image_url ?? recipe.image_url;
+        card.querySelector(".ds-image-actions")?.remove();
+        const existing = card.querySelector(".ds-recipe-image");
+        if (!existing) {
+          const next = document.createElement("img");
+          next.className = "ds-recipe-image";
+          next.loading = "lazy";
+          next.decoding = "async";
+          next.alt = recipe.title || "Recipe image";
+          next.src = imageUrl;
+          card.prepend(next);
+          wireRecipeImageRecovery(next, recipe, card, statusEl);
+        } else {
+          existing.src = imageUrl;
+        }
+
+        if (statusEl) {
+          statusEl.textContent = "Uploaded ✓";
+          setTimeout(() => {
+            if (statusEl.textContent === "Uploaded ✓") statusEl.textContent = "";
+          }, 1600);
+        }
+
         void refreshLibrary();
       }
 
@@ -448,7 +585,18 @@
         const imageUrl = normalizeAssetUrl(recipe.image_url);
 
         card.innerHTML = `
-          ${imageUrl ? `<img class="ds-recipe-image" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(recipe.title || "Recipe image")}" loading="lazy" decoding="async" />` : ""}
+          ${imageUrl ? `<img class="ds-recipe-image" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(recipe.title || "Recipe image")}" loading="lazy" decoding="async" />` : `
+            <div class="ds-image-actions" aria-label="Recipe image actions">
+              <div class="ds-image-actions-copy">
+                <strong>No image yet.</strong>
+                <span>Create one with AI or upload your own (max 1MB).</span>
+              </div>
+              <div class="ds-image-actions-buttons">
+                <button class="create-image ghost-action" type="button">Create image?</button>
+                <button class="upload-image ghost-action" type="button">Upload image</button>
+              </div>
+            </div>
+          `}
           <h3>${escapeHtml(recipe.title || "Recipe")}</h3>
           <div class="ds-badges">
             <span class="ds-badge status-badge status-neutral">${escapeHtml(recipe.meal_type || "meal")}</span>
@@ -483,6 +631,7 @@
             <button class="save primary-action" type="button">Save</button>
             <button class="discard ghost-action" type="button">Discard</button>
             <button class="adapt ghost-action" type="button">Adapt Recipe</button>
+            <button class="delete danger-action" type="button">Delete</button>
             <span class="ds-muted status"></span>
           </div>
           <div class="ds-adapt-row" style="display:none;">
@@ -495,45 +644,58 @@
         const saveBtn = card.querySelector("button.save");
         const discardBtn = card.querySelector("button.discard");
         const adaptBtn = card.querySelector("button.adapt");
+        const deleteBtn = card.querySelector("button.delete");
         const adaptRow = card.querySelector(".ds-adapt-row");
         const adaptInput = card.querySelector(".adapt-input");
         const adaptSend = card.querySelector(".adapt-send");
+        const imgEl = card.querySelector(".ds-recipe-image");
+        const actionBar = card.querySelector(".ds-image-actions");
 
         status.textContent = statusText;
 
+        if (imgEl) {
+          wireRecipeImageRecovery(imgEl, recipe, card, status);
+        }
+        if (actionBar) {
+          wireImageActionBar(actionBar, recipe, card, status);
+        }
+
         saveBtn.addEventListener("click", async () => {
           status.textContent = "Saving…";
-          const needsImage = !String(recipe.image_url ?? "").trim();
-          if (needsImage) {
-            startAiTelemetry("Generating image", "Creating a recipe photo...");
-          }
           const { response, data } = await postJson("/api/diabetic/save", recipe);
           status.textContent = response.ok ? "Saved locally ✓" : "Save failed";
           if (response.ok && data?.image_url && !recipe.image_url) {
             recipe.image_url = data.image_url;
-            const existing = card.querySelector(".ds-recipe-image");
-            if (!existing) {
-              const img = document.createElement("img");
-              img.className = "ds-recipe-image";
-              img.loading = "lazy";
-              img.decoding = "async";
-              img.alt = recipe.title || "Recipe image";
-              img.src = normalizeAssetUrl(data.image_url);
-              card.prepend(img);
-            }
-          }
-          if (needsImage) {
-            if (response.ok) {
-              finishTelemetry("Saved", data);
-            } else {
-              failTelemetry("Save failed", data?.error || "Unable to save recipe.");
-            }
           }
           void refreshLibrary();
         });
 
         discardBtn.addEventListener("click", () => {
           card.remove();
+        });
+
+        deleteBtn.addEventListener("click", async () => {
+          if (!recipe?.recipe_id) return;
+          const confirmed = window.confirm("Delete this recipe from your saved recipes?");
+          if (!confirmed) return;
+
+          const inSelected = Boolean(els.selectedRecipe && els.selectedRecipe.contains(card));
+          status.textContent = "Deleting…";
+          const { response, data } = await postJson("/api/diabetic/delete", { recipe_id: recipe.recipe_id });
+          if (!response.ok) {
+            status.textContent = response.status === 404 ? "Not found" : (data?.error || "Delete failed");
+            return;
+          }
+
+          status.textContent = "Deleted ✓";
+          card.remove();
+          if (inSelected) {
+            clearSelectedRecipe();
+            renderBrowseList();
+          }
+          setMode("search");
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          void refreshLibrary();
         });
 
         adaptBtn.addEventListener("click", () => {
@@ -560,10 +722,6 @@
           }
           finishTelemetry("Adapted", data);
         });
-
-        if (!imageUrl) {
-          void ensureImageForRecipe(recipe, card, status);
-        }
 
         return card;
       }

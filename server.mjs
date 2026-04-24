@@ -1,7 +1,7 @@
 import http from "node:http";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, extname, isAbsolute, join, normalize } from "node:path";
-import { access, readFile, readdir } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -34,6 +34,7 @@ import {
   searchDiabeticRecipes,
   seedDiabeticRecipes,
   setDiabeticRecipeImage,
+  deleteDiabeticRecipe,
   saveDiabeticBuilderSession,
   getDiabeticBuilderSession,
   deleteDiabeticBuilderSession
@@ -67,6 +68,79 @@ const mimeTypes = {
 
 let database = null;
 let databasePath = "";
+
+const DIABETIC_IMAGE_MAX_BYTES = 1_000_000;
+
+function resolveDiabeticImageDir() {
+  return String(process.env.DIABETICSPACE_IMAGE_DIR ?? "").trim() || join(dataDir, "diabetic-images");
+}
+
+function diabeticImageFilename(imageUrl = "") {
+  const raw = String(imageUrl ?? "").trim();
+  if (!raw) return "";
+  const marker = "diabetic-images/";
+  const index = raw.indexOf(marker);
+  if (index < 0) return "";
+  return raw.slice(index + marker.length).split(/[?#]/)[0].split("/").pop() ?? "";
+}
+
+async function fileWithinLimit(filePath, maxBytes = DIABETIC_IMAGE_MAX_BYTES) {
+  try {
+    const info = await stat(filePath);
+    return info.isFile() && info.size > 0 && info.size <= maxBytes;
+  } catch {
+    return false;
+  }
+}
+
+async function safeUnlink(filePath) {
+  try {
+    await unlink(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeImageBasename(value) {
+  const safe = String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 90);
+  return safe || `recipe-${Date.now().toString(36)}`;
+}
+
+function imageExtensionForMime(mime = "") {
+  const normalized = String(mime ?? "").trim().toLowerCase();
+  if (normalized === "image/png") return ".png";
+  if (normalized === "image/jpeg" || normalized === "image/jpg") return ".jpg";
+  if (normalized === "image/webp") return ".webp";
+  if (normalized === "image/gif") return ".gif";
+  return "";
+}
+
+function decodeUploadedImage(payload = {}) {
+  const dataUrl = String(payload.data_url ?? payload.dataUrl ?? "").trim();
+  if (dataUrl) {
+    const match = dataUrl.match(/^data:(?<mime>image\/[a-z0-9.+-]+);base64,(?<data>[A-Za-z0-9+/=]+)$/i);
+    if (!match?.groups?.mime || !match?.groups?.data) {
+      throw Object.assign(new Error("Invalid data URL"), { statusCode: 400 });
+    }
+    const mime = match.groups.mime;
+    const bytes = Buffer.from(match.groups.data, "base64");
+    return { mime, bytes };
+  }
+
+  const base64 = String(payload.base64 ?? payload.bytes_base64 ?? payload.bytesBase64 ?? "").trim();
+  const mime = String(payload.mime ?? "").trim();
+  if (!base64 || !mime) {
+    throw Object.assign(new Error("Image payload is required"), { statusCode: 400 });
+  }
+  const bytes = Buffer.from(base64, "base64");
+  return { mime, bytes };
+}
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
@@ -261,7 +335,7 @@ async function readStaticFile(urlPath) {
   const diabeticImageIndex = normalizedUrl.indexOf(diabeticImageMarker);
   if (diabeticImageIndex >= 0) {
     const relative = normalizedUrl.slice(diabeticImageIndex + diabeticImageMarker.length);
-    const baseDir = join(dataDir, "diabetic-images");
+    const baseDir = resolveDiabeticImageDir();
     const filePath = join(baseDir, relative);
     if (!normalize(filePath).startsWith(normalize(baseDir))) {
       throw Object.assign(new Error("Invalid path"), { statusCode: 400 });
@@ -317,40 +391,6 @@ function soundConstructAnswerPayload(source, question, construct, recall) {
     construct,
     recall
   };
-}
-
-async function ensureDiabeticRecipeImage(db, recipe) {
-  if (!recipe) {
-    return { recipe: null, image: null };
-  }
-
-  if (recipe.image_url) {
-    return { recipe, image: null };
-  }
-
-  const outputDir = String(process.env.DIABETICSPACE_IMAGE_DIR ?? "").trim() || join(dataDir, "diabetic-images");
-
-  try {
-    const result = await generateDiabeticRecipeImageToFile(recipe, { outputDir });
-    if (result?.image_url) {
-      const updated = setDiabeticRecipeImage(db, recipe.recipe_id, result.image_url) ?? recipe;
-      return {
-        recipe: updated,
-        image: {
-          provider: "openai",
-          model: result.model ?? null,
-          latencyMs: result.latencyMs ?? null,
-          imageUrl: result.image_url
-        }
-      };
-    }
-  } catch (error) {
-    if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
-      return { recipe, image: null };
-    }
-  }
-
-  return { recipe, image: null };
 }
 
 async function handleApi(req, res) {
@@ -416,13 +456,33 @@ async function handleApi(req, res) {
       return;
     }
 
-    const recipe = getDiabeticRecipeById(db, recipeId);
+    let recipe = getDiabeticRecipeById(db, recipeId);
     if (!recipe) {
       sendJson(res, 404, { error: "Recipe not found" });
       return;
     }
 
-    if (recipe.image_url) {
+    const outputDir = resolveDiabeticImageDir();
+    const existingFilename = diabeticImageFilename(recipe.image_url);
+
+    if (existingFilename) {
+      const existingPath = join(outputDir, existingFilename);
+      if (await fileWithinLimit(existingPath)) {
+        sendJson(res, 200, {
+          ok: true,
+          created: false,
+          recipe,
+          metrics: {
+            local: null,
+            llm: null,
+            image: null
+          }
+        });
+        return;
+      }
+    }
+
+    if (recipe.image_url && !existingFilename) {
       sendJson(res, 200, {
         ok: true,
         created: false,
@@ -436,10 +496,12 @@ async function handleApi(req, res) {
       return;
     }
 
-    const outputDir = String(process.env.DIABETICSPACE_IMAGE_DIR ?? "").trim() || join(dataDir, "diabetic-images");
+    if (recipe.image_url && existingFilename) {
+      recipe = setDiabeticRecipeImage(db, recipe.recipe_id, "") ?? recipe;
+    }
 
     try {
-      const result = await generateDiabeticRecipeImageToFile(recipe, { outputDir });
+      const result = await generateDiabeticRecipeImageToFile(recipe, { outputDir, maxBytes: DIABETIC_IMAGE_MAX_BYTES });
       const updated = setDiabeticRecipeImage(db, recipe.recipe_id, result.image_url) ?? recipe;
       sendJson(res, 200, {
         ok: true,
@@ -462,10 +524,146 @@ async function handleApi(req, res) {
         sendJson(res, 503, { error: "OPENAI_API_KEY not configured", route: "api_unavailable" });
         return;
       }
-
       sendJson(res, 502, { error: error instanceof Error ? error.message : String(error), route: "image_failed" });
       return;
     }
+  }
+
+  if (url.pathname === "/api/diabetic/upload-image") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const recipeId = String(payload.recipe_id ?? payload.recipeId ?? "").trim();
+    if (!recipeId) {
+      sendJson(res, 400, { error: "recipe_id is required" });
+      return;
+    }
+
+    const recipe = getDiabeticRecipeById(db, recipeId);
+    if (!recipe) {
+      sendJson(res, 404, { error: "Recipe not found" });
+      return;
+    }
+
+    const started = performance.now();
+    let decoded;
+    try {
+      decoded = decodeUploadedImage(payload);
+    } catch (error) {
+      sendJson(res, Number(error?.statusCode ?? 400), { error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+
+    const extension = imageExtensionForMime(decoded.mime);
+    if (!extension) {
+      sendJson(res, 400, { error: `Unsupported image type (${decoded.mime})` });
+      return;
+    }
+
+    const bytes = decoded.bytes;
+    if (!bytes?.length) {
+      sendJson(res, 400, { error: "Uploaded image was empty" });
+      return;
+    }
+    if (bytes.length > DIABETIC_IMAGE_MAX_BYTES) {
+      sendJson(res, 413, { error: "Uploaded image is too large (max 1MB)" });
+      return;
+    }
+
+    const outputDir = resolveDiabeticImageDir();
+    await mkdir(outputDir, { recursive: true });
+
+    const base = sanitizeImageBasename(recipeId);
+    const filename = `${base}-upload-${Date.now().toString(36)}${extension}`;
+    const filePath = join(outputDir, filename);
+    if (!normalize(filePath).startsWith(normalize(outputDir))) {
+      sendJson(res, 400, { error: "Invalid image path" });
+      return;
+    }
+
+    const previousFilename = diabeticImageFilename(recipe.image_url);
+    const previousPath = previousFilename ? join(outputDir, previousFilename) : "";
+
+    await writeFile(filePath, bytes);
+    const updated = setDiabeticRecipeImage(db, recipeId, `diabetic-images/${filename}`) ?? recipe;
+
+    let previousDeleted = false;
+    if (previousPath && normalize(previousPath).startsWith(normalize(outputDir)) && previousPath !== filePath) {
+      previousDeleted = await safeUnlink(previousPath);
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      recipe: updated,
+      image_url: updated?.image_url ?? null,
+      image_deleted: previousDeleted,
+      metrics: {
+        local: {
+          kind: "upload-image",
+          latencyMs: toLatencyMs(performance.now() - started)
+        },
+        llm: null,
+        image: null
+      }
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/diabetic/delete") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+
+    let payload = {};
+    try {
+      payload = await readJsonBody(req);
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const recipeId = String(payload.recipe_id ?? payload.recipeId ?? "").trim();
+    if (!recipeId) {
+      sendJson(res, 400, { error: "recipe_id is required" });
+      return;
+    }
+
+    const existing = getDiabeticRecipeById(db, recipeId);
+    if (!existing) {
+      sendJson(res, 404, { error: "Recipe not found" });
+      return;
+    }
+
+    const deleted = deleteDiabeticRecipe(db, recipeId);
+    const filename = diabeticImageFilename(existing.image_url);
+    let imageDeleted = false;
+    if (filename) {
+      const baseDir = resolveDiabeticImageDir();
+      const filePath = join(baseDir, filename);
+      if (normalize(filePath).startsWith(normalize(baseDir))) {
+        imageDeleted = await safeUnlink(filePath);
+      }
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      deleted: Boolean(deleted),
+      recipe_id: recipeId,
+      image_deleted: imageDeleted
+    });
     return;
   }
 
@@ -552,9 +750,7 @@ async function handleApi(req, res) {
 
     try {
       const generated = await generateDiabeticRecipe(query, bestMatchRecipe);
-      let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
-      const ensured = await ensureDiabeticRecipeImage(db, saved);
-      saved = ensured.recipe;
+      const saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
       sendJson(res, 200, {
         query,
         meal_type: mealType || null,
@@ -567,7 +763,7 @@ async function handleApi(req, res) {
             latencyMs: localSearch.latencyMs
           },
           llm: generated.llm ?? null,
-          image: ensured.image ?? null
+          image: null
         }
       });
       return;
@@ -639,10 +835,9 @@ async function handleApi(req, res) {
     if (recalled) {
       const recall_count = Number(recalled.recall_count ?? 0);
       if (recall_count >= 2) {
-        const ensured = await ensureDiabeticRecipeImage(db, recalled);
         sendJson(res, 200, {
           route: "local_recall",
-          recipe: ensured.recipe,
+          recipe: recalled,
           recall_count,
           latency_ms,
           metrics: {
@@ -651,7 +846,7 @@ async function handleApi(req, res) {
               latencyMs: latency_ms
             },
             llm: null,
-            image: ensured.image ?? null
+            image: null
           }
         });
         return;
@@ -659,9 +854,7 @@ async function handleApi(req, res) {
 
       try {
         const generated = await generateDiabeticRecipe(message, recalled);
-        let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
-        const ensured = await ensureDiabeticRecipeImage(db, saved);
-        saved = ensured.recipe;
+        const saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
         sendJson(res, 200, {
           route: "api_validate",
           recipe: saved,
@@ -673,7 +866,7 @@ async function handleApi(req, res) {
               latencyMs: latency_ms
             },
             llm: generated.llm ?? null,
-            image: ensured.image ?? null
+            image: null
           }
         });
         return;
@@ -711,9 +904,7 @@ async function handleApi(req, res) {
 
     try {
       const generated = await generateDiabeticRecipe(message, null);
-      let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
-      const ensured = await ensureDiabeticRecipeImage(db, saved);
-      saved = ensured.recipe;
+      const saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
       sendJson(res, 200, {
         route: "api_expand",
         recipe: saved,
@@ -725,7 +916,7 @@ async function handleApi(req, res) {
             latencyMs: latency_ms
           },
           llm: generated.llm ?? null,
-          image: ensured.image ?? null
+          image: null
         }
       });
       return;
@@ -777,9 +968,7 @@ async function handleApi(req, res) {
     }
 
     const localSave = measureSync(() => saveDiabeticRecipe(db, payload));
-    let saved = localSave.result;
-    const ensured = await ensureDiabeticRecipeImage(db, saved);
-    saved = ensured.recipe;
+    const saved = localSave.result;
     sendJson(res, 200, {
       saved: true,
       recipe_id: saved?.recipe_id ?? null,
@@ -790,7 +979,7 @@ async function handleApi(req, res) {
           latencyMs: localSave.latencyMs
         },
         llm: null,
-        image: ensured.image ?? null
+        image: null
       }
     });
     return;
@@ -862,9 +1051,7 @@ async function handleApi(req, res) {
       }
     }
 
-    let saved = saveDiabeticRecipe(db, { ...adapted, recipe_id: candidateId, source: "ai" });
-    const ensured = await ensureDiabeticRecipeImage(db, saved);
-    saved = ensured.recipe;
+    const saved = saveDiabeticRecipe(db, { ...adapted, recipe_id: candidateId, source: "ai" });
     sendJson(res, 200, {
       route: "api_expand",
       recipe: saved,
@@ -872,7 +1059,7 @@ async function handleApi(req, res) {
       metrics: {
         local: null,
         llm,
-        image: ensured.image ?? null
+        image: null
       }
     });
     return;
@@ -1119,11 +1306,10 @@ async function handleApi(req, res) {
     if (recalled) {
       const recall_count = Number(recalled.recall_count ?? 0);
       if (recall_count >= 2) {
-        const ensured = await ensureDiabeticRecipeImage(db, recalled);
         deleteDiabeticBuilderSession(db, session_id);
         sendJson(res, 200, {
           route: "local_recall",
-          recipe: ensured.recipe,
+          recipe: recalled,
           recall_count,
           session_id,
           completed: true,
@@ -1133,7 +1319,7 @@ async function handleApi(req, res) {
               latencyMs: localRecall.latencyMs
             },
             llm: null,
-            image: ensured.image ?? null
+            image: null
           }
         });
         return;
@@ -1141,9 +1327,7 @@ async function handleApi(req, res) {
 
       try {
         const generated = await generateFromBuilderSession(session, recalled);
-        let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
-        const ensured = await ensureDiabeticRecipeImage(db, saved);
-        saved = ensured.recipe;
+        const saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
         deleteDiabeticBuilderSession(db, session_id);
         sendJson(res, 200, {
           route: "api_validate",
@@ -1157,7 +1341,7 @@ async function handleApi(req, res) {
               latencyMs: localRecall.latencyMs
             },
             llm: generated.llm ?? null,
-            image: ensured.image ?? null
+            image: null
           }
         });
         return;
@@ -1184,9 +1368,7 @@ async function handleApi(req, res) {
 
     try {
       const generated = await generateFromBuilderSession(session, null);
-      let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
-      const ensured = await ensureDiabeticRecipeImage(db, saved);
-      saved = ensured.recipe;
+      const saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
       deleteDiabeticBuilderSession(db, session_id);
       sendJson(res, 200, {
         route: "api_expand",
@@ -1200,7 +1382,7 @@ async function handleApi(req, res) {
             latencyMs: localRecall.latencyMs
           },
           llm: generated.llm ?? null,
-          image: ensured.image ?? null
+          image: null
         }
       });
       return;

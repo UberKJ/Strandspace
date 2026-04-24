@@ -235,6 +235,53 @@ export async function registerDiabeticspaceTests({
     });
   });
 
+  await check("POST /api/diabetic/delete removes a saved recipe", async () => {
+    await withServer(async (address) => {
+      const recipe = buildMockRecipe({ recipe_id: `test-delete-${Date.now()}` });
+      const saveResponse = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/save`, recipe);
+      assert.equal(saveResponse.status, 200);
+
+      const deleteResponse = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/delete`, {
+        recipe_id: recipe.recipe_id
+      });
+      assert.equal(deleteResponse.status, 200);
+      const deleted = await deleteResponse.json();
+      assert.equal(deleted.ok, true);
+      assert.equal(deleted.deleted, true);
+
+      const getResponse = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/recipe?recipe_id=${encodeURIComponent(recipe.recipe_id)}`);
+      assert.equal(getResponse.status, 404);
+    });
+  });
+
+  await check("POST /api/diabetic/upload-image saves an uploaded image", async () => {
+    await withServer(async (address) => {
+      const recipe = buildMockRecipe({ recipe_id: `test-upload-${Date.now()}` });
+      const saveResponse = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/save`, recipe);
+      assert.equal(saveResponse.status, 200);
+
+      const dataUrl = "data:image/png;base64,"
+        + "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+Xo2YAAAAASUVORK5CYII=";
+      const uploadResponse = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/upload-image`, {
+        recipe_id: recipe.recipe_id,
+        data_url: dataUrl
+      });
+      assert.equal(uploadResponse.status, 200);
+      const payload = await uploadResponse.json();
+      assert.equal(payload.ok, true);
+      assert.ok(payload.image_url);
+
+      const filename = String(payload.image_url).split("/").pop();
+      const dir = String(process.env.DIABETICSPACE_IMAGE_DIR ?? "");
+      assert.ok(dir);
+      await access(join(dir, filename));
+
+      const getResponse = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/recipe?recipe_id=${encodeURIComponent(recipe.recipe_id)}`);
+      assert.equal(getResponse.status, 200);
+      const got = await getResponse.json();
+      assert.ok(String(got.recipe.image_url ?? "").includes(filename));
+    });
+  });
   await check("POST /api/diabetic/ensure-image generates and persists image_url", async () => {
     process.env.OPENAI_API_KEY = "test-key";
     __setDiabeticImageMock(() => Buffer.from(
@@ -308,26 +355,14 @@ export async function registerDiabeticspaceTests({
   await check("POST /api/diabetic/chat unknown recipe routes api_expand with OpenAI available", async () => {
     process.env.OPENAI_API_KEY = "test-key";
     __setDiabeticAssistMock(() => buildMockRecipe({ recipe_id: `ai-expand-${Date.now()}`, title: "AI Expand Recipe" }));
-    __setDiabeticImageMock(() => Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+Xo2YAAAAASUVORK5CYII=",
-      "base64"
-    ));
     await withServer(async (address) => {
       const response = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/chat`, { message: "zxqv jnptl qwrp lmx" });
       assert.equal(response.status, 200);
       const payload = await response.json();
       assert.equal(payload.route, "api_expand");
       assert.ok(payload.recipe.recipe_id.startsWith("ai-expand-"));
-      assert.ok(payload.recipe.image_url);
-      assert.match(String(payload.recipe.image_url), /^(?:\/)?diabetic-images\/.+\.png$/);
-
-      const filename = String(payload.recipe.image_url).split("/").pop();
-      const dir = String(process.env.DIABETICSPACE_IMAGE_DIR ?? "");
-      assert.ok(dir);
-      await access(join(dir, filename));
     });
     __setDiabeticAssistMock(null);
-    __setDiabeticImageMock(null);
     delete process.env.OPENAI_API_KEY;
   });
 
