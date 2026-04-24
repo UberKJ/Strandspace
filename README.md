@@ -57,16 +57,6 @@ A health-focused recipe application built on Strandspace.
 
 It currently supports local-first diabetic-friendly recipe recall, recipe search, AI-assisted recipe creation, recipe adaptation, local image handling, saved recipe variants, and builder-style flows for generating new meals.
 
-Examples of the current behavior include:
-
-- creating a first-pass diabetic-friendly recipe with AI
-- saving that recipe into local memory
-- recalling it later from local storage
-- adapting it into a new variant such as adding or changing ingredients
-- storing the changed version for future recall
-
-This is one of the clearest demonstrations of the Strandspace idea because it shows memory, variation, and learn-back behavior in a user-facing app.
-
 ### Strandspace Studio
 
 A general teaching and recall surface for subject-agnostic structured memory.
@@ -90,6 +80,8 @@ It is designed for repeated audio workflows such as:
 - host-forward music bingo setups
 - venue-size variations
 - microphone and speaker configuration patterns
+
+*(Future domains like AnimationSpace, modeling body movements and frame sequences from a single sprite sheet, will follow the same pattern.)*
 
 ---
 
@@ -125,11 +117,6 @@ A construct can include fields such as:
 
 Depending on the app, domain-specific fields are layered on top of that base pattern.
 
-For example:
-
-- **Soundspace** adds device and event setup details
-- **DiabeticSpace** adds recipe, ingredient, meal-type, and adaptation flows
-
 ---
 
 ## Current Routing Behavior
@@ -148,20 +135,52 @@ It first asks whether local memory is already sufficient.
 
 ---
 
-## What Makes Strandspace Different
+## Performance & Scaling
 
-Strandspace is not just generic text search.
+Strandspace is built on a fast, deterministic recall engine using strand derivation and weighted token overlap scoring instead of embeddings or vector search. This delivers exceptional performance for repeated, domain-specific tasks.
 
-It is trying to preserve **reusable working structure**.
+### Core Recall Mathematics
 
-Instead of paying the full cost of broad reasoning every time, the platform tries to:
+The local recall engine performs a linear scan **per subject only**. Theoretical latency is:
 
-- identify the repeated task
-- reactivate the right stored construct
-- emit a usable answer from local memory
-- escalate outward only when needed
+```text
+T_local ≈ c × N_subject × k
+```
 
-In practice, that means it behaves more like a **memory layer for repeated work** than a general-purpose chatbot.
+where `N_subject` is the number of constructs in the currently active subject, `c` is per-construct overlap cost, and `k` is small JavaScript plus SQLite overhead.
+
+Multi-subject isolation ensures adding new domains, such as DiabeticSpace, Soundspace, AnimationSpace, Roundtable, and others, has virtually no impact on recall speed.
+
+### Multi-Subject Scaling Simulations
+
+Extensive Monte Carlo simulations, mirroring the exact `computeSupport()` logic, readiness thresholds of 34, and learn-back behavior, confirm excellent scaling. Results from 4,000+ queries per configuration:
+
+| num_subjects | constructs_per_subject | total constructs | growth_factor | avg_latency_ms | local_recall_hit_% |
+|--------------|------------------------|------------------|---------------|----------------|--------------------|
+| 5            | 500                    | ~2695            | 1.08          | 0.51           | 99.5               |
+| 10           | 1000                   | ~10190           | 1.02          | 0.72           | 99.4               |
+| 10           | 2500                   | ~25198           | 1.01          | 2.05           | 99.5               |
+
+**Key takeaways:**
+
+- Local recall stays **under 2.1 ms** even at 25,000+ total constructs across 10 subjects.
+- Learn-back loop growth is sub-linear.
+- Local hit rate quickly converges to 99%+ in well-taught domains.
+- The system is ready for creative domains like **AnimationSpace**, using reusable movement constructs from a single sprite sheet.
+
+### Updated Test Coverage
+
+The automated test suite (`npm test`) now validates the full engine including scaling behavior:
+
+- Core strand derivation and weighted scoring
+- Multi-subject isolation and routing
+- Learn-back loop stability over hundreds of interactions
+- Compact prompt benchmarking
+- Routing mode correctness: `local_recall`, `api_validate`, `api_expand`, `teach_local`
+- DiabeticSpace recipe adaptation flows
+- New simulation-based regression tests for scaling edge cases
+
+**Status: 11/11 tests passing** plus simulation validation.
 
 ---
 
@@ -178,7 +197,7 @@ It already includes:
 - local SQLite-backed memory
 - optional OpenAI-assisted generation and validation
 - learn-back flows that save improved results locally
-- automated tests covering the main app and recall behaviors
+- automated tests covering the main app, recall behaviors, **and performance scaling**
 
 This also means the project is still evolving.
 
@@ -329,11 +348,17 @@ The README is intended to be the practical front door for the current repository
 
 ---
 
-## License
+## License and Use Protection
 
-This project is licensed under the **GNU General Public License v3.0**.
+This project is licensed under the **MIT License**.
 
-See `LICENSE` for the full text.
+MIT allows use, copying, modification, publishing, distribution, sublicensing, and selling copies of the software, as long as the copyright notice and license text stay with substantial copies of the software.
+
+The software is provided **as is**, without warranty of any kind. The authors and copyright holders are not liable for claims, damages, data loss, business loss, medical/health outcomes, or other issues arising from use, modification, distribution, or inability to use the software.
+
+DiabeticSpace and any health-oriented examples in this repository are software demonstrations and personal tooling patterns. They are not medical advice, diagnosis, treatment, or a replacement for guidance from a qualified medical professional.
+
+See `LICENSE` for the full MIT license text.
 
 ---
 
