@@ -614,6 +614,61 @@ body.diabeticspace {
   color: rgba(255, 228, 242, 0.96);
 }
 
+.ds-recipe-controls {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ds-rating {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ds-star,
+.ds-favorite {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid rgba(170, 150, 255, 0.22);
+  background: rgba(7, 7, 20, 0.46);
+  color: rgba(199, 190, 228, 0.86);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 120ms ease, border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.ds-star:hover,
+.ds-favorite:hover {
+  transform: translateY(-1px);
+  border-color: rgba(236, 72, 153, 0.38);
+}
+
+.ds-star.filled {
+  border-color: rgba(234, 179, 8, 0.55);
+  background: rgba(234, 179, 8, 0.12);
+  color: rgba(253, 230, 138, 0.98);
+}
+
+.ds-favorite {
+  border-color: rgba(236, 72, 153, 0.30);
+}
+
+.ds-favorite.active {
+  border-color: rgba(236, 72, 153, 0.55);
+  background: rgba(236, 72, 153, 0.14);
+  color: rgba(255, 228, 242, 0.96);
+}
+
 .ds-card-actions {
   margin-top: 14px;
   display: flex;
@@ -628,6 +683,174 @@ body.diabeticspace {
   grid-template-columns: 1fr auto;
   gap: 10px;
   align-items: center;
+}
+
+.ds-plan-actions {
+  flex-wrap: wrap;
+}
+
+.ds-plan-week {
+  gap: 10px;
+}
+
+.ds-plan-add {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(170, 150, 255, 0.14);
+  background: rgba(7, 7, 20, 0.34);
+}
+
+.ds-plan-add-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ds-plan-add-row strong {
+  color: rgba(246, 244, 255, 0.92);
+}
+
+.ds-plan-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.ds-plan-day {
+  border: 1px solid rgba(170, 150, 255, 0.16);
+  border-radius: 22px;
+  padding: 14px;
+  background: rgba(7, 7, 20, 0.34);
+}
+
+.ds-plan-day h3 {
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.ds-plan-slot {
+  margin-top: 12px;
+}
+
+.ds-plan-slot h4 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  color: rgba(246, 244, 255, 0.86);
+}
+
+.ds-plan-items {
+  display: grid;
+  gap: 8px;
+}
+
+.ds-plan-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid rgba(170, 150, 255, 0.14);
+  background: rgba(16, 14, 44, 0.40);
+  border-radius: 16px;
+  padding: 10px 10px;
+}
+
+.ds-plan-item-title {
+  font-weight: 700;
+  color: rgba(246, 244, 255, 0.92);
+}
+
+.ds-plan-item-actions {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ds-plan-empty {
+  padding: 10px 10px;
+  border: 1px dashed rgba(170, 150, 255, 0.22);
+  border-radius: 16px;
+}
+
+.ds-shopping-layout {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: minmax(180px, 280px) 1fr;
+  gap: 14px;
+}
+
+.ds-shopping-sidebar {
+  border: 1px solid rgba(170, 150, 255, 0.14);
+  border-radius: 22px;
+  padding: 12px;
+  background: rgba(7, 7, 20, 0.34);
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.ds-shopping-main {
+  border: 1px solid rgba(170, 150, 255, 0.14);
+  border-radius: 22px;
+  padding: 14px;
+  background: rgba(7, 7, 20, 0.34);
+}
+
+.ds-shopping-list {
+  width: 100%;
+  text-align: left;
+  border-radius: 16px;
+  border: 1px solid rgba(170, 150, 255, 0.14);
+  background: rgba(16, 14, 44, 0.40);
+  color: rgba(246, 244, 255, 0.92);
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.ds-shopping-list.active {
+  border-color: rgba(139, 92, 246, 0.45);
+  background: rgba(139, 92, 246, 0.14);
+}
+
+.ds-shopping-add {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr auto;
+  gap: 10px;
+  align-items: center;
+  margin: 12px 0 14px;
+}
+
+.ds-shopping-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(170, 150, 255, 0.14);
+  background: rgba(16, 14, 44, 0.40);
+  margin-bottom: 8px;
+}
+
+.ds-shopping-item.checked {
+  opacity: 0.75;
+}
+
+.ds-shopping-item.checked span {
+  text-decoration: line-through;
+}
+
+.ds-shopping-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ds-shopping-check input {
+  width: 18px;
+  height: 18px;
 }
 
 @media (max-width: 560px) {
@@ -656,7 +879,12 @@ body.diabeticspace {
 
   .ds-search-row,
   .ds-input-row,
-  .ds-adapt-row {
+  .ds-adapt-row,
+  .ds-shopping-add {
+    grid-template-columns: 1fr;
+  }
+
+  .ds-shopping-layout {
     grid-template-columns: 1fr;
   }
 }

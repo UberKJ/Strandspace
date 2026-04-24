@@ -28,16 +28,24 @@
             <button id="mode-search" type="button" aria-pressed="true">Search</button>
             <button id="mode-builder" type="button" aria-pressed="false">Guided Builder</button>
             <button id="mode-quick" type="button" aria-pressed="false">Quick Ask</button>
+            <button id="mode-plan" type="button" aria-pressed="false">Weekly Plan</button>
+            <button id="mode-shopping" type="button" aria-pressed="false">Shopping List</button>
+            <button id="mode-settings" type="button" aria-pressed="false">Settings</button>
           </div>
 
-	          <div class="ds-pill ds-meals" aria-label="Meal filter">
-	            <span>Meals</span>
-	            <button class="meal-filter" type="button" data-meal="" aria-pressed="true">All</button>
-	            <button class="meal-filter" type="button" data-meal="breakfast">Breakfast</button>
-	            <button class="meal-filter" type="button" data-meal="lunch">Lunch</button>
+          <div class="ds-pill ds-meals" aria-label="Meal filter">
+            <span>Meals</span>
+            <button class="meal-filter" type="button" data-meal="" aria-pressed="true">All</button>
+            <button class="meal-filter" type="button" data-meal="breakfast">Breakfast</button>
+            <button class="meal-filter" type="button" data-meal="lunch">Lunch</button>
             <button class="meal-filter" type="button" data-meal="dinner">Dinner</button>
             <button class="meal-filter" type="button" data-meal="dessert">Dessert</button>
             <button class="meal-filter" type="button" data-meal="snack">Snack</button>
+          </div>
+
+          <div class="ds-pill" aria-label="Saved recipe filters">
+            <span>Filter</span>
+            <button id="filter-favorites" type="button" aria-pressed="false">Favorites</button>
           </div>
 
           <div class="ds-pill" aria-label="Saved recipe count">
@@ -155,6 +163,143 @@
             <div class="ds-muted" id="quick-hint"></div>
           </div>
         </section>
+
+        <section class="ds-panel" id="plan-panel" style="display:none;">
+          <div class="ds-panel-head">
+            <div>
+              <h2>Weekly Plan</h2>
+              <p class="ds-sub">Plan breakfasts, lunches, dinners, snacks, and desserts for the week.</p>
+            </div>
+            <div class="ds-actions ds-plan-actions">
+              <label class="ds-check ds-plan-week">
+                <span>Week</span>
+                <input id="plan-week" type="date" class="ds-input" />
+              </label>
+              <button id="plan-load" type="button" class="ghost-action">Load</button>
+              <button id="plan-create" type="button" class="primary-action">Create</button>
+              <button id="plan-print" type="button" class="ghost-action" disabled>Print</button>
+            </div>
+          </div>
+
+          <div class="ds-muted" id="plan-hint"></div>
+
+          <div class="ds-plan-add" aria-label="Add selected recipe to meal plan">
+            <div class="ds-plan-add-row">
+              <span class="ds-muted">Selected</span>
+              <strong id="plan-selected">(none)</strong>
+              <select id="plan-day" class="ds-input" aria-label="Day of week">
+                <option value="monday">Monday</option>
+                <option value="tuesday">Tuesday</option>
+                <option value="wednesday">Wednesday</option>
+                <option value="thursday">Thursday</option>
+                <option value="friday">Friday</option>
+                <option value="saturday">Saturday</option>
+                <option value="sunday">Sunday</option>
+              </select>
+              <select id="plan-slot" class="ds-input" aria-label="Meal slot">
+                <option value="breakfast">Breakfast</option>
+                <option value="lunch">Lunch</option>
+                <option value="dinner" selected>Dinner</option>
+                <option value="snack">Snack</option>
+                <option value="dessert">Dessert</option>
+              </select>
+              <input id="plan-servings" type="number" class="ds-input" placeholder="Servings" min="1" />
+              <button id="plan-add" type="button" class="ghost-action">Add</button>
+            </div>
+          </div>
+
+          <div class="ds-plan-grid" id="plan-grid" aria-label="Meal plan grid"></div>
+
+          <div class="ds-actions" style="margin-top: 12px;">
+            <button id="plan-generate-shopping" type="button" class="ghost-action" disabled>Generate shopping list from this week</button>
+          </div>
+        </section>
+
+        <section class="ds-panel" id="shopping-panel" style="display:none;">
+          <div class="ds-panel-head">
+            <div>
+              <h2>Shopping Lists</h2>
+              <p class="ds-sub">Create checklists, generate them from meal plans, and print when you’re ready.</p>
+            </div>
+            <div class="ds-actions">
+              <button id="shopping-new" type="button" class="primary-action">New list</button>
+              <button id="shopping-print" type="button" class="ghost-action" disabled>Print</button>
+            </div>
+          </div>
+
+          <div class="ds-muted" id="shopping-hint"></div>
+
+          <div class="ds-shopping-layout">
+            <aside class="ds-shopping-sidebar" aria-label="Shopping lists">
+              <div id="shopping-lists"></div>
+            </aside>
+            <section class="ds-shopping-main" aria-label="Shopping list items">
+              <h3 id="shopping-title" style="margin-top:0;">No list selected</h3>
+              <div class="ds-shopping-add">
+                <input id="shopping-item-name" type="text" class="ds-input" placeholder="Add item (e.g. spinach)" />
+                <input id="shopping-item-amount" type="text" class="ds-input" placeholder="Amount" />
+                <input id="shopping-item-unit" type="text" class="ds-input" placeholder="Unit" />
+                <button id="shopping-item-add" type="button" class="ghost-action">Add</button>
+              </div>
+              <div id="shopping-items"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="ds-panel" id="settings-panel" style="display:none;">
+          <div class="ds-panel-head">
+            <div>
+              <h2>Settings</h2>
+              <p class="ds-sub">Manage local profiles, backups, and optional settings. Exports do not include API keys.</p>
+            </div>
+          </div>
+
+          <h3 style="margin: 10px 0 6px 0;">Local profile</h3>
+          <div class="ds-muted" id="settings-user-current">No profile yet.</div>
+
+          <div class="ds-actions" style="gap: 12px; align-items: center; margin-top: 10px;">
+            <select id="settings-user-select" class="ds-input" style="max-width: 280px;"></select>
+            <button id="settings-user-refresh" type="button" class="ghost-action">Refresh</button>
+          </div>
+
+          <div class="ds-actions" style="gap: 12px; align-items: center; margin-top: 10px;">
+            <input id="settings-user-name" type="text" class="ds-input" placeholder="Display name" style="max-width: 280px;" />
+            <input id="settings-user-pin" type="password" class="ds-input" placeholder="Optional PIN" style="max-width: 180px;" />
+            <button id="settings-user-create" type="button" class="primary-action">Create profile</button>
+          </div>
+
+          <div class="ds-actions" style="gap: 12px; align-items: center; margin-top: 10px;">
+            <input id="settings-user-pin-verify" type="password" class="ds-input" placeholder="Verify PIN" style="max-width: 180px;" />
+            <button id="settings-user-verify" type="button" class="ghost-action">Verify PIN</button>
+            <label class="ds-check">
+              <input id="settings-pin-lock" type="checkbox" />
+              <span>Require PIN on startup (groundwork)</span>
+            </label>
+          </div>
+
+          <div class="ds-muted" id="settings-user-status" style="margin-top: 10px;"></div>
+
+          <hr style="border:0;border-top:1px solid rgba(170, 150, 255, 0.16); margin: 16px 0;" />
+
+          <h3 style="margin: 10px 0 6px 0;">Backup</h3>
+          <div class="ds-actions" style="margin-top: 10px;">
+            <button id="settings-export" type="button" class="primary-action">Export backup</button>
+          </div>
+
+          <hr style="border:0;border-top:1px solid rgba(170, 150, 255, 0.16); margin: 16px 0;" />
+
+          <div class="ds-actions" style="gap: 12px; align-items: center;">
+            <input id="settings-import-file" type="file" accept="application/json" class="ds-input" />
+            <label class="ds-check">
+              <input id="settings-import-overwrite" type="checkbox" />
+              <span>Overwrite duplicates</span>
+            </label>
+            <button id="settings-import-apply" type="button" class="ghost-action" disabled>Import</button>
+          </div>
+
+          <div class="ds-muted" id="settings-import-status" style="margin-top: 10px;"></div>
+          <pre id="settings-import-preview" style="white-space: pre-wrap; margin-top: 10px;"></pre>
+        </section>
       </main>
 
       <section class="ds-recipes" id="recipe-cards" aria-label="Recipe responses"></section>
@@ -166,10 +311,17 @@
 	        modeSearch: document.getElementById("mode-search"),
 	        modeBuilder: document.getElementById("mode-builder"),
 	        modeQuick: document.getElementById("mode-quick"),
+	        modePlan: document.getElementById("mode-plan"),
+	        modeShopping: document.getElementById("mode-shopping"),
+	        modeSettings: document.getElementById("mode-settings"),
 	        searchPanel: document.getElementById("search-panel"),
         builderPanel: document.getElementById("builder-panel"),
         quickPanel: document.getElementById("quick-panel"),
+        planPanel: document.getElementById("plan-panel"),
+        shoppingPanel: document.getElementById("shopping-panel"),
+        settingsPanel: document.getElementById("settings-panel"),
         mealFilters: Array.from(document.querySelectorAll(".meal-filter")),
+        filterFavorites: document.getElementById("filter-favorites"),
         libraryMeta: document.getElementById("library-meta"),
         recipeCards: document.getElementById("recipe-cards"),
         aiTelemetry: document.getElementById("ai-telemetry"),
@@ -200,14 +352,58 @@
         quickMessages: document.getElementById("quick-messages"),
 	        quickInput: document.getElementById("quick-input"),
 	        quickSend: document.getElementById("quick-send"),
-	        quickHint: document.getElementById("quick-hint")
+	        quickHint: document.getElementById("quick-hint"),
+          planWeek: document.getElementById("plan-week"),
+          planLoad: document.getElementById("plan-load"),
+          planCreate: document.getElementById("plan-create"),
+          planPrint: document.getElementById("plan-print"),
+          planHint: document.getElementById("plan-hint"),
+          planGrid: document.getElementById("plan-grid"),
+          planSelected: document.getElementById("plan-selected"),
+          planDay: document.getElementById("plan-day"),
+          planSlot: document.getElementById("plan-slot"),
+          planServings: document.getElementById("plan-servings"),
+          planAdd: document.getElementById("plan-add"),
+          planGenerateShopping: document.getElementById("plan-generate-shopping"),
+          shoppingHint: document.getElementById("shopping-hint"),
+          shoppingLists: document.getElementById("shopping-lists"),
+          shoppingTitle: document.getElementById("shopping-title"),
+          shoppingItems: document.getElementById("shopping-items"),
+          shoppingNew: document.getElementById("shopping-new"),
+          shoppingPrint: document.getElementById("shopping-print"),
+          shoppingItemName: document.getElementById("shopping-item-name"),
+          shoppingItemAmount: document.getElementById("shopping-item-amount"),
+          shoppingItemUnit: document.getElementById("shopping-item-unit"),
+          shoppingItemAdd: document.getElementById("shopping-item-add"),
+          settingsExport: document.getElementById("settings-export"),
+          settingsUserCurrent: document.getElementById("settings-user-current"),
+          settingsUserSelect: document.getElementById("settings-user-select"),
+          settingsUserRefresh: document.getElementById("settings-user-refresh"),
+          settingsUserName: document.getElementById("settings-user-name"),
+          settingsUserPin: document.getElementById("settings-user-pin"),
+          settingsUserCreate: document.getElementById("settings-user-create"),
+          settingsUserPinVerify: document.getElementById("settings-user-pin-verify"),
+          settingsUserVerify: document.getElementById("settings-user-verify"),
+          settingsPinLock: document.getElementById("settings-pin-lock"),
+          settingsUserStatus: document.getElementById("settings-user-status"),
+          settingsImportFile: document.getElementById("settings-import-file"),
+          settingsImportOverwrite: document.getElementById("settings-import-overwrite"),
+          settingsImportApply: document.getElementById("settings-import-apply"),
+          settingsImportStatus: document.getElementById("settings-import-status"),
+          settingsImportPreview: document.getElementById("settings-import-preview")
 	      };
 
       let activeMealFilter = "";
+      let favoritesOnly = false;
       let builderSessionId = "";
       let builderStage = "";
       let cachedLibrary = [];
       let selectedRecipeId = "";
+      let activeMealPlanId = "";
+      let pendingPlanRecipe = null;
+      let activeShoppingListId = "";
+      let cachedShoppingLists = [];
+      let pendingImportBackup = null;
 
       function escapeHtml(value = "") {
         return String(value ?? "")
@@ -238,9 +434,10 @@
       function normalizeAssetUrl(url) {
         const trimmed = String(url ?? "").trim();
         if (!trimmed) return "";
-        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
-        if (trimmed.startsWith("/")) return `.${trimmed}`;
-        return trimmed;
+        const cleaned = trimmed.replaceAll("\\", "/");
+        if (cleaned.startsWith("http://") || cleaned.startsWith("https://") || cleaned.startsWith("data:")) return cleaned;
+        if (cleaned.startsWith("/")) return cleaned;
+        return `/${cleaned.replace(/^\\.\\//, "")}`;
       }
 
       function setTelemetry({ phase = "idle", title = "", detail = "" } = {}) {
@@ -312,19 +509,19 @@
         return { response, data };
       }
 
-      async function ensureImageForRecipe(recipe, card, statusEl) {
+      async function ensureImageForRecipe(recipe, card, statusEl, { force = false } = {}) {
         if (!recipe || !card) return;
         if (!recipe.recipe_id) return;
-        if (String(recipe.image_url ?? "").trim()) return;
-        if (card.dataset.imageEnsured === "1") return;
-        card.dataset.imageEnsured = "1";
+        if (!force && String(recipe.image_url ?? "").trim()) return;
+        if (card.dataset.imageEnsuring === "1") return;
+        card.dataset.imageEnsuring = "1";
 
         if (statusEl) {
-          statusEl.textContent = "Generating image…";
+          statusEl.textContent = "Generating image...";
         }
 
         startAiTelemetry("Generating image", `Creating a photo for "${recipe.title || recipe.recipe_id}"...`);
-        const { response, data } = await postJson("/api/diabetic/ensure-image", { recipe_id: recipe.recipe_id });
+        const { response, data } = await postJson("/api/diabetic/ensure-image", { recipe_id: recipe.recipe_id, force });
         if (!response.ok) {
           const msg = data?.route === "api_unavailable"
             ? "OpenAI not configured."
@@ -333,6 +530,7 @@
             statusEl.textContent = msg;
           }
           failTelemetry("Image failed", msg);
+          delete card.dataset.imageEnsuring;
           return;
         }
 
@@ -363,20 +561,96 @@
 
         finishTelemetry("Image ready", data);
         void refreshLibrary();
+        delete card.dataset.imageEnsuring;
+      }
+
+      function readFileAsDataUrl(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error("Failed to read file"));
+          reader.onload = () => resolve(String(reader.result ?? ""));
+          reader.readAsDataURL(file);
+        });
+      }
+
+      async function uploadImageForRecipe(recipe, card, file, statusEl) {
+        if (!recipe || !card) return;
+        if (!recipe.recipe_id) return;
+        if (!file) return;
+        if (file.size > 1_000_000) {
+          if (statusEl) statusEl.textContent = "Image must be 1MB or smaller.";
+          return;
+        }
+
+        if (statusEl) statusEl.textContent = "Uploading image...";
+
+        let dataUrl = "";
+        try {
+          dataUrl = await readFileAsDataUrl(file);
+        } catch (error) {
+          if (statusEl) statusEl.textContent = error instanceof Error ? error.message : "Failed to read image.";
+          return;
+        }
+
+        const { response, data } = await postJson("/api/diabetic/recipe-image/upload", {
+          recipe_id: recipe.recipe_id,
+          data_url: dataUrl,
+          content_type: file.type || null
+        });
+
+        if (!response.ok) {
+          if (statusEl) statusEl.textContent = data?.error || `Upload failed (HTTP ${response.status}).`;
+          return;
+        }
+
+        const imageUrl = normalizeAssetUrl(data?.recipe?.image_url ?? data?.image_url ?? "");
+        if (imageUrl) {
+          recipe.image_url = data.recipe?.image_url ?? recipe.image_url;
+          const existing = card.querySelector(".ds-recipe-image");
+          if (!existing) {
+            const img = document.createElement("img");
+            img.className = "ds-recipe-image";
+            img.loading = "lazy";
+            img.decoding = "async";
+            img.alt = recipe.title || "Recipe image";
+            img.src = imageUrl;
+            card.prepend(img);
+          } else {
+            existing.src = imageUrl;
+          }
+        }
+
+        if (statusEl) {
+          statusEl.textContent = "Uploaded ✓";
+          setTimeout(() => {
+            if (statusEl.textContent === "Uploaded ✓") statusEl.textContent = "";
+          }, 1600);
+        }
+
+        void refreshLibrary();
       }
 
       function setMode(mode) {
         const search = mode === "search";
         const builder = mode === "builder";
         const quick = mode === "quick";
+        const plan = mode === "plan";
+        const shopping = mode === "shopping";
+        const settings = mode === "settings";
 
         els.modeSearch.setAttribute("aria-pressed", search ? "true" : "false");
         els.modeBuilder.setAttribute("aria-pressed", builder ? "true" : "false");
         els.modeQuick.setAttribute("aria-pressed", quick ? "true" : "false");
+        els.modePlan.setAttribute("aria-pressed", plan ? "true" : "false");
+        els.modeShopping.setAttribute("aria-pressed", shopping ? "true" : "false");
+        els.modeSettings.setAttribute("aria-pressed", settings ? "true" : "false");
 
         els.searchPanel.style.display = search ? "" : "none";
         els.builderPanel.style.display = builder ? "" : "none";
         els.quickPanel.style.display = quick ? "" : "none";
+        els.planPanel.style.display = plan ? "" : "none";
+        els.shoppingPanel.style.display = shopping ? "" : "none";
+        els.settingsPanel.style.display = settings ? "" : "none";
 
         if (search) {
           setTimeout(() => els.searchInput?.focus?.(), 0);
@@ -384,6 +658,13 @@
           setTimeout(() => els.builderInput?.focus?.(), 0);
         } else if (quick) {
           setTimeout(() => els.quickInput?.focus?.(), 0);
+        } else if (plan) {
+          setTimeout(() => els.planWeek?.focus?.(), 0);
+        } else if (shopping) {
+          setTimeout(() => els.shoppingItemName?.focus?.(), 0);
+        } else if (settings) {
+          setTimeout(() => els.settingsExport?.focus?.(), 0);
+          void refreshUsers();
         }
       }
 
@@ -396,6 +677,13 @@
 	        }
 	        void refreshLibrary();
 	      }
+
+        function setFavoritesOnly(next) {
+          favoritesOnly = Boolean(next);
+          els.filterFavorites?.setAttribute("aria-pressed", favoritesOnly ? "true" : "false");
+          clearSelectedRecipe();
+          void refreshLibrary();
+        }
 
 	      function goHome() {
 	        setMode("search");
@@ -420,6 +708,20 @@
 
 	        if (els.recipeCards) els.recipeCards.innerHTML = "";
 
+          favoritesOnly = false;
+          els.filterFavorites?.setAttribute("aria-pressed", "false");
+          activeMealPlanId = "";
+          pendingPlanRecipe = null;
+          if (els.planSelected) els.planSelected.textContent = "(none)";
+          if (els.planHint) els.planHint.textContent = "";
+          if (els.planGrid) els.planGrid.innerHTML = "";
+          activeShoppingListId = "";
+          cachedShoppingLists = [];
+          if (els.shoppingHint) els.shoppingHint.textContent = "";
+          if (els.shoppingLists) els.shoppingLists.innerHTML = "";
+          if (els.shoppingTitle) els.shoppingTitle.textContent = "No list selected";
+          if (els.shoppingItems) els.shoppingItems.innerHTML = "";
+          els.shoppingPrint?.setAttribute("disabled", "");
 	        setMealFilter("");
 	        window.scrollTo({ top: 0, behavior: "smooth" });
 	      }
@@ -446,6 +748,8 @@
         const substitutes = Array.isArray(recipe.substitutes) ? recipe.substitutes : [];
         const tags = Array.isArray(recipe.tags) ? recipe.tags : [];
         const imageUrl = normalizeAssetUrl(recipe.image_url);
+        const rating = Number.isFinite(Number(recipe.rating)) ? Number(recipe.rating) : 0;
+        const favorite = Number(recipe.favorite ?? 0) ? 1 : 0;
 
         card.innerHTML = `
           ${imageUrl ? `<img class="ds-recipe-image" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(recipe.title || "Recipe image")}" loading="lazy" decoding="async" />` : ""}
@@ -454,6 +758,14 @@
             <span class="ds-badge status-badge status-neutral">${escapeHtml(recipe.meal_type || "meal")}</span>
             <span class="ds-badge status-badge ${escapeHtml(routeMeta.cls)}">${escapeHtml(routeMeta.label)}</span>
             ${recipe.gi_notes ? `<span class="ds-badge status-badge status-success">GI notes</span>` : ""}
+          </div>
+          <div class="ds-recipe-controls" aria-label="Recipe rating and favorite">
+            <div class="ds-rating" role="group" aria-label="Rating">
+              ${[1, 2, 3, 4, 5].map((star) => `
+                <button class="ds-star${star <= rating ? " filled" : ""}" type="button" data-star="${star}" aria-label="Rate ${star} star${star === 1 ? "" : "s"}">★</button>
+              `).join("")}
+            </div>
+            <button class="ds-favorite${favorite ? " active" : ""}" type="button" aria-pressed="${favorite ? "true" : "false"}" aria-label="Toggle favorite">♥</button>
           </div>
           ${recipe.gi_notes ? `<p><strong>GI notes:</strong> ${escapeHtml(recipe.gi_notes)}</p>` : ""}
           ${recipe.description ? `<p>${escapeHtml(recipe.description)}</p>` : ""}
@@ -483,6 +795,11 @@
             <button class="save primary-action" type="button">Save</button>
             <button class="discard ghost-action" type="button">Discard</button>
             <button class="adapt ghost-action" type="button">Adapt Recipe</button>
+            <button class="plan ghost-action" type="button">Add to Plan</button>
+            <button class="print ghost-action" type="button">Print</button>
+            <button class="image-create ghost-action" type="button">${imageUrl ? "Regenerate image" : "Create image"}</button>
+            <button class="image-upload ghost-action" type="button">Upload image</button>
+            <input class="image-upload-input" type="file" accept="image/png,image/jpeg,image/webp" style="display:none;" />
             <span class="ds-muted status"></span>
           </div>
           <div class="ds-adapt-row" style="display:none;">
@@ -495,11 +812,84 @@
         const saveBtn = card.querySelector("button.save");
         const discardBtn = card.querySelector("button.discard");
         const adaptBtn = card.querySelector("button.adapt");
+        const planBtn = card.querySelector("button.plan");
+        const printBtn = card.querySelector("button.print");
         const adaptRow = card.querySelector(".ds-adapt-row");
         const adaptInput = card.querySelector(".adapt-input");
         const adaptSend = card.querySelector(".adapt-send");
+        const starButtons = Array.from(card.querySelectorAll("button.ds-star"));
+        const favoriteBtn = card.querySelector("button.ds-favorite");
+        const imageCreateBtn = card.querySelector("button.image-create");
+        const imageUploadBtn = card.querySelector("button.image-upload");
+        const imageUploadInput = card.querySelector("input.image-upload-input");
 
         status.textContent = statusText;
+
+        const renderStars = (value) => {
+          for (const btn of starButtons) {
+            const star = Number(btn.dataset.star ?? 0);
+            btn.classList.toggle("filled", star <= value);
+          }
+        };
+
+        renderStars(rating);
+
+        for (const btn of starButtons) {
+          btn.addEventListener("click", async () => {
+            const nextRating = Number(btn.dataset.star ?? 0);
+            if (!Number.isFinite(nextRating) || nextRating < 1 || nextRating > 5) return;
+            status.textContent = "Rating...";
+            const { response, data } = await postJson("/api/diabetic/rate", { recipe_id: recipe.recipe_id, rating: nextRating });
+            if (!response.ok) {
+              status.textContent = data?.error || "Rating failed";
+              return;
+            }
+            recipe.rating = data?.recipe?.rating ?? nextRating;
+            renderStars(Number(recipe.rating ?? nextRating));
+            status.textContent = "Rated ✓";
+            setTimeout(() => {
+              if (status.textContent === "Rated ✓") status.textContent = "";
+            }, 1200);
+            void refreshLibrary();
+          });
+        }
+
+        favoriteBtn?.addEventListener("click", async () => {
+          const next = Number(recipe.favorite ?? 0) ? 0 : 1;
+          status.textContent = next ? "Favoriting..." : "Removing favorite...";
+          const { response, data } = await postJson("/api/diabetic/favorite", { recipe_id: recipe.recipe_id, favorite: next });
+          if (!response.ok) {
+            status.textContent = data?.error || "Favorite failed";
+            return;
+          }
+          recipe.favorite = data?.recipe?.favorite ?? next;
+          const isFav = Number(recipe.favorite ?? 0) ? 1 : 0;
+          favoriteBtn.classList.toggle("active", Boolean(isFav));
+          favoriteBtn.setAttribute("aria-pressed", isFav ? "true" : "false");
+          status.textContent = isFav ? "Favorited ✓" : "Unfavorited ✓";
+          setTimeout(() => {
+            if (status.textContent.endsWith("✓")) status.textContent = "";
+          }, 1200);
+          void refreshLibrary();
+        });
+
+        planBtn?.addEventListener("click", async () => {
+          pendingPlanRecipe = { recipe_id: recipe.recipe_id, title: recipe.title || recipe.recipe_id };
+          if (els.planSelected) {
+            els.planSelected.textContent = pendingPlanRecipe.title;
+          }
+          setMode("plan");
+          const weekStart = ensureMealPlanWeekInput();
+          if (weekStart) {
+            await loadMealPlanWeek(weekStart);
+          }
+          els.planAdd?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+        });
+
+        printBtn?.addEventListener("click", () => {
+          if (!recipe?.recipe_id) return;
+          window.open(`/print/recipe.html?recipe_id=${encodeURIComponent(recipe.recipe_id)}`, "_blank");
+        });
 
         saveBtn.addEventListener("click", async () => {
           status.textContent = "Saving…";
@@ -561,15 +951,33 @@
           finishTelemetry("Adapted", data);
         });
 
-        if (!imageUrl) {
-          void ensureImageForRecipe(recipe, card, status);
-        }
+        imageCreateBtn?.addEventListener("click", async () => {
+          const hasImage = Boolean(String(recipe.image_url ?? "").trim());
+          await ensureImageForRecipe(recipe, card, status, { force: hasImage });
+        });
+
+        imageUploadBtn?.addEventListener("click", () => {
+          imageUploadInput?.click();
+        });
+
+        imageUploadInput?.addEventListener("change", async () => {
+          const file = imageUploadInput?.files?.[0] ?? null;
+          if (!file) return;
+          await uploadImageForRecipe(recipe, card, file, status);
+          try {
+            imageUploadInput.value = "";
+          } catch {
+            // ignore
+          }
+        });
 
         return card;
       }
 
       async function refreshLibrary() {
-        const url = activeMealFilter ? `/api/diabetic/recipes?meal_type=${encodeURIComponent(activeMealFilter)}` : "/api/diabetic/recipes";
+        const url = favoritesOnly
+          ? (activeMealFilter ? `/api/diabetic/favorites?meal_type=${encodeURIComponent(activeMealFilter)}` : "/api/diabetic/favorites")
+          : (activeMealFilter ? `/api/diabetic/recipes?meal_type=${encodeURIComponent(activeMealFilter)}` : "/api/diabetic/recipes");
         const { response, data } = await getJson(url);
         if (!response.ok) {
           els.libraryMeta.textContent = response.status === 404
@@ -579,8 +987,594 @@
         }
         const recipes = Array.isArray(data.recipes) ? data.recipes : [];
         cachedLibrary = recipes;
-        els.libraryMeta.textContent = `${recipes.length} saved recipe${recipes.length === 1 ? "" : "s"}${activeMealFilter ? ` · ${activeMealFilter}` : ""}`;
+        const label = favoritesOnly ? "favorite" : "saved recipe";
+        els.libraryMeta.textContent = `${recipes.length} ${label}${recipes.length === 1 ? "" : "s"}${activeMealFilter ? ` · ${activeMealFilter}` : ""}`;
         renderBrowseList();
+      }
+
+      const MEAL_PLAN_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+      const MEAL_PLAN_SLOTS = ["breakfast", "lunch", "dinner", "snack", "dessert"];
+
+      function formatLocalDate(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+      }
+
+      function weekStartFromDateString(dateString) {
+        const raw = String(dateString ?? "").trim();
+        const base = raw ? new Date(`${raw}T00:00:00`) : new Date();
+        if (Number.isNaN(base.getTime())) return "";
+        const day = base.getDay(); // 0=Sun ... 6=Sat
+        const daysSinceMonday = (day + 6) % 7;
+        base.setDate(base.getDate() - daysSinceMonday);
+        return formatLocalDate(base);
+      }
+
+      function ensureMealPlanWeekInput() {
+        const current = String(els.planWeek?.value ?? "").trim();
+        const weekStart = weekStartFromDateString(current || formatLocalDate(new Date()));
+        if (els.planWeek) {
+          els.planWeek.value = weekStart;
+        }
+        return weekStart;
+      }
+
+      function labelDay(day) {
+        return String(day ?? "").slice(0, 1).toUpperCase() + String(day ?? "").slice(1);
+      }
+
+      function labelSlot(slot) {
+        if (slot === "breakfast") return "Breakfast";
+        if (slot === "lunch") return "Lunch";
+        if (slot === "dinner") return "Dinner";
+        if (slot === "snack") return "Snack";
+        if (slot === "dessert") return "Dessert";
+        return String(slot ?? "");
+      }
+
+      function renderMealPlan(plan) {
+        if (!els.planGrid) return;
+        els.planGrid.innerHTML = "";
+
+        const items = Array.isArray(plan?.items) ? plan.items : [];
+        const grouped = new Map();
+        for (const day of MEAL_PLAN_DAYS) {
+          for (const slot of MEAL_PLAN_SLOTS) {
+            grouped.set(`${day}|${slot}`, []);
+          }
+        }
+        for (const item of items) {
+          const day = String(item.day_of_week ?? "").trim().toLowerCase();
+          const slot = String(item.meal_slot ?? "").trim().toLowerCase();
+          const key = `${day}|${slot}`;
+          if (!grouped.has(key)) continue;
+          grouped.get(key).push(item);
+        }
+
+        for (const day of MEAL_PLAN_DAYS) {
+          const dayCard = document.createElement("section");
+          dayCard.className = "ds-plan-day";
+          dayCard.innerHTML = `<h3>${escapeHtml(labelDay(day))}</h3>`;
+
+          for (const slot of MEAL_PLAN_SLOTS) {
+            const section = document.createElement("div");
+            section.className = "ds-plan-slot";
+            const list = document.createElement("div");
+            list.className = "ds-plan-items";
+
+            const entries = grouped.get(`${day}|${slot}`) ?? [];
+            if (entries.length === 0) {
+              list.innerHTML = `<div class="ds-muted ds-plan-empty">No items</div>`;
+            } else {
+              for (const entry of entries) {
+                const row = document.createElement("div");
+                row.className = "ds-plan-item";
+                const title = entry.recipe_title || entry.recipe_id || "Recipe";
+                row.innerHTML = `
+                  <div class="ds-plan-item-title">${escapeHtml(title)}</div>
+                  <div class="ds-plan-item-actions">
+                    <button class="ghost-action move" type="button">Move</button>
+                    <button class="ghost-action remove" type="button">Remove</button>
+                  </div>
+                `;
+
+                row.querySelector("button.remove")?.addEventListener("click", async () => {
+                  const { response } = await postJson("/api/diabetic/meal-plan/remove", { item_id: entry.id });
+                  if (!response.ok) return;
+                  const weekStart = ensureMealPlanWeekInput();
+                  await loadMealPlanWeek(weekStart);
+                });
+
+                row.querySelector("button.move")?.addEventListener("click", async () => {
+                  const nextDay = window.prompt("Move to day (monday..sunday):", day) ?? "";
+                  const nextSlot = window.prompt("Move to slot (breakfast..dessert):", slot) ?? "";
+                  const { response } = await postJson("/api/diabetic/meal-plan/update", {
+                    item_id: entry.id,
+                    updates: { day_of_week: nextDay, meal_slot: nextSlot }
+                  });
+                  if (!response.ok) return;
+                  const weekStart = ensureMealPlanWeekInput();
+                  await loadMealPlanWeek(weekStart);
+                });
+
+                list.appendChild(row);
+              }
+            }
+
+            section.innerHTML = `<h4>${escapeHtml(labelSlot(slot))}</h4>`;
+            section.appendChild(list);
+            dayCard.appendChild(section);
+          }
+
+          els.planGrid.appendChild(dayCard);
+        }
+
+        const hasPlan = Boolean(plan?.plan_id);
+        els.planGenerateShopping?.toggleAttribute("disabled", !hasPlan);
+        els.planPrint?.toggleAttribute("disabled", !hasPlan);
+      }
+
+      async function loadMealPlanWeek(weekStart) {
+        const week = String(weekStart ?? "").trim();
+        if (!week) return null;
+        if (els.planHint) els.planHint.textContent = "Loading meal plan...";
+        const { response, data } = await getJson(`/api/diabetic/meal-plan/week?week_start=${encodeURIComponent(week)}`);
+        if (!response.ok) {
+          activeMealPlanId = "";
+          renderMealPlan(null);
+          if (els.planHint) {
+            els.planHint.textContent = response.status === 404
+              ? "No meal plan for this week yet. Click Create to start one."
+              : (data?.error || `Failed to load meal plan (HTTP ${response.status}).`);
+          }
+          return null;
+        }
+
+        activeMealPlanId = String(data?.plan?.plan_id ?? "");
+        if (els.planHint) els.planHint.textContent = `Week of ${week}`;
+        renderMealPlan(data.plan);
+        return data.plan;
+      }
+
+      async function createMealPlanWeek(weekStart) {
+        const week = String(weekStart ?? "").trim();
+        if (!week) return null;
+        if (els.planHint) els.planHint.textContent = "Creating meal plan...";
+        const { response, data } = await postJson("/api/diabetic/meal-plan/create", {
+          week_start: week,
+          title: `Week of ${week}`,
+          notes: ""
+        });
+        if (!response.ok) {
+          if (els.planHint) els.planHint.textContent = data?.error || `Create failed (HTTP ${response.status}).`;
+          return null;
+        }
+        activeMealPlanId = String(data?.plan?.plan_id ?? "");
+        if (els.planHint) els.planHint.textContent = "Meal plan created ✓";
+        renderMealPlan(data.plan);
+        return data.plan;
+      }
+
+      async function addRecipeToCurrentPlan() {
+        const weekStart = ensureMealPlanWeekInput();
+        if (!activeMealPlanId) {
+          if (els.planHint) els.planHint.textContent = "Create or load a plan first.";
+          return;
+        }
+        const recipeId = String(pendingPlanRecipe?.recipe_id ?? selectedRecipeId ?? "").trim();
+        if (!recipeId) {
+          if (els.planHint) els.planHint.textContent = "Select a recipe first (from Search) or use Add to Plan on a recipe card.";
+          return;
+        }
+
+        if (els.planHint) els.planHint.textContent = "Adding item...";
+        const { response, data } = await postJson("/api/diabetic/meal-plan/add", {
+          plan_id: activeMealPlanId,
+          recipe_id: recipeId,
+          day_of_week: String(els.planDay?.value ?? "monday"),
+          meal_slot: String(els.planSlot?.value ?? "dinner"),
+          servings: String(els.planServings?.value ?? "").trim(),
+          notes: ""
+        });
+        if (!response.ok) {
+          if (els.planHint) els.planHint.textContent = data?.error || `Add failed (HTTP ${response.status}).`;
+          return;
+        }
+        if (els.planHint) els.planHint.textContent = "Added ✓";
+        pendingPlanRecipe = null;
+        if (els.planSelected) els.planSelected.textContent = "(none)";
+        if (els.planServings) els.planServings.value = "";
+        await loadMealPlanWeek(weekStart);
+      }
+
+      function renderShoppingSidebar() {
+        if (!els.shoppingLists) return;
+        els.shoppingLists.innerHTML = "";
+
+        const lists = Array.isArray(cachedShoppingLists) ? cachedShoppingLists : [];
+        if (!lists.length) {
+          els.shoppingLists.innerHTML = `<div class="ds-muted">No lists yet.</div>`;
+          return;
+        }
+
+        for (const list of lists) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = `ds-shopping-list${String(list.list_id) === String(activeShoppingListId) ? " active" : ""}`;
+          button.textContent = list.title || list.list_id;
+          button.addEventListener("click", () => void loadShoppingList(String(list.list_id)));
+          els.shoppingLists.appendChild(button);
+        }
+      }
+
+      async function refreshShoppingLists() {
+        const { response, data } = await getJson("/api/diabetic/shopping-lists");
+        if (!response.ok) {
+          cachedShoppingLists = [];
+          renderShoppingSidebar();
+          if (els.shoppingHint) els.shoppingHint.textContent = "Failed to load shopping lists.";
+          return [];
+        }
+        const lists = Array.isArray(data.lists) ? data.lists : [];
+        cachedShoppingLists = lists;
+        renderShoppingSidebar();
+        return lists;
+      }
+
+      function renderShoppingList(list) {
+        if (!els.shoppingItems || !els.shoppingTitle) return;
+        els.shoppingItems.innerHTML = "";
+
+        if (!list?.list_id) {
+          els.shoppingTitle.textContent = "No list selected";
+          els.shoppingPrint?.setAttribute("disabled", "");
+          return;
+        }
+
+        els.shoppingTitle.textContent = list.title || "Shopping list";
+        els.shoppingPrint?.toggleAttribute("disabled", false);
+
+        const items = Array.isArray(list.items) ? list.items : [];
+        if (!items.length) {
+          els.shoppingItems.innerHTML = `<p class="ds-sub ds-empty">No items yet.</p>`;
+          return;
+        }
+
+        for (const item of items) {
+          const row = document.createElement("div");
+          row.className = `ds-shopping-item${Number(item.checked ?? 0) ? " checked" : ""}`;
+
+          const labelParts = [
+            String(item.amount ?? "").trim(),
+            String(item.unit ?? "").trim(),
+            String(item.name ?? "").trim()
+          ].filter(Boolean);
+
+          row.innerHTML = `
+            <label class="ds-shopping-check">
+              <input type="checkbox" ${Number(item.checked ?? 0) ? "checked" : ""} />
+              <span>${escapeHtml(labelParts.join(" "))}</span>
+            </label>
+            <button type="button" class="ghost-action delete">Delete</button>
+          `;
+
+          row.querySelector("input")?.addEventListener("change", async (event) => {
+            const checked = Boolean(event.target?.checked);
+            const { response } = await postJson("/api/diabetic/shopping-list/item/check", { item_id: item.id, checked: checked ? 1 : 0 });
+            if (response.ok) {
+              await loadShoppingList(activeShoppingListId);
+            }
+          });
+
+          row.querySelector("button.delete")?.addEventListener("click", async () => {
+            const { response } = await postJson("/api/diabetic/shopping-list/item/delete", { item_id: item.id });
+            if (response.ok) {
+              await loadShoppingList(activeShoppingListId);
+            }
+          });
+
+          els.shoppingItems.appendChild(row);
+        }
+      }
+
+      async function loadShoppingList(listId) {
+        const id = String(listId ?? "").trim();
+        if (!id) return null;
+        activeShoppingListId = id;
+        renderShoppingSidebar();
+
+        if (els.shoppingHint) els.shoppingHint.textContent = "Loading shopping list...";
+        const { response, data } = await getJson(`/api/diabetic/shopping-list?list_id=${encodeURIComponent(id)}`);
+        if (!response.ok) {
+          renderShoppingList(null);
+          if (els.shoppingHint) els.shoppingHint.textContent = data?.error || `Failed to load list (HTTP ${response.status}).`;
+          return null;
+        }
+        if (els.shoppingHint) els.shoppingHint.textContent = "";
+        renderShoppingList(data.list);
+        return data.list;
+      }
+
+      async function createNewShoppingList() {
+        const title = window.prompt("Shopping list title:", `Shopping list ${new Date().toLocaleDateString()}`) ?? "";
+        const trimmed = String(title).trim();
+        if (!trimmed) return;
+
+        if (els.shoppingHint) els.shoppingHint.textContent = "Creating list...";
+        const { response, data } = await postJson("/api/diabetic/shopping-list/create", { title: trimmed });
+        if (!response.ok) {
+          if (els.shoppingHint) els.shoppingHint.textContent = data?.error || "Create failed.";
+          return;
+        }
+
+        await refreshShoppingLists();
+        await loadShoppingList(data.list?.list_id);
+      }
+
+      async function addManualShoppingItem() {
+        const name = String(els.shoppingItemName?.value ?? "").trim();
+        if (!name) return;
+        if (!activeShoppingListId) {
+          if (els.shoppingHint) els.shoppingHint.textContent = "Select or create a list first.";
+          return;
+        }
+
+        const amount = String(els.shoppingItemAmount?.value ?? "").trim();
+        const unit = String(els.shoppingItemUnit?.value ?? "").trim();
+        const { response, data } = await postJson("/api/diabetic/shopping-list/item/add", {
+          list_id: activeShoppingListId,
+          item: { name, amount, unit }
+        });
+        if (!response.ok) {
+          if (els.shoppingHint) els.shoppingHint.textContent = data?.error || "Add failed.";
+          return;
+        }
+
+        if (els.shoppingItemName) els.shoppingItemName.value = "";
+        if (els.shoppingItemAmount) els.shoppingItemAmount.value = "";
+        if (els.shoppingItemUnit) els.shoppingItemUnit.value = "";
+        await loadShoppingList(activeShoppingListId);
+      }
+
+      async function generateShoppingFromCurrentPlan() {
+        if (!activeMealPlanId) {
+          if (els.planHint) els.planHint.textContent = "Load a meal plan first.";
+          return;
+        }
+        if (els.planHint) els.planHint.textContent = "Generating shopping list...";
+        const { response, data } = await postJson("/api/diabetic/shopping-list/from-meal-plan", { plan_id: activeMealPlanId });
+        if (!response.ok) {
+          if (els.planHint) els.planHint.textContent = data?.error || "Generate failed.";
+          return;
+        }
+        if (els.planHint) els.planHint.textContent = "Shopping list ready ✓";
+        await refreshShoppingLists();
+        setMode("shopping");
+        await loadShoppingList(data.list?.list_id);
+      }
+
+      function downloadJson(filename, data) {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+
+      async function exportBackup() {
+        if (!els.settingsImportStatus) return;
+        els.settingsImportStatus.textContent = "Exporting backup...";
+        const response = await fetch("/api/diabetic/export");
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          els.settingsImportStatus.textContent = payload?.error || `Export failed (HTTP ${response.status}).`;
+          return;
+        }
+        const stamped = String(payload.exported_at ?? new Date().toISOString()).slice(0, 19).replaceAll(":", "-");
+        downloadJson(`diabeticspace-backup-${stamped}.json`, payload);
+        els.settingsImportStatus.textContent = "Exported ✓";
+      }
+
+      async function previewImport(backup) {
+        if (!els.settingsImportPreview || !els.settingsImportStatus) return;
+        els.settingsImportStatus.textContent = "Previewing import (dry run)...";
+        const { response, data } = await postJson("/api/diabetic/import", { backup, dry_run: true, overwrite: false });
+        if (!response.ok) {
+          els.settingsImportStatus.textContent = data?.error || `Preview failed (HTTP ${response.status}).`;
+          els.settingsImportPreview.textContent = "";
+          return;
+        }
+        els.settingsImportStatus.textContent = "Preview ready.";
+        els.settingsImportPreview.textContent = JSON.stringify(data.summary, null, 2);
+        els.settingsImportApply?.toggleAttribute("disabled", false);
+      }
+
+      async function handleImportFile(file) {
+        if (!file) return;
+        const text = await file.text();
+        let parsed;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          els.settingsImportStatus.textContent = "Invalid JSON file.";
+          return;
+        }
+        pendingImportBackup = parsed;
+        await previewImport(parsed);
+      }
+
+      async function applyImport() {
+        if (!pendingImportBackup) return;
+        const overwrite = Boolean(els.settingsImportOverwrite?.checked);
+        els.settingsImportStatus.textContent = overwrite ? "Importing (overwrite)..." : "Importing...";
+        const { response, data } = await postJson("/api/diabetic/import", { backup: pendingImportBackup, dry_run: false, overwrite });
+        if (!response.ok) {
+          els.settingsImportStatus.textContent = data?.error || `Import failed (HTTP ${response.status}).`;
+          return;
+        }
+        els.settingsImportStatus.textContent = "Imported ✓";
+        els.settingsImportPreview.textContent = JSON.stringify(data.summary, null, 2);
+        pendingImportBackup = null;
+        els.settingsImportApply?.setAttribute("disabled", "");
+        await refreshLibrary();
+        await refreshShoppingLists();
+      }
+
+      const ACTIVE_USER_STORAGE_KEY = "diabeticspace.active_user_id";
+      let cachedUsers = [];
+
+      function getActiveUserId() {
+        try {
+          return String(localStorage.getItem(ACTIVE_USER_STORAGE_KEY) ?? "").trim();
+        } catch {
+          return "";
+        }
+      }
+
+      function setActiveUserId(userId) {
+        const id = String(userId ?? "").trim();
+        try {
+          if (id) localStorage.setItem(ACTIVE_USER_STORAGE_KEY, id);
+          else localStorage.removeItem(ACTIVE_USER_STORAGE_KEY);
+        } catch {
+          // ignore
+        }
+      }
+
+      function renderUserSelect(users) {
+        if (!els.settingsUserSelect) return;
+        els.settingsUserSelect.innerHTML = "";
+        for (const user of users) {
+          const option = document.createElement("option");
+          option.value = user.user_id;
+          option.textContent = user.display_name || user.user_id;
+          els.settingsUserSelect.appendChild(option);
+        }
+      }
+
+      async function refreshUsers() {
+        if (!els.settingsUserStatus) return [];
+        els.settingsUserStatus.textContent = "Loading profiles...";
+        const { response, data } = await getJson("/api/diabetic/users");
+        if (!response.ok) {
+          els.settingsUserStatus.textContent = data?.error || `Failed to load profiles (HTTP ${response.status}).`;
+          cachedUsers = [];
+          renderUserSelect([]);
+          return [];
+        }
+
+        const users = Array.isArray(data.users) ? data.users : [];
+        cachedUsers = users;
+        renderUserSelect(users);
+
+        if (!users.length) {
+          if (els.settingsUserCurrent) els.settingsUserCurrent.textContent = "No profile yet. Create one below.";
+          els.settingsUserStatus.textContent = "";
+          setActiveUserId("");
+          els.settingsPinLock?.toggleAttribute("disabled", true);
+          return [];
+        }
+
+        const active = getActiveUserId();
+        const fallback = users[0]?.user_id ?? "";
+        const selected = users.some((u) => u.user_id === active) ? active : fallback;
+        if (selected && selected !== active) setActiveUserId(selected);
+
+        if (els.settingsUserSelect) {
+          els.settingsUserSelect.value = selected;
+        }
+
+        const activeUser = users.find((u) => u.user_id === selected) ?? null;
+        if (els.settingsUserCurrent) {
+          els.settingsUserCurrent.textContent = activeUser ? `Current: ${activeUser.display_name}` : "Current: (unknown)";
+        }
+
+        els.settingsUserStatus.textContent = "";
+        await refreshPinLockSetting();
+        return users;
+      }
+
+      async function refreshPinLockSetting() {
+        const userId = getActiveUserId();
+        if (!userId || !els.settingsPinLock) return;
+        const { response, data } = await getJson(`/api/diabetic/settings?user_id=${encodeURIComponent(userId)}&key=pin_lock_enabled`);
+        if (!response.ok) return;
+        const enabled = String(data.value ?? "").trim() === "1";
+        els.settingsPinLock.checked = enabled;
+        els.settingsPinLock.toggleAttribute("disabled", false);
+      }
+
+      async function setPinLockSetting(enabled) {
+        const userId = getActiveUserId();
+        if (!userId) return;
+        const { response, data } = await postJson("/api/diabetic/settings", {
+          user_id: userId,
+          key: "pin_lock_enabled",
+          value: enabled ? "1" : "0"
+        });
+        if (!response.ok) {
+          if (els.settingsUserStatus) els.settingsUserStatus.textContent = data?.error || "Failed to save setting.";
+          return;
+        }
+        if (els.settingsUserStatus) {
+          els.settingsUserStatus.textContent = "Saved ✓";
+          setTimeout(() => {
+            if (els.settingsUserStatus.textContent === "Saved ✓") els.settingsUserStatus.textContent = "";
+          }, 1200);
+        }
+      }
+
+      async function createProfile() {
+        if (!els.settingsUserName || !els.settingsUserStatus) return;
+        const displayName = String(els.settingsUserName.value ?? "").trim();
+        if (!displayName) {
+          els.settingsUserStatus.textContent = "Enter a display name.";
+          return;
+        }
+        const pin = String(els.settingsUserPin?.value ?? "").trim();
+        els.settingsUserStatus.textContent = "Creating profile...";
+        const { response, data } = await postJson("/api/diabetic/user/create", { display_name: displayName, pin: pin || null });
+        if (!response.ok) {
+          els.settingsUserStatus.textContent = data?.error || "Create failed.";
+          return;
+        }
+        const userId = String(data?.user?.user_id ?? "").trim();
+        if (userId) setActiveUserId(userId);
+        els.settingsUserName.value = "";
+        if (els.settingsUserPin) els.settingsUserPin.value = "";
+        if (els.settingsUserPinVerify) els.settingsUserPinVerify.value = "";
+        await refreshUsers();
+        els.settingsUserStatus.textContent = "Profile created ✓";
+        setTimeout(() => {
+          if (els.settingsUserStatus.textContent === "Profile created ✓") els.settingsUserStatus.textContent = "";
+        }, 1400);
+      }
+
+      async function verifyPin() {
+        if (!els.settingsUserStatus) return;
+        const userId = getActiveUserId();
+        if (!userId) {
+          els.settingsUserStatus.textContent = "Create or select a profile first.";
+          return;
+        }
+        const pin = String(els.settingsUserPinVerify?.value ?? "").trim();
+        if (!pin) {
+          els.settingsUserStatus.textContent = "Enter a PIN to verify.";
+          return;
+        }
+        els.settingsUserStatus.textContent = "Verifying PIN...";
+        const { response, data } = await postJson("/api/diabetic/user/verify-pin", { user_id: userId, pin });
+        if (!response.ok) {
+          els.settingsUserStatus.textContent = data?.error || "Verify failed.";
+          return;
+        }
+        els.settingsUserStatus.textContent = data.verified ? "PIN verified ✓" : "Wrong PIN.";
       }
 
       function updateSearchVisibility() {
@@ -591,7 +1585,7 @@
         }
 
         if (els.browseBlock) {
-          els.browseBlock.style.display = (!hasSelection && Boolean(activeMealFilter)) ? "" : "none";
+          els.browseBlock.style.display = hasSelection ? "none" : "";
         }
 
         if (els.matchesBlock) {
@@ -606,21 +1600,12 @@
       function renderBrowseList() {
         if (!els.browseList) return;
         updateSearchVisibility();
-        if (!activeMealFilter) {
-          els.browseList.innerHTML = "";
-          if (els.browseEmpty) {
-            els.browseEmpty.style.display = "none";
-          }
-          if (els.browseTitle) {
-            els.browseTitle.textContent = "Saved recipes";
-          }
-          return;
-        }
         els.browseList.innerHTML = "";
 
         const mealLabel = activeMealFilter ? activeMealFilter : "all";
         if (els.browseTitle) {
-          els.browseTitle.textContent = `Saved recipes (${mealLabel})`;
+          const base = favoritesOnly ? "Favorites" : "Saved recipes";
+          els.browseTitle.textContent = `${base} (${mealLabel})`;
         }
 
         if (!Array.isArray(cachedLibrary) || cachedLibrary.length === 0) {
@@ -983,10 +1968,101 @@
 	      els.modeSearch.addEventListener("click", () => setMode("search"));
 	      els.modeBuilder.addEventListener("click", () => setMode("builder"));
 	      els.modeQuick.addEventListener("click", () => setMode("quick"));
+	      els.modePlan.addEventListener("click", async () => {
+          setMode("plan");
+          const weekStart = ensureMealPlanWeekInput();
+          if (weekStart) {
+            await loadMealPlanWeek(weekStart);
+          }
+        });
+	      els.modeShopping.addEventListener("click", async () => {
+          setMode("shopping");
+          const lists = await refreshShoppingLists();
+          if (!activeShoppingListId && lists[0]?.list_id) {
+            await loadShoppingList(lists[0].list_id);
+          }
+        });
+        els.modeSettings.addEventListener("click", () => setMode("settings"));
 	      els.home?.addEventListener("click", goHome);
 	      for (const btn of els.mealFilters) {
 	        btn.addEventListener("click", () => setMealFilter(btn.dataset.meal ?? ""));
 	      }
+
+        els.filterFavorites?.addEventListener("click", () => setFavoritesOnly(!favoritesOnly));
+
+        els.planLoad?.addEventListener("click", async () => {
+          const weekStart = ensureMealPlanWeekInput();
+          await loadMealPlanWeek(weekStart);
+        });
+
+        els.planCreate?.addEventListener("click", async () => {
+          const weekStart = ensureMealPlanWeekInput();
+          await createMealPlanWeek(weekStart);
+        });
+
+        els.planAdd?.addEventListener("click", addRecipeToCurrentPlan);
+        els.planGenerateShopping?.addEventListener("click", generateShoppingFromCurrentPlan);
+        els.planPrint?.addEventListener("click", () => {
+          if (!activeMealPlanId) return;
+          window.open(`/print/meal-plan.html?plan_id=${encodeURIComponent(activeMealPlanId)}`, "_blank");
+        });
+
+        els.shoppingNew?.addEventListener("click", createNewShoppingList);
+        els.shoppingItemAdd?.addEventListener("click", addManualShoppingItem);
+        els.shoppingItemName?.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            els.shoppingItemAdd?.click();
+          }
+        });
+        els.shoppingPrint?.addEventListener("click", () => {
+          if (!activeShoppingListId) return;
+          window.open(`/print/shopping-list.html?list_id=${encodeURIComponent(activeShoppingListId)}`, "_blank");
+        });
+
+        els.settingsExport?.addEventListener("click", exportBackup);
+        els.settingsImportFile?.addEventListener("change", async (event) => {
+          const file = event?.target?.files?.[0] ?? null;
+          if (!file) {
+            pendingImportBackup = null;
+            els.settingsImportStatus.textContent = "";
+            els.settingsImportPreview.textContent = "";
+            els.settingsImportApply?.setAttribute("disabled", "");
+            return;
+          }
+          await handleImportFile(file);
+        });
+        els.settingsImportApply?.addEventListener("click", applyImport);
+
+        els.settingsUserRefresh?.addEventListener("click", refreshUsers);
+        els.settingsUserSelect?.addEventListener("change", async () => {
+          const selected = String(els.settingsUserSelect?.value ?? "").trim();
+          if (selected) setActiveUserId(selected);
+          await refreshUsers();
+        });
+        els.settingsUserCreate?.addEventListener("click", createProfile);
+        els.settingsUserName?.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            els.settingsUserCreate?.click();
+          }
+        });
+        els.settingsUserPin?.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            els.settingsUserCreate?.click();
+          }
+        });
+        els.settingsUserVerify?.addEventListener("click", verifyPin);
+        els.settingsUserPinVerify?.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            els.settingsUserVerify?.click();
+          }
+        });
+        els.settingsPinLock?.addEventListener("change", async () => {
+          await setPinLockSetting(Boolean(els.settingsPinLock?.checked));
+        });
 
       els.selectedClear?.addEventListener("click", () => {
         clearSelectedRecipe();

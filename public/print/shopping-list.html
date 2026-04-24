@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Print Shopping List — DiabeticSpace</title>
+    <link rel="stylesheet" href="../print.css" />
+  </head>
+  <body>
+    <div class="print-shell">
+      <header class="print-header">
+        <div>
+          <h1 class="print-title" id="list-title">Shopping List</h1>
+          <p class="print-sub" id="list-sub">Loading…</p>
+        </div>
+        <div class="print-actions no-print">
+          <button class="print-btn" id="print-btn" type="button">Print</button>
+        </div>
+      </header>
+
+      <div class="print-meta" id="list-meta"></div>
+      <div class="print-checklist" id="checklist" aria-label="Shopping list items"></div>
+    </div>
+
+    <script type="module">
+      const params = new URLSearchParams(window.location.search);
+      const listId = String(params.get("list_id") ?? "").trim();
+
+      const titleEl = document.getElementById("list-title");
+      const subEl = document.getElementById("list-sub");
+      const metaEl = document.getElementById("list-meta");
+      const checklist = document.getElementById("checklist");
+
+      document.getElementById("print-btn")?.addEventListener("click", () => window.print());
+
+      if (!listId) {
+        subEl.textContent = "Missing list_id.";
+      } else {
+        const response = await fetch(`/api/diabetic/shopping-list?list_id=${encodeURIComponent(listId)}`);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          subEl.textContent = payload?.error ? `Unable to load list: ${payload.error}` : `Unable to load list (HTTP ${response.status}).`;
+        } else {
+          const list = payload.list ?? {};
+          titleEl.textContent = list.title || "Shopping list";
+          subEl.textContent = list.source_type ? `Source: ${list.source_type}` : "";
+          metaEl.textContent = list.source_id ? `Source id: ${list.source_id}` : "";
+
+          checklist.innerHTML = "";
+          for (const item of Array.isArray(list.items) ? list.items : []) {
+            const row = document.createElement("div");
+            row.className = "print-check";
+            const amount = String(item.amount ?? "").trim();
+            const unit = String(item.unit ?? "").trim();
+            const name = String(item.name ?? "").trim();
+            const text = [amount, unit, name].filter(Boolean).join(" ");
+            row.innerHTML = `<span class="print-box"></span><span>${text}</span>`;
+            checklist.appendChild(row);
+          }
+        }
+      }
+    </script>
+  </body>
+</html>
+

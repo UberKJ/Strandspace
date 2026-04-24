@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Print Meal Plan — DiabeticSpace</title>
+    <link rel="stylesheet" href="../print.css" />
+  </head>
+  <body>
+    <div class="print-shell">
+      <header class="print-header">
+        <div>
+          <h1 class="print-title" id="plan-title">Weekly Meal Plan</h1>
+          <p class="print-sub" id="plan-sub">Loading…</p>
+        </div>
+        <div class="print-actions no-print">
+          <button class="print-btn" id="print-btn" type="button">Print</button>
+        </div>
+      </header>
+
+      <div class="print-meta" id="plan-meta"></div>
+      <div class="print-grid" id="plan-grid" aria-label="Weekly meal plan"></div>
+    </div>
+
+    <script type="module">
+      const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+      const SLOTS = ["breakfast", "lunch", "dinner", "snack", "dessert"];
+
+      const params = new URLSearchParams(window.location.search);
+      const planId = String(params.get("plan_id") ?? "").trim();
+
+      const titleEl = document.getElementById("plan-title");
+      const subEl = document.getElementById("plan-sub");
+      const metaEl = document.getElementById("plan-meta");
+      const gridEl = document.getElementById("plan-grid");
+
+      document.getElementById("print-btn")?.addEventListener("click", () => window.print());
+
+      if (!planId) {
+        subEl.textContent = "Missing plan_id.";
+      } else {
+        const response = await fetch(`/api/diabetic/meal-plan?plan_id=${encodeURIComponent(planId)}`);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          subEl.textContent = payload?.error ? `Unable to load plan: ${payload.error}` : `Unable to load plan (HTTP ${response.status}).`;
+        } else {
+          const plan = payload.plan ?? {};
+          titleEl.textContent = plan.title || `Weekly Meal Plan`;
+          subEl.textContent = plan.week_start ? `Week of ${plan.week_start}` : "";
+          metaEl.textContent = plan.notes || "";
+
+          const items = Array.isArray(plan.items) ? plan.items : [];
+          const grouped = new Map();
+          for (const day of DAYS) {
+            for (const slot of SLOTS) grouped.set(`${day}|${slot}`, []);
+          }
+          for (const item of items) {
+            const day = String(item.day_of_week ?? "").toLowerCase();
+            const slot = String(item.meal_slot ?? "").toLowerCase();
+            const key = `${day}|${slot}`;
+            if (!grouped.has(key)) continue;
+            grouped.get(key).push(item);
+          }
+
+          gridEl.innerHTML = "";
+          for (const day of DAYS) {
+            const dayCard = document.createElement("section");
+            dayCard.className = "print-day";
+            dayCard.innerHTML = `<h3>${day.slice(0, 1).toUpperCase() + day.slice(1)}</h3>`;
+            for (const slot of SLOTS) {
+              const slotBlock = document.createElement("div");
+              slotBlock.className = "print-slot";
+              slotBlock.innerHTML = `<h4>${slot.slice(0, 1).toUpperCase() + slot.slice(1)}</h4>`;
+              const ul = document.createElement("ul");
+              ul.className = "print-list";
+              const entries = grouped.get(`${day}|${slot}`) ?? [];
+              if (entries.length === 0) {
+                const li = document.createElement("li");
+                li.textContent = "—";
+                ul.appendChild(li);
+              } else {
+                for (const entry of entries) {
+                  const li = document.createElement("li");
+                  li.textContent = entry.recipe_title || entry.recipe_id || "Recipe";
+                  ul.appendChild(li);
+                }
+              }
+              slotBlock.appendChild(ul);
+              dayCard.appendChild(slotBlock);
+            }
+            gridEl.appendChild(dayCard);
+          }
+        }
+      }
+    </script>
+  </body>
+</html>
+

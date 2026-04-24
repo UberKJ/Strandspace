@@ -235,6 +235,227 @@ export async function registerDiabeticspaceTests({
     });
   });
 
+  await check("rating rejects values below 0 or above 5", async () => {
+    await withServer(async (address) => {
+      const recipeId = `test-rate-${Date.now()}`;
+      const recipe = buildMockRecipe({ recipe_id: recipeId });
+      const saveResponse = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/save`, recipe);
+      assert.equal(saveResponse.status, 200);
+
+      const tooHigh = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/rate`, {
+        recipe_id: recipeId,
+        rating: 6
+      });
+      assert.equal(tooHigh.status, 400);
+
+      const tooLow = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/rate`, {
+        recipe_id: recipeId,
+        rating: -1
+      });
+      assert.equal(tooLow.status, 400);
+    });
+  });
+
+  await check("favorite can be set and removed; favorites endpoint returns only favorites", async () => {
+    await withServer(async (address) => {
+      const oneId = `test-fav-one-${Date.now()}`;
+      const twoId = `test-fav-two-${Date.now()}`;
+      assert.equal((await postJson(`http://127.0.0.1:${address.port}/api/diabetic/save`, buildMockRecipe({ recipe_id: oneId }))).status, 200);
+      assert.equal((await postJson(`http://127.0.0.1:${address.port}/api/diabetic/save`, buildMockRecipe({ recipe_id: twoId, title: "Second Recipe" }))).status, 200);
+
+      const favoriteResponse = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/favorite`, {
+        recipe_id: oneId,
+        favorite: 1
+      });
+      assert.equal(favoriteResponse.status, 200);
+      const favored = await favoriteResponse.json();
+      assert.equal(favored.ok, true);
+      assert.equal(Number(favored.recipe.favorite ?? 0), 1);
+
+      const favoritesList = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/favorites`);
+      assert.equal(favoritesList.status, 200);
+      const favoritesPayload = await favoritesList.json();
+      const favorites = Array.isArray(favoritesPayload.recipes) ? favoritesPayload.recipes : [];
+      assert.ok(favorites.some((r) => r.recipe_id === oneId));
+      assert.ok(!favorites.some((r) => r.recipe_id === twoId));
+
+      const unfavoriteResponse = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/favorite`, {
+        recipe_id: oneId,
+        favorite: 0
+      });
+      assert.equal(unfavoriteResponse.status, 200);
+      const unfavored = await unfavoriteResponse.json();
+      assert.equal(Number(unfavored.recipe.favorite ?? 1), 0);
+    });
+  });
+
+  await check("recipe detail includes rating and favorite fields", async () => {
+    await withServer(async (address) => {
+      const recipeId = `test-detail-rating-${Date.now()}`;
+      assert.equal((await postJson(`http://127.0.0.1:${address.port}/api/diabetic/save`, buildMockRecipe({ recipe_id: recipeId }))).status, 200);
+
+      const rateResponse = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/rate`, {
+        recipe_id: recipeId,
+        rating: 4
+      });
+      assert.equal(rateResponse.status, 200);
+
+      const favoriteResponse = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/favorite`, {
+        recipe_id: recipeId,
+        favorite: 1
+      });
+      assert.equal(favoriteResponse.status, 200);
+
+      const getResponse = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/recipe?recipe_id=${encodeURIComponent(recipeId)}`);
+      assert.equal(getResponse.status, 200);
+      const payload = await getResponse.json();
+      assert.equal(payload.recipe.recipe_id, recipeId);
+      assert.equal(Number(payload.recipe.rating ?? 0), 4);
+      assert.equal(Number(payload.recipe.favorite ?? 0), 1);
+      assert.ok("updated_at" in payload.recipe);
+      assert.ok("last_cooked_at" in payload.recipe);
+    });
+  });
+
+  await check("meal plans: create plan, add recipe, fetch week plan, remove item, reject invalid day/slot", async () => {
+    await withServer(async (address) => {
+      const weekStart = "2026-01-05";
+      const createResponse = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/meal-plan/create`, {
+        week_start: weekStart,
+        title: "Test plan"
+      });
+      assert.equal(createResponse.status, 200);
+      const created = await createResponse.json();
+      assert.equal(created.ok, true);
+      assert.ok(created.plan?.plan_id);
+
+      const addResponse = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/meal-plan/add`, {
+        plan_id: created.plan.plan_id,
+        recipe_id: "cauliflower-fried-rice",
+        day_of_week: "monday",
+        meal_slot: "dinner",
+        servings: 2,
+        notes: "Dinner test"
+      });
+      assert.equal(addResponse.status, 200);
+      const added = await addResponse.json();
+      assert.equal(added.ok, true);
+      assert.ok(Number(added.item?.id ?? 0) > 0);
+      assert.equal(added.item.recipe_id, "cauliflower-fried-rice");
+
+      const weekResponse = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/meal-plan/week?week_start=${encodeURIComponent(weekStart)}`);
+      assert.equal(weekResponse.status, 200);
+      const weekPayload = await weekResponse.json();
+      assert.equal(weekPayload.ok, true);
+      assert.equal(weekPayload.plan.week_start, weekStart);
+      assert.ok(Array.isArray(weekPayload.plan.items));
+      assert.ok(weekPayload.plan.items.some((item) => item.recipe_id === "cauliflower-fried-rice" && item.day_of_week === "monday" && item.meal_slot === "dinner"));
+
+      const removeResponse = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/meal-plan/remove`, {
+        item_id: added.item.id
+      });
+      assert.equal(removeResponse.status, 200);
+      const removed = await removeResponse.json();
+      assert.equal(removed.ok, true);
+      assert.equal(removed.removed, true);
+
+      const invalidDay = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/meal-plan/add`, {
+        plan_id: created.plan.plan_id,
+        recipe_id: "cauliflower-fried-rice",
+        day_of_week: "nonday",
+        meal_slot: "dinner"
+      });
+      assert.equal(invalidDay.status, 400);
+
+      const invalidSlot = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/meal-plan/add`, {
+        plan_id: created.plan.plan_id,
+        recipe_id: "cauliflower-fried-rice",
+        day_of_week: "monday",
+        meal_slot: "brunch"
+      });
+      assert.equal(invalidSlot.status, 400);
+    });
+  });
+
+  await check("shopping lists: generate from meal plan, manual add, checking persists, ingredient grouping works", async () => {
+    await withServer(async (address) => {
+      const weekStart = "2026-02-02";
+      const createPlan = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/meal-plan/create`, {
+        week_start: weekStart,
+        title: "Plan for shopping"
+      });
+      assert.equal(createPlan.status, 200);
+      const planPayload = await createPlan.json();
+      const planId = planPayload.plan.plan_id;
+
+      const addToPlan = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/meal-plan/add`, {
+        plan_id: planId,
+        recipe_id: "baked-lemon-herb-salmon",
+        day_of_week: "monday",
+        meal_slot: "dinner"
+      });
+      assert.equal(addToPlan.status, 200);
+
+      const genResponse = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/shopping-list/from-meal-plan`, {
+        plan_id: planId
+      });
+      assert.equal(genResponse.status, 200);
+      const genPayload = await genResponse.json();
+      assert.equal(genPayload.ok, true);
+      assert.ok(genPayload.list?.list_id);
+      assert.ok(Array.isArray(genPayload.list.items));
+      assert.ok(genPayload.list.items.length >= 1);
+
+      const listId = genPayload.list.list_id;
+      const firstItem = genPayload.list.items[0];
+      const checkResponse = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/shopping-list/item/check`, {
+        item_id: firstItem.id,
+        checked: 1
+      });
+      assert.equal(checkResponse.status, 200);
+
+      const getResponse = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/shopping-list?list_id=${encodeURIComponent(listId)}`);
+      assert.equal(getResponse.status, 200);
+      const got = await getResponse.json();
+      assert.equal(got.ok, true);
+      assert.ok(got.list.items.some((item) => item.id === firstItem.id && Number(item.checked ?? 0) === 1));
+
+      const manualListResponse = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/shopping-list/create`, { title: "Manual list" });
+      assert.equal(manualListResponse.status, 200);
+      const manual = await manualListResponse.json();
+      assert.ok(manual.list?.list_id);
+      const manualListId = manual.list.list_id;
+
+      const addManual = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/shopping-list/item/add`, {
+        list_id: manualListId,
+        item: { name: "spinach", amount: "2", unit: "bags" }
+      });
+      assert.equal(addManual.status, 200);
+
+      const manualGet = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/shopping-list?list_id=${encodeURIComponent(manualListId)}`);
+      assert.equal(manualGet.status, 200);
+      const manualPayload = await manualGet.json();
+      assert.ok(manualPayload.list.items.some((item) => item.name === "spinach"));
+
+      const r1 = buildMockRecipe({ recipe_id: `group-a-${Date.now()}`, title: "Group A" });
+      r1.ingredients = [{ name: "broccoli", amount: 1, unit: "cups", note: "" }];
+      const r2 = buildMockRecipe({ recipe_id: `group-b-${Date.now()}`, title: "Group B" });
+      r2.ingredients = [{ name: "broccoli", amount: 2, unit: "cups", note: "" }];
+      assert.equal((await postJson(`http://127.0.0.1:${address.port}/api/diabetic/save`, r1)).status, 200);
+      assert.equal((await postJson(`http://127.0.0.1:${address.port}/api/diabetic/save`, r2)).status, 200);
+
+      const groupedResponse = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/shopping-list/from-recipes`, {
+        recipe_ids: [r1.recipe_id, r2.recipe_id],
+        title: "Grouped"
+      });
+      assert.equal(groupedResponse.status, 200);
+      const grouped = await groupedResponse.json();
+      const broccoli = grouped.list.items.find((item) => item.name.toLowerCase() === "broccoli" && String(item.unit ?? "").toLowerCase() === "cups");
+      assert.ok(broccoli);
+      assert.equal(String(broccoli.amount ?? ""), "3");
+    });
+  });
+
   await check("POST /api/diabetic/ensure-image generates and persists image_url", async () => {
     process.env.OPENAI_API_KEY = "test-key";
     __setDiabeticImageMock(() => Buffer.from(
@@ -465,5 +686,114 @@ export async function registerDiabeticspaceTests({
       assert.equal(payload.route, "api_unavailable");
     });
     delete process.env.DIABETICSPACE_DISABLE_USER_ENV_LOOKUP;
+  });
+
+  await check("GET /api/diabetic/export returns valid backup JSON", async () => {
+    await withServer(async (address) => {
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/export`);
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.app, "DiabeticSpace");
+      assert.equal(payload.version, 1);
+      assert.ok(payload.exported_at);
+      assert.ok(Array.isArray(payload.recipes));
+      assert.ok(payload.recipes.length >= 1);
+      assert.ok(payload.settings && typeof payload.settings === "object");
+    });
+  });
+
+  await check("POST /api/diabetic/import dry_run reports counts and import is safe by default", async () => {
+    await withServer(async (address) => {
+      const exportResponse = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/export`);
+      assert.equal(exportResponse.status, 200);
+      const backup = await exportResponse.json();
+
+      const newRecipeId = `imported-${Date.now()}`;
+      backup.recipes = Array.isArray(backup.recipes) ? backup.recipes : [];
+      backup.recipes.push(buildMockRecipe({ recipe_id: newRecipeId, title: "Imported Recipe" }));
+
+      const dryRun = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/import`, {
+        backup,
+        dry_run: true,
+        overwrite: false
+      });
+      assert.equal(dryRun.status, 200);
+      const dryPayload = await dryRun.json();
+      assert.equal(dryPayload.ok, true);
+      assert.ok(dryPayload.summary?.recipes);
+      assert.ok(Number(dryPayload.summary.recipes.added ?? 0) >= 1);
+
+      const shouldNotExist = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/recipe?recipe_id=${encodeURIComponent(newRecipeId)}`);
+      assert.equal(shouldNotExist.status, 404);
+
+      const apply = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/import`, {
+        backup,
+        dry_run: false,
+        overwrite: false
+      });
+      assert.equal(apply.status, 200);
+      const applyPayload = await apply.json();
+      assert.equal(applyPayload.ok, true);
+      assert.ok(Number(applyPayload.summary?.recipes?.added ?? 0) >= 1);
+
+      const nowExists = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/recipe?recipe_id=${encodeURIComponent(newRecipeId)}`);
+      assert.equal(nowExists.status, 200);
+      const nowPayload = await nowExists.json();
+      assert.equal(nowPayload.recipe.recipe_id, newRecipeId);
+    });
+  });
+
+  await check("local users: create, verify pin, and persist settings", async () => {
+    await withServer(async (address) => {
+      const create = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/user/create`, {
+        display_name: "Test User",
+        pin: "1234"
+      });
+      assert.equal(create.status, 200);
+      const created = await create.json();
+      assert.equal(created.ok, true);
+      assert.ok(created.user?.user_id);
+      assert.equal(created.user.display_name, "Test User");
+
+      const userId = created.user.user_id;
+
+      const wrong = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/user/verify-pin`, {
+        user_id: userId,
+        pin: "9999"
+      });
+      assert.equal(wrong.status, 200);
+      const wrongPayload = await wrong.json();
+      assert.equal(wrongPayload.verified, false);
+
+      const good = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/user/verify-pin`, {
+        user_id: userId,
+        pin: "1234"
+      });
+      assert.equal(good.status, 200);
+      const goodPayload = await good.json();
+      assert.equal(goodPayload.verified, true);
+
+      const set = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/settings`, {
+        user_id: userId,
+        key: "pin_lock_enabled",
+        value: "1"
+      });
+      assert.equal(set.status, 200);
+      const setPayload = await set.json();
+      assert.equal(setPayload.ok, true);
+      assert.equal(String(setPayload.value ?? ""), "1");
+
+      const get = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/settings?user_id=${encodeURIComponent(userId)}&key=pin_lock_enabled`);
+      assert.equal(get.status, 200);
+      const getPayload = await get.json();
+      assert.equal(getPayload.ok, true);
+      assert.equal(String(getPayload.value ?? ""), "1");
+
+      const usersList = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/users`);
+      assert.equal(usersList.status, 200);
+      const usersPayload = await usersList.json();
+      assert.ok(Array.isArray(usersPayload.users));
+      assert.ok(usersPayload.users.some((u) => u.user_id === userId));
+    });
   });
 }

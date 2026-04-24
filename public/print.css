@@ -1,0 +1,148 @@
+/* Print-friendly styles for DiabeticSpace.
+   Use in /print/*.html pages and also when printing from the main UI. */
+
+:root {
+  --print-ink: #111827;
+  --print-muted: #4b5563;
+  --print-border: #d1d5db;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  color: var(--print-ink);
+  background: white;
+}
+
+.print-shell {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 28px 20px 60px;
+}
+
+.print-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--print-border);
+  padding-bottom: 12px;
+  margin-bottom: 18px;
+}
+
+.print-title {
+  margin: 0;
+  font-size: 1.75rem;
+  letter-spacing: -0.02em;
+}
+
+.print-sub {
+  margin: 8px 0 0;
+  color: var(--print-muted);
+  line-height: 1.5;
+}
+
+.print-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 14px 0 18px;
+  color: var(--print-muted);
+  font-size: 0.95rem;
+}
+
+.print-section {
+  margin-top: 18px;
+}
+
+.print-section h2 {
+  margin: 0 0 10px;
+  font-size: 1.1rem;
+  letter-spacing: -0.01em;
+}
+
+.print-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.print-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.print-btn {
+  border: 1px solid var(--print-border);
+  background: white;
+  color: var(--print-ink);
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.print-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.print-day {
+  border: 1px solid var(--print-border);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.print-day h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.print-slot {
+  margin-top: 10px;
+}
+
+.print-slot h4 {
+  margin: 0 0 6px;
+  font-size: 0.92rem;
+  color: var(--print-muted);
+}
+
+.print-checklist {
+  display: grid;
+  gap: 8px;
+}
+
+.print-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.print-box {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--print-border);
+  display: inline-block;
+}
+
+.no-print {
+  display: initial;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .print-shell {
+    padding: 0;
+  }
+
+  a[href]::after {
+    content: "";
+  }
+}
+

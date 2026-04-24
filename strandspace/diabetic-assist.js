@@ -334,7 +334,8 @@ function sanitizeRecipeImageFilename(recipeId) {
 export async function generateDiabeticRecipeImageToFile(recipe, {
   outputDir = "",
   model = DEFAULT_IMAGE_MODEL,
-  size = "1024x1024"
+  size = "1024x1024",
+  force = false
 } = {}) {
   const recipe_id = String(recipe?.recipe_id ?? "").trim();
   if (!recipe_id) {
@@ -354,12 +355,14 @@ export async function generateDiabeticRecipeImageToFile(recipe, {
 
   try {
     await access(filePath);
-    return {
-      image_url: `diabetic-images/${filename}`,
-      filePath,
-      model,
-      latencyMs: Number((performance.now() - started).toFixed(3))
-    };
+    if (!force) {
+      return {
+        image_url: `diabetic-images/${filename}`,
+        filePath,
+        model,
+        latencyMs: Number((performance.now() - started).toFixed(3))
+      };
+    }
   } catch {
     // File doesn't exist yet; continue.
   }
@@ -384,7 +387,9 @@ export async function generateDiabeticRecipeImageToFile(recipe, {
   const response = await openai.images.generate({
     model,
     prompt,
-    size
+    size,
+    response_format: "b64_json",
+    quality: "standard"
   });
 
   const item = Array.isArray(response?.data) ? response.data[0] : null;
@@ -404,6 +409,13 @@ export async function generateDiabeticRecipeImageToFile(recipe, {
 
   if (!bytes || !bytes.length) {
     throw new Error("generateDiabeticRecipeImageToFile: OpenAI image response was missing image bytes");
+  }
+
+  if (bytes.length > 1_000_000) {
+    throw Object.assign(new Error("generateDiabeticRecipeImageToFile: generated image exceeded 1MB limit"), {
+      code: "IMAGE_TOO_LARGE",
+      bytes: bytes.length
+    });
   }
 
   await writeFile(filePath, bytes);

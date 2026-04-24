@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Print Recipe — DiabeticSpace</title>
+    <link rel="stylesheet" href="../print.css" />
+  </head>
+  <body>
+    <div class="print-shell">
+      <header class="print-header">
+        <div>
+          <h1 class="print-title" id="recipe-title">Recipe</h1>
+          <p class="print-sub" id="recipe-sub">Loading…</p>
+        </div>
+        <div class="print-actions no-print">
+          <button class="print-btn" id="print-btn" type="button">Print</button>
+        </div>
+      </header>
+
+      <div class="print-meta" id="recipe-meta"></div>
+
+      <section class="print-section" aria-label="GI notes" id="gi-section" style="display:none;">
+        <h2>GI Notes</h2>
+        <p id="gi-notes"></p>
+      </section>
+
+      <section class="print-section" aria-label="Ingredients">
+        <h2>Ingredients</h2>
+        <ul class="print-list" id="ingredients"></ul>
+      </section>
+
+      <section class="print-section" aria-label="Instructions">
+        <h2>Instructions</h2>
+        <ol class="print-list" id="instructions"></ol>
+      </section>
+    </div>
+
+    <script type="module">
+      const params = new URLSearchParams(window.location.search);
+      const recipeId = String(params.get("recipe_id") ?? "").trim();
+
+      const titleEl = document.getElementById("recipe-title");
+      const subEl = document.getElementById("recipe-sub");
+      const metaEl = document.getElementById("recipe-meta");
+      const giSection = document.getElementById("gi-section");
+      const giNotes = document.getElementById("gi-notes");
+      const ingredientsEl = document.getElementById("ingredients");
+      const instructionsEl = document.getElementById("instructions");
+
+      document.getElementById("print-btn")?.addEventListener("click", () => window.print());
+
+      if (!recipeId) {
+        subEl.textContent = "Missing recipe_id.";
+      } else {
+        subEl.textContent = "Loading recipe…";
+        const response = await fetch(`/api/diabetic/recipe?recipe_id=${encodeURIComponent(recipeId)}`);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          subEl.textContent = payload?.error ? `Unable to load recipe: ${payload.error}` : `Unable to load recipe (HTTP ${response.status}).`;
+        } else {
+          const recipe = payload.recipe ?? {};
+          titleEl.textContent = recipe.title || "Recipe";
+          subEl.textContent = recipe.description || "";
+          const parts = [];
+          if (recipe.meal_type) parts.push(`Meal: ${recipe.meal_type}`);
+          if (recipe.servings) parts.push(`Servings: ${recipe.servings}${recipe.serving_notes ? ` — ${recipe.serving_notes}` : ""}`);
+          if (Number.isFinite(Number(recipe.rating))) parts.push(`Rating: ${recipe.rating}/5`);
+          if (Number(recipe.favorite ?? 0)) parts.push("Favorite");
+          metaEl.textContent = parts.join(" • ");
+
+          if (recipe.gi_notes) {
+            giSection.style.display = "";
+            giNotes.textContent = recipe.gi_notes;
+          }
+
+          ingredientsEl.innerHTML = "";
+          for (const ing of Array.isArray(recipe.ingredients) ? recipe.ingredients : []) {
+            const li = document.createElement("li");
+            const amount = ing?.amount ?? "";
+            const unit = ing?.unit ?? "";
+            const note = ing?.note ? ` (${ing.note})` : "";
+            li.textContent = `${amount} ${unit} ${ing?.name ?? ""}`.replace(/\s+/g, " ").trim() + note;
+            ingredientsEl.appendChild(li);
+          }
+
+          instructionsEl.innerHTML = "";
+          for (const step of Array.isArray(recipe.instructions) ? recipe.instructions : []) {
+            const li = document.createElement("li");
+            li.textContent = String(step ?? "");
+            instructionsEl.appendChild(li);
+          }
+        }
+      }
+    </script>
+  </body>
+</html>
+

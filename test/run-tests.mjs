@@ -112,6 +112,36 @@ await check("GET /soundspace serves the standalone Soundspace app", async () => 
   });
 });
 
+await check("GET /print/recipe.html serves the print recipe page", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(`http://127.0.0.1:${address.port}/print/recipe.html?recipe_id=cauliflower-fried-rice`);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /Print Recipe/i);
+    assert.match(html, /api\/diabetic\/recipe\?recipe_id=/);
+  });
+});
+
+await check("GET /print/meal-plan.html serves the print meal plan page", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(`http://127.0.0.1:${address.port}/print/meal-plan.html?plan_id=plan-test`);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /Print Meal Plan/i);
+    assert.match(html, /api\/diabetic\/meal-plan\?plan_id=/);
+  });
+});
+
+await check("GET /print/shopping-list.html serves the print shopping list page", async () => {
+  await withServer(async (address) => {
+    const response = await fetch(`http://127.0.0.1:${address.port}/print/shopping-list.html?list_id=list-test`);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /Print Shopping List/i);
+    assert.match(html, /api\/diabetic\/shopping-list\?list_id=/);
+  });
+});
+
 await check("GET /api/subjectspace/subjects exposes music engineering seeds", async () => {
   await withServer(async (address) => {
     const response = await fetch(`http://127.0.0.1:${address.port}/api/subjectspace/subjects`);
