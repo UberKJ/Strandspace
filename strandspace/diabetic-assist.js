@@ -1044,11 +1044,54 @@ export async function generateDiabeticRecipeImageToFile(recipe, {
   }
 
   const openai = getClient({ apiKey, baseUrl: resolvedBaseUrl, allowOpenAiEnv });
-  const response = await openai.images.generate({
-    model,
-    prompt,
-    size
-  });
+
+  const parseSize = (value) => {
+    const match = String(value ?? "").trim().match(/^(\d{2,5})x(\d{2,5})$/i);
+    if (!match) return null;
+    const width = Number(match[1]);
+    const height = Number(match[2]);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+    return { width, height };
+  };
+
+  const isUnsupportedArgError = (error) => {
+    const message = String(error?.message ?? "");
+    return /Argument not supported/i.test(message) || /Unknown parameter/i.test(message);
+  };
+
+  const attempts = [];
+  if (allowOpenAiEnv) {
+    attempts.push({ model, prompt, size });
+  } else {
+    // Many OpenAI-compatible image endpoints do not accept `size`. Prefer the
+    // smallest dimensions (cheap/fast) and gracefully retry without dimensions
+    // if the provider rejects them.
+    attempts.push({ model, prompt, width: 512, height: 512 });
+    const parsed = parseSize(size);
+    if (parsed && (parsed.width !== 512 || parsed.height !== 512)) {
+      attempts.push({ model, prompt, width: parsed.width, height: parsed.height });
+    }
+    attempts.push({ model, prompt });
+  }
+
+  let response = null;
+  let lastError = null;
+  for (const payload of attempts) {
+    try {
+      response = await openai.images.generate(payload);
+      lastError = null;
+      break;
+    } catch (error) {
+      lastError = error;
+      if (isUnsupportedArgError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+  if (!response) {
+    throw lastError ?? new Error("generateDiabeticRecipeImageToFile: image generation failed");
+  }
 
   const item = Array.isArray(response?.data) ? response.data[0] : null;
   const b64 = item?.b64_json ?? item?.b64 ?? null;
