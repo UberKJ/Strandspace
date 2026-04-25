@@ -539,10 +539,16 @@ export async function registerDiabeticspaceTests({
       const payload = await response.json();
       assert.equal(payload.route, "api_expand");
       assert.ok(payload.recipe.recipe_id.startsWith("ai-expand-"));
-      assert.ok(payload.recipe.image_url);
-      assert.match(String(payload.recipe.image_url), /^(?:\/)?diabetic-images\/.+\.png$/);
+      assert.ok(!payload.recipe.image_url);
 
-      const filename = String(payload.recipe.image_url).split("/").pop();
+      const ensured = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/ensure-image`, { recipe_id: payload.recipe.recipe_id });
+      assert.equal(ensured.status, 200);
+      const ensuredPayload = await ensured.json();
+      assert.equal(ensuredPayload.ok, true);
+      assert.ok(ensuredPayload.recipe.image_url);
+      assert.match(String(ensuredPayload.recipe.image_url), /^(?:\/)?diabetic-images\/.+\.png$/);
+
+      const filename = String(ensuredPayload.recipe.image_url).split("/").pop();
       const dir = String(process.env.DIABETICSPACE_IMAGE_DIR ?? "");
       assert.ok(dir);
       await access(join(dir, filename));

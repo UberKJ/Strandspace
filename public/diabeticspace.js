@@ -363,9 +363,7 @@ async function ensureImageForRecipe(recipe, card, statusEl, { force = false } = 
   startAiTelemetry("Generating image", `Creating a photo for "${recipe.title || recipe.recipe_id}"...`);
   const { response, data } = await postJson("/api/diabetic/ensure-image", { recipe_id: recipe.recipe_id, force });
   if (!response.ok) {
-    const msg = data?.route === "api_unavailable"
-      ? "OpenAI not configured."
-      : (data?.error || `HTTP ${response.status}`);
+    const msg = data?.error || `HTTP ${response.status}`;
     if (statusEl) {
       statusEl.textContent = msg;
     }
@@ -402,6 +400,56 @@ async function ensureImageForRecipe(recipe, card, statusEl, { force = false } = 
   finishTelemetry("Image ready", data);
   void refreshLibrary();
   delete card.dataset.imageEnsuring;
+}
+
+function listImageCreatorChoices() {
+  const choices = Object.entries(PROVIDER_DEFS)
+    .filter(([id, def]) => id !== "none" && Boolean(def?.supports?.image))
+    .map(([id, def]) => `${String(def?.label ?? id)} (${id})`);
+  return choices.length ? choices : ["OpenAI (openai)"];
+}
+
+async function resolveActiveImageProviderId() {
+  try {
+    const { response, data } = await getJson("/api/diabetic/provider-settings?provider_id=app");
+    if (response?.ok) {
+      const settings = Array.isArray(data?.settings) ? data.settings : [];
+      const row = settings.find((r) => r.key === "active_image_provider") ?? null;
+      const value = String(row?.value ?? "").trim().toLowerCase();
+      if (value) return value;
+    }
+  } catch {
+    // ignore
+  }
+
+  const fallback = String(els.settingsActiveImageProvider?.value ?? "openai").trim().toLowerCase();
+  return fallback || "openai";
+}
+
+async function confirmCreateImage(recipe, { force = false } = {}) {
+  await ensureProviderCatalog();
+  const providerId = await resolveActiveImageProviderId();
+  const effectiveId = PROVIDER_DEFS[providerId]?.supports?.image ? providerId : "openai";
+  const label = PROVIDER_DEFS[effectiveId]?.label ?? effectiveId;
+
+  const title = String(recipe?.title ?? recipe?.recipe_id ?? "this recipe").trim();
+  const action = force ? "regenerate" : "create";
+  const choices = listImageCreatorChoices();
+
+  const message = [
+    `Are you sure you want to ${action} an image for:`,
+    `"${title}"?`,
+    "",
+    `Active image provider: ${label} (${effectiveId})`,
+    "",
+    "Available image creators:",
+    ...choices.map((c) => `- ${c}`),
+    "",
+    "Tip: change this in Settings -> Active image provider.",
+    "This may use paid API credits."
+  ].join("\n");
+
+  return window.confirm(message);
 }
 
 function readFileAsDataUrl(file) {
@@ -745,10 +793,7 @@ function renderRecipeCard({ recipe, route, statusText = "" }) {
 
   saveBtn.addEventListener("click", async () => {
     status.textContent = "Saving…";
-    const needsImage = !String(recipe.image_url ?? "").trim();
-    if (needsImage) {
-      startAiTelemetry("Generating image", "Creating a recipe photo...");
-    }
+    // Image generation is manual: use the "Create image" button.
     const { response, data } = await postJson("/api/diabetic/save", recipe);
     status.textContent = response.ok ? "Saved locally ✓" : "Save failed";
     if (response.ok && data?.image_url && !recipe.image_url) {
@@ -762,13 +807,6 @@ function renderRecipeCard({ recipe, route, statusText = "" }) {
         img.alt = recipe.title || "Recipe image";
         img.src = normalizeAssetUrl(data.image_url);
         card.prepend(img);
-      }
-    }
-    if (needsImage) {
-      if (response.ok) {
-        finishTelemetry("Saved", data);
-      } else {
-        failTelemetry("Save failed", data?.error || "Unable to save recipe.");
       }
     }
     void refreshLibrary();
@@ -790,7 +828,7 @@ function renderRecipeCard({ recipe, route, statusText = "" }) {
     startAiTelemetry("Adapting recipe", "Calling AI to revise the recipe...");
     const { response, data } = await postJson("/api/diabetic/adapt", { recipe_id: recipe.recipe_id, change });
     if (!response.ok) {
-      status.textContent = data?.route === "api_unavailable" ? "OpenAI not configured" : "Adapt failed";
+      status.textContent = data?.error || "Adapt failed";
       failTelemetry("Adapt failed", data?.error || "Request failed.");
       return;
     }
@@ -805,6 +843,14 @@ function renderRecipeCard({ recipe, route, statusText = "" }) {
 
   imageCreateBtn?.addEventListener("click", async () => {
     const hasImage = Boolean(String(recipe.image_url ?? "").trim());
+    const ok = await confirmCreateImage(recipe, { force: hasImage });
+    if (!ok) {
+      status.textContent = "Image generation cancelled.";
+      setTimeout(() => {
+        if (status.textContent === "Image generation cancelled.") status.textContent = "";
+      }, 1200);
+      return;
+    }
     await ensureImageForRecipe(recipe, card, status, { force: hasImage });
   });
 
@@ -2366,7 +2412,7 @@ async function nextBuilder(answer) {
       startAiTelemetry("Building recipe", "Generating a recipe with AI...");
       const { response: completeRes, data: completeData } = await postJson("/api/diabetic/builder/complete", { session_id: builderSessionId });
       if (!completeRes.ok) {
-        els.builderHint.textContent = completeData?.route === "api_unavailable" ? "OpenAI not configured" : "Build failed.";
+        els.builderHint.textContent = completeData?.error || "Build failed.";
         failTelemetry("Build failed", completeData?.error || `HTTP ${completeRes.status}`);
         return;
       }
@@ -2389,7 +2435,7 @@ async function sendQuickMessage(message) {
   startAiTelemetry("Quick Ask", "Generating a recipe with AI...");
   const { response, data } = await postJson("/api/diabetic/chat", { message });
   if (!response.ok) {
-    const msg = data?.route === "api_unavailable" ? "OpenAI not configured." : (data?.error || "Request failed.");
+    const msg = data?.error || "Request failed.";
     appendMessage(els.quickMessages, "assistant", msg);
     failTelemetry("Quick Ask failed", data?.error || `HTTP ${response.status}`);
     return;

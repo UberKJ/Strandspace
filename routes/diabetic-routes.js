@@ -1626,17 +1626,15 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
 
     const bestMatchRecipe = matches.length ? getDiabeticRecipeById(db, matches[0].recipe_id) : null;
 
+    const provider = resolveTextProviderConfig(db);
     try {
-      const provider = resolveTextProviderConfig(db);
       const generated = await generateDiabeticRecipe(query, bestMatchRecipe, {
         provider: provider.provider_id,
         apiKey: provider.apiKey,
         model: provider.model,
         baseUrl: provider.baseUrl
       });
-      let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
-      const ensured = await ensureDiabeticRecipeImage(db, saved, resolvedDataDir);
-      saved = ensured.recipe;
+      const saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
       sendJson(res, 200, {
         query,
         meal_type: mealType || null,
@@ -1649,14 +1647,15 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
             latencyMs: localSearch.latencyMs
           },
           llm: generated.llm ?? null,
-          image: ensured.image ?? null
+          image: null
         }
       });
       return true;
     } catch (error) {
-      if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
+      const code = String(error?.code ?? "");
+      if (code === "OPENAI_API_KEY_MISSING" || code.endsWith("_API_KEY_MISSING")) {
         sendJson(res, 503, {
-          error: "OPENAI_API_KEY not configured",
+          error: `${provider.provider_id.toUpperCase()} API key not configured`,
           route: "api_unavailable",
           query,
           meal_type: mealType || null,
@@ -1756,10 +1755,9 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     if (recalled) {
       const recall_count = Number(recalled.recall_count ?? 0);
       if (recall_count >= 2) {
-        const ensured = await ensureDiabeticRecipeImage(db, recalled, resolvedDataDir);
         sendJson(res, 200, {
           route: "local_recall",
-          recipe: ensured.recipe,
+          recipe: recalled,
           recall_count,
           latency_ms,
           metrics: {
@@ -1768,7 +1766,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
               latencyMs: latency_ms
             },
             llm: null,
-            image: ensured.image ?? null
+            image: null
           }
         });
         return true;
@@ -1781,9 +1779,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
           model: provider.model,
           baseUrl: provider.baseUrl
         });
-        let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
-        const ensured = await ensureDiabeticRecipeImage(db, saved, resolvedDataDir);
-        saved = ensured.recipe;
+        const saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
         sendJson(res, 200, {
           route: "api_validate",
           recipe: saved,
@@ -1795,14 +1791,15 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
               latencyMs: latency_ms
             },
             llm: generated.llm ?? null,
-            image: ensured.image ?? null
+            image: null
           }
         });
         return true;
       } catch (error) {
-        if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
+        const code = String(error?.code ?? "");
+        if (code === "OPENAI_API_KEY_MISSING" || code.endsWith("_API_KEY_MISSING")) {
           sendJson(res, 503, {
-            error: "OPENAI_API_KEY not configured",
+            error: `${provider.provider_id.toUpperCase()} API key not configured`,
             route: "api_unavailable",
             metrics: {
               local: {
@@ -1870,9 +1867,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
         model: provider.model,
         baseUrl: provider.baseUrl
       });
-      let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
-      const ensured = await ensureDiabeticRecipeImage(db, saved, resolvedDataDir);
-      saved = ensured.recipe;
+      const saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
       sendJson(res, 200, {
         route: "api_expand",
         recipe: saved,
@@ -1884,14 +1879,15 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
             latencyMs: latency_ms
           },
           llm: generated.llm ?? null,
-          image: ensured.image ?? null
+          image: null
         }
       });
       return true;
     } catch (error) {
-      if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
+      const code = String(error?.code ?? "");
+      if (code === "OPENAI_API_KEY_MISSING" || code.endsWith("_API_KEY_MISSING")) {
         sendJson(res, 503, {
-          error: "OPENAI_API_KEY not configured",
+          error: `${provider.provider_id.toUpperCase()} API key not configured`,
           route: "api_unavailable",
           metrics: {
             local: {
@@ -1964,9 +1960,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     }
 
     const localSave = measureSync(() => saveDiabeticRecipe(db, payload));
-    let saved = localSave.result;
-    const ensured = await ensureDiabeticRecipeImage(db, saved, resolvedDataDir);
-    saved = ensured.recipe;
+    const saved = localSave.result;
     sendJson(res, 200, {
       saved: true,
       recipe_id: saved?.recipe_id ?? null,
@@ -1977,7 +1971,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
           latencyMs: localSave.latencyMs
         },
         llm: null,
-        image: ensured.image ?? null
+        image: null
       }
     });
     return true;
@@ -2076,8 +2070,6 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     }
 
     let saved = saveDiabeticRecipe(db, { ...adapted, recipe_id: candidateId, source: "ai" });
-    const ensured = await ensureDiabeticRecipeImage(db, saved, resolvedDataDir);
-    saved = ensured.recipe;
     sendJson(res, 200, {
       route: "api_expand",
       recipe: saved,
@@ -2085,7 +2077,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
       metrics: {
         local: null,
         llm,
-        image: ensured.image ?? null
+        image: null
       }
     });
     return true;
@@ -2321,11 +2313,10 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     if (recalled) {
       const recall_count = Number(recalled.recall_count ?? 0);
       if (recall_count >= 2) {
-        const ensured = await ensureDiabeticRecipeImage(db, recalled, resolvedDataDir);
         deleteDiabeticBuilderSession(db, session_id);
         sendJson(res, 200, {
           route: "local_recall",
-          recipe: ensured.recipe,
+          recipe: recalled,
           recall_count,
           session_id,
           completed: true,
@@ -2335,7 +2326,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
               latencyMs: localRecall.latencyMs
             },
             llm: null,
-            image: ensured.image ?? null
+            image: null
           }
         });
         return true;
@@ -2348,9 +2339,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
           model: provider.model,
           baseUrl: provider.baseUrl
         });
-        let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
-        const ensured = await ensureDiabeticRecipeImage(db, saved, resolvedDataDir);
-        saved = ensured.recipe;
+        const saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
         deleteDiabeticBuilderSession(db, session_id);
         sendJson(res, 200, {
           route: "api_validate",
@@ -2364,14 +2353,15 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
               latencyMs: localRecall.latencyMs
             },
             llm: generated.llm ?? null,
-            image: ensured.image ?? null
+            image: null
           }
         });
         return true;
       } catch (error) {
-        if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
+        const code = String(error?.code ?? "");
+        if (code === "OPENAI_API_KEY_MISSING" || code.endsWith("_API_KEY_MISSING")) {
           sendJson(res, 503, {
-            error: "OPENAI_API_KEY not configured",
+            error: `${provider.provider_id.toUpperCase()} API key not configured`,
             route: "api_unavailable",
             metrics: {
               local: {
@@ -2426,9 +2416,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
         model: provider.model,
         baseUrl: provider.baseUrl
       });
-      let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
-      const ensured = await ensureDiabeticRecipeImage(db, saved, resolvedDataDir);
-      saved = ensured.recipe;
+      const saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
       deleteDiabeticBuilderSession(db, session_id);
       sendJson(res, 200, {
         route: "api_expand",
@@ -2442,14 +2430,15 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
             latencyMs: localRecall.latencyMs
           },
           llm: generated.llm ?? null,
-          image: ensured.image ?? null
+          image: null
         }
       });
       return true;
     } catch (error) {
-      if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
+      const code = String(error?.code ?? "");
+      if (code === "OPENAI_API_KEY_MISSING" || code.endsWith("_API_KEY_MISSING")) {
         sendJson(res, 503, {
-          error: "OPENAI_API_KEY not configured",
+          error: `${provider.provider_id.toUpperCase()} API key not configured`,
           route: "api_unavailable",
           metrics: {
             local: {
