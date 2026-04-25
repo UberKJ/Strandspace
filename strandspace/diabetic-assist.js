@@ -695,10 +695,12 @@ async function listOpenAiModelIds({ apiKey = "", baseUrl = "", allowOpenAiEnv = 
 function deriveImageModelIdsFromModels(providerId, models) {
   const provider = String(providerId ?? "").trim().toLowerCase();
   const list = Array.isArray(models) ? models.map((m) => String(m ?? "").trim()).filter(Boolean) : [];
-  const image = list.filter((id) => {
+  const isLikelyImage = (id) => {
     const lower = id.toLowerCase();
-    return lower.includes("gpt-image") || lower.includes("dall-e") || lower.includes("image");
-  });
+    return lower.includes("gpt-image") || lower.includes("dall-e") || lower.includes("image") || lower.includes("diffusion") || lower.includes("sdxl") || lower.includes("stable-diffusion") || lower.includes("flux");
+  };
+
+  const image = list.filter(isLikelyImage);
 
   // The models endpoint does not always surface every image model. Provide a
   // small, safe fallback for OpenAI so users can still select common options.
@@ -709,7 +711,9 @@ function deriveImageModelIdsFromModels(providerId, models) {
     }
   }
 
-  return image;
+  // If we can't confidently identify image models, fall back to the full list
+  // so the user can still pick a model manually.
+  return image.length ? image : list;
 }
 
 async function listOllamaModelIds(baseUrl) {
@@ -785,7 +789,11 @@ function suggestImageModelFromList(providerId, models, preferredModel) {
     }
   }
 
-  return list[0] ?? "";
+  const likely = list.find((id) => {
+    const lower = id.toLowerCase();
+    return lower.includes("gpt-image") || lower.includes("dall-e") || lower.includes("image") || lower.includes("diffusion") || lower.includes("sdxl") || lower.includes("stable-diffusion") || lower.includes("flux");
+  });
+  return likely ?? "";
 }
 
 // Tiny ping used by the "Test connection" button. Returns latency + sample
