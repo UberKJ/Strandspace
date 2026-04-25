@@ -135,6 +135,148 @@ function resolveOpenAiOverrides(db) {
   };
 }
 
+const DEFAULT_TEXT_PROVIDER = "openai";
+const DEFAULT_IMAGE_PROVIDER = "openai";
+
+function normalizeProviderId(value, fallback) {
+  const text = String(value ?? "").trim().toLowerCase();
+  return text || fallback;
+}
+
+function resolveActiveProviderId(db, kind) {
+  const envKey = kind === "image" ? "DIABETICSPACE_IMAGE_PROVIDER" : "DIABETICSPACE_TEXT_PROVIDER";
+  const envValue = normalizeProviderId(process.env[envKey], "");
+  const savedKey = kind === "image" ? "active_image_provider" : "active_text_provider";
+  const savedValue = normalizeProviderId(getDiabeticProviderSetting(db, "app", savedKey, { includeSensitive: true }), "");
+
+  const candidate = envValue || savedValue || (kind === "image" ? DEFAULT_IMAGE_PROVIDER : DEFAULT_TEXT_PROVIDER);
+
+  if (kind === "image") {
+    return candidate === "none" ? "none" : "openai";
+  }
+
+  if (candidate === "openai" || candidate === "openai_chat" || candidate === "ollama" || candidate === "none") {
+    return candidate;
+  }
+
+  return DEFAULT_TEXT_PROVIDER;
+}
+
+function resolveOpenAiChatOverrides(db) {
+  const envApiKey = resolveOpenAiApiKeyFromEnv();
+  const storedApiKey = getDiabeticProviderSetting(db, "openai_chat", "api_key", { includeSensitive: true });
+  const apiKey = envApiKey ? "" : String(storedApiKey ?? "").trim();
+
+  const envModel = String(process.env.DIABETICSPACE_OPENAI_CHAT_MODEL ?? "").trim();
+  const storedModel = getDiabeticProviderSetting(db, "openai_chat", "model", { includeSensitive: true });
+  const model = envModel || String(storedModel ?? "").trim();
+
+  const envBaseUrl = String(process.env.DIABETICSPACE_OPENAI_CHAT_BASE_URL ?? "").trim();
+  const storedBaseUrl = getDiabeticProviderSetting(db, "openai_chat", "base_url", { includeSensitive: true });
+  const baseUrl = envBaseUrl || String(storedBaseUrl ?? "").trim();
+
+  return {
+    apiKey,
+    model,
+    baseUrl,
+    meta: {
+      env: {
+        api_key: Boolean(envApiKey),
+        model: envModel || null,
+        base_url: envBaseUrl || null
+      },
+      saved: {
+        api_key: Boolean(String(storedApiKey ?? "").trim()),
+        model: Boolean(String(storedModel ?? "").trim()),
+        base_url: Boolean(String(storedBaseUrl ?? "").trim())
+      }
+    }
+  };
+}
+
+function resolveOllamaOverrides(db) {
+  const envModel = String(process.env.DIABETICSPACE_OLLAMA_MODEL ?? "").trim();
+  const storedModel = getDiabeticProviderSetting(db, "ollama", "model", { includeSensitive: true });
+  const model = envModel || String(storedModel ?? "").trim();
+
+  const envBaseUrl = String(process.env.DIABETICSPACE_OLLAMA_BASE_URL ?? "").trim();
+  const storedBaseUrl = getDiabeticProviderSetting(db, "ollama", "base_url", { includeSensitive: true });
+  const baseUrl = envBaseUrl || String(storedBaseUrl ?? "").trim();
+
+  return {
+    model,
+    baseUrl,
+    meta: {
+      env: {
+        model: envModel || null,
+        base_url: envBaseUrl || null
+      },
+      saved: {
+        model: Boolean(String(storedModel ?? "").trim()),
+        base_url: Boolean(String(storedBaseUrl ?? "").trim())
+      }
+    }
+  };
+}
+
+function resolveTextProviderConfig(db) {
+  const provider_id = resolveActiveProviderId(db, "text");
+  if (provider_id === "openai") {
+    const openai = resolveOpenAiOverrides(db);
+    return {
+      provider_id,
+      apiKey: openai.apiKey,
+      model: openai.model,
+      baseUrl: "",
+      meta: openai.meta
+    };
+  }
+
+  if (provider_id === "openai_chat") {
+    const openai = resolveOpenAiChatOverrides(db);
+    return {
+      provider_id,
+      apiKey: openai.apiKey,
+      model: openai.model,
+      baseUrl: openai.baseUrl,
+      meta: openai.meta
+    };
+  }
+
+  if (provider_id === "ollama") {
+    const ollama = resolveOllamaOverrides(db);
+    return {
+      provider_id,
+      apiKey: "",
+      model: ollama.model,
+      baseUrl: ollama.baseUrl,
+      meta: ollama.meta
+    };
+  }
+
+  return {
+    provider_id: "none",
+    apiKey: "",
+    model: "",
+    baseUrl: "",
+    meta: { env: {}, saved: {} }
+  };
+}
+
+function resolveImageProviderConfig(db) {
+  const provider_id = resolveActiveProviderId(db, "image");
+  if (provider_id !== "openai") {
+    return { provider_id: "none" };
+  }
+  const openai = resolveOpenAiOverrides(db);
+  return {
+    provider_id: "openai",
+    apiKey: openai.apiKey,
+    model: openai.imageModel,
+    meta: openai.meta
+  };
+}
+
 async function ensureDiabeticRecipeImage(db, recipe, dataDir) {
   if (!recipe) {
     return { recipe: null, image: null };
@@ -147,14 +289,17 @@ async function ensureDiabeticRecipeImage(db, recipe, dataDir) {
   const outputDir = String(process.env.DIABETICSPACE_IMAGE_DIR ?? "").trim() || join(dataDir, "diabetic-images");
 
   try {
-    const openai = resolveOpenAiOverrides(db);
-    const result = await generateDiabeticRecipeImageToFile(recipe, { outputDir, apiKey: openai.apiKey, model: openai.imageModel || undefined });
+    const provider = resolveImageProviderConfig(db);
+    if (provider.provider_id !== "openai") {
+      return { recipe, image: null };
+    }
+    const result = await generateDiabeticRecipeImageToFile(recipe, { outputDir, apiKey: provider.apiKey, model: provider.model || undefined });
     if (result?.image_url) {
       const updated = setDiabeticRecipeImage(db, recipe.recipe_id, result.image_url) ?? recipe;
       return {
         recipe: updated,
         image: {
-          provider: "openai",
+          provider: provider.provider_id,
           model: result.model ?? null,
           latencyMs: result.latencyMs ?? null,
           imageUrl: result.image_url
@@ -560,7 +705,15 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
         const rows = listDiabeticProviderSettings(db, providerId);
         const byKey = new Map(rows.map((row) => [row.key, row]));
 
-        const knownKeys = providerId === "openai" ? ["api_key", "model", "image_model"] : [];
+        const knownKeys = providerId === "openai"
+          ? ["api_key", "model", "image_model"]
+          : providerId === "openai_chat"
+            ? ["api_key", "base_url", "model"]
+            : providerId === "ollama"
+              ? ["base_url", "model"]
+              : providerId === "app"
+                ? ["active_text_provider", "active_image_provider"]
+                : [];
         for (const key of knownKeys) {
           if (byKey.has(key)) continue;
           const sensitive = key.includes("key") || key.includes("token") || key.includes("secret") || key.includes("password");
@@ -575,7 +728,13 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
         }
 
         const settings = Array.from(byKey.values()).sort((a, b) => String(a.key).localeCompare(String(b.key)));
-        const meta = providerId === "openai" ? resolveOpenAiOverrides(db).meta : { env: {}, saved: {} };
+        const meta = providerId === "openai"
+          ? resolveOpenAiOverrides(db).meta
+          : providerId === "openai_chat"
+            ? resolveOpenAiChatOverrides(db).meta
+            : providerId === "ollama"
+              ? resolveOllamaOverrides(db).meta
+              : { env: {}, saved: {} };
         sendJson(res, 200, { ok: true, provider_id: providerId, settings, meta });
         return true;
       } catch (error) {
@@ -893,10 +1052,14 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     }
 
     const outputDir = String(process.env.DIABETICSPACE_IMAGE_DIR ?? "").trim() || join(resolvedDataDir, "diabetic-images");
-    const openai = resolveOpenAiOverrides(db);
+    const provider = resolveImageProviderConfig(db);
+    if (provider.provider_id !== "openai") {
+      sendJson(res, 503, { error: "Image provider disabled", route: "api_unavailable" });
+      return true;
+    }
 
     try {
-      const result = await generateDiabeticRecipeImageToFile(recipe, { outputDir, force, apiKey: openai.apiKey, model: openai.imageModel || undefined });
+      const result = await generateDiabeticRecipeImageToFile(recipe, { outputDir, force, apiKey: provider.apiKey, model: provider.model || undefined });
       const updated = setDiabeticRecipeImage(db, recipe.recipe_id, result.image_url) ?? recipe;
       sendJson(res, 200, {
         ok: true,
@@ -906,7 +1069,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
           local: null,
           llm: null,
           image: {
-            provider: "openai",
+            provider: provider.provider_id,
             model: result.model ?? null,
             latencyMs: result.latencyMs ?? null,
             imageUrl: result.image_url
@@ -921,7 +1084,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
       }
 
       if (String(error?.code ?? "") === "IMAGE_TOO_LARGE") {
-        sendJson(res, 413, { error: "Generated image exceeded the 1MB limit. Try uploading your own image instead.", route: "image_too_large" });
+        sendJson(res, 413, { error: "Generated image exceeded the 1.8MB limit. Try uploading your own image instead.", route: "image_too_large" });
         return true;
       }
 
@@ -1074,8 +1237,13 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     const bestMatchRecipe = matches.length ? getDiabeticRecipeById(db, matches[0].recipe_id) : null;
 
     try {
-      const openai = resolveOpenAiOverrides(db);
-      const generated = await generateDiabeticRecipe(query, bestMatchRecipe, { apiKey: openai.apiKey, model: openai.model });
+      const provider = resolveTextProviderConfig(db);
+      const generated = await generateDiabeticRecipe(query, bestMatchRecipe, {
+        provider: provider.provider_id,
+        apiKey: provider.apiKey,
+        model: provider.model,
+        baseUrl: provider.baseUrl
+      });
       let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
       const ensured = await ensureDiabeticRecipeImage(db, saved, resolvedDataDir);
       saved = ensured.recipe;
@@ -1099,6 +1267,44 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
       if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
         sendJson(res, 503, {
           error: "OPENAI_API_KEY not configured",
+          route: "api_unavailable",
+          query,
+          meal_type: mealType || null,
+          matches,
+          metrics: {
+            local: {
+              kind: "search-create",
+              latencyMs: localSearch.latencyMs
+            },
+            llm: null,
+            image: null
+          }
+        });
+        return true;
+      }
+
+      if (String(error?.code ?? "") === "LLM_DISABLED") {
+        sendJson(res, 503, {
+          error: "LLM provider disabled",
+          route: "api_unavailable",
+          query,
+          meal_type: mealType || null,
+          matches,
+          metrics: {
+            local: {
+              kind: "search-create",
+              latencyMs: localSearch.latencyMs
+            },
+            llm: null,
+            image: null
+          }
+        });
+        return true;
+      }
+
+      if (String(error?.code ?? "") === "OLLAMA_UNAVAILABLE") {
+        sendJson(res, 503, {
+          error: "Ollama server not reachable",
           route: "api_unavailable",
           query,
           meal_type: mealType || null,
@@ -1155,7 +1361,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     const started = performance.now();
     const recalled = recallDiabeticRecipe(db, message);
     const latency_ms = toLatencyMs(performance.now() - started);
-    const openai = resolveOpenAiOverrides(db);
+    const provider = resolveTextProviderConfig(db);
 
     if (recalled) {
       const recall_count = Number(recalled.recall_count ?? 0);
@@ -1179,7 +1385,12 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
       }
 
       try {
-        const generated = await generateDiabeticRecipe(message, recalled, { apiKey: openai.apiKey, model: openai.model });
+        const generated = await generateDiabeticRecipe(message, recalled, {
+          provider: provider.provider_id,
+          apiKey: provider.apiKey,
+          model: provider.model,
+          baseUrl: provider.baseUrl
+        });
         let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
         const ensured = await ensureDiabeticRecipeImage(db, saved, resolvedDataDir);
         saved = ensured.recipe;
@@ -1215,6 +1426,38 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
           return true;
         }
 
+        if (String(error?.code ?? "") === "LLM_DISABLED") {
+          sendJson(res, 503, {
+            error: "LLM provider disabled",
+            route: "api_unavailable",
+            metrics: {
+              local: {
+                kind: "chat-recall",
+                latencyMs: latency_ms
+              },
+              llm: null,
+              image: null
+            }
+          });
+          return true;
+        }
+
+        if (String(error?.code ?? "") === "OLLAMA_UNAVAILABLE") {
+          sendJson(res, 503, {
+            error: "Ollama server not reachable",
+            route: "api_unavailable",
+            metrics: {
+              local: {
+                kind: "chat-recall",
+                latencyMs: latency_ms
+              },
+              llm: null,
+              image: null
+            }
+          });
+          return true;
+        }
+
         sendJson(res, 500, {
           error: error instanceof Error ? error.message : String(error),
           metrics: {
@@ -1231,7 +1474,12 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     }
 
     try {
-      const generated = await generateDiabeticRecipe(message, null, { apiKey: openai.apiKey, model: openai.model });
+      const generated = await generateDiabeticRecipe(message, null, {
+        provider: provider.provider_id,
+        apiKey: provider.apiKey,
+        model: provider.model,
+        baseUrl: provider.baseUrl
+      });
       let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
       const ensured = await ensureDiabeticRecipeImage(db, saved, resolvedDataDir);
       saved = ensured.recipe;
@@ -1254,6 +1502,38 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
       if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
         sendJson(res, 503, {
           error: "OPENAI_API_KEY not configured",
+          route: "api_unavailable",
+          metrics: {
+            local: {
+              kind: "chat-recall",
+              latencyMs: latency_ms
+            },
+            llm: null,
+            image: null
+          }
+        });
+        return true;
+      }
+
+      if (String(error?.code ?? "") === "LLM_DISABLED") {
+        sendJson(res, 503, {
+          error: "LLM provider disabled",
+          route: "api_unavailable",
+          metrics: {
+            local: {
+              kind: "chat-recall",
+              latencyMs: latency_ms
+            },
+            llm: null,
+            image: null
+          }
+        });
+        return true;
+      }
+
+      if (String(error?.code ?? "") === "OLLAMA_UNAVAILABLE") {
+        sendJson(res, 503, {
+          error: "Ollama server not reachable",
           route: "api_unavailable",
           metrics: {
             local: {
@@ -1344,14 +1624,43 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     let adapted;
     let llm = null;
     try {
-      const openai = resolveOpenAiOverrides(db);
-      const result = await adaptDiabeticRecipe(change, original, { apiKey: openai.apiKey, model: openai.model });
+      const provider = resolveTextProviderConfig(db);
+      const result = await adaptDiabeticRecipe(change, original, {
+        provider: provider.provider_id,
+        apiKey: provider.apiKey,
+        model: provider.model,
+        baseUrl: provider.baseUrl
+      });
       adapted = result.recipe;
       llm = result.llm ?? null;
     } catch (error) {
       if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
         sendJson(res, 503, {
           error: "OPENAI_API_KEY not configured",
+          route: "api_unavailable",
+          metrics: {
+            local: null,
+            llm: null,
+            image: null
+          }
+        });
+        return true;
+      }
+      if (String(error?.code ?? "") === "LLM_DISABLED") {
+        sendJson(res, 503, {
+          error: "LLM provider disabled",
+          route: "api_unavailable",
+          metrics: {
+            local: null,
+            llm: null,
+            image: null
+          }
+        });
+        return true;
+      }
+      if (String(error?.code ?? "") === "OLLAMA_UNAVAILABLE") {
+        sendJson(res, 503, {
+          error: "Ollama server not reachable",
           route: "api_unavailable",
           metrics: {
             local: null,
@@ -1618,7 +1927,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
 
     const localRecall = measureSync(() => recallDiabeticRecipe(db, query));
     const recalled = localRecall.result;
-    const openai = resolveOpenAiOverrides(db);
+    const provider = resolveTextProviderConfig(db);
     if (recalled) {
       const recall_count = Number(recalled.recall_count ?? 0);
       if (recall_count >= 2) {
@@ -1643,7 +1952,12 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
       }
 
       try {
-        const generated = await generateFromBuilderSession(session, recalled, { apiKey: openai.apiKey, model: openai.model });
+        const generated = await generateFromBuilderSession(session, recalled, {
+          provider: provider.provider_id,
+          apiKey: provider.apiKey,
+          model: provider.model,
+          baseUrl: provider.baseUrl
+        });
         let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
         const ensured = await ensureDiabeticRecipeImage(db, saved, resolvedDataDir);
         saved = ensured.recipe;
@@ -1680,13 +1994,48 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
           });
           return true;
         }
+        if (String(error?.code ?? "") === "LLM_DISABLED") {
+          sendJson(res, 503, {
+            error: "LLM provider disabled",
+            route: "api_unavailable",
+            metrics: {
+              local: {
+                kind: "builder-recall",
+                latencyMs: localRecall.latencyMs
+              },
+              llm: null,
+              image: null
+            }
+          });
+          return true;
+        }
+        if (String(error?.code ?? "") === "OLLAMA_UNAVAILABLE") {
+          sendJson(res, 503, {
+            error: "Ollama server not reachable",
+            route: "api_unavailable",
+            metrics: {
+              local: {
+                kind: "builder-recall",
+                latencyMs: localRecall.latencyMs
+              },
+              llm: null,
+              image: null
+            }
+          });
+          return true;
+        }
         sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
         return true;
       }
     }
 
     try {
-      const generated = await generateFromBuilderSession(session, null, { apiKey: openai.apiKey, model: openai.model });
+      const generated = await generateFromBuilderSession(session, null, {
+        provider: provider.provider_id,
+        apiKey: provider.apiKey,
+        model: provider.model,
+        baseUrl: provider.baseUrl
+      });
       let saved = saveDiabeticRecipe(db, { ...generated.recipe, source: "ai" });
       const ensured = await ensureDiabeticRecipeImage(db, saved, resolvedDataDir);
       saved = ensured.recipe;
@@ -1711,6 +2060,36 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
       if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
         sendJson(res, 503, {
           error: "OPENAI_API_KEY not configured",
+          route: "api_unavailable",
+          metrics: {
+            local: {
+              kind: "builder-recall",
+              latencyMs: localRecall.latencyMs
+            },
+            llm: null,
+            image: null
+          }
+        });
+        return true;
+      }
+      if (String(error?.code ?? "") === "LLM_DISABLED") {
+        sendJson(res, 503, {
+          error: "LLM provider disabled",
+          route: "api_unavailable",
+          metrics: {
+            local: {
+              kind: "builder-recall",
+              latencyMs: localRecall.latencyMs
+            },
+            llm: null,
+            image: null
+          }
+        });
+        return true;
+      }
+      if (String(error?.code ?? "") === "OLLAMA_UNAVAILABLE") {
+        sendJson(res, 503, {
+          error: "Ollama server not reachable",
           route: "api_unavailable",
           metrics: {
             local: {

@@ -78,9 +78,13 @@
     settingsUserVerify: document.getElementById("settings-user-verify"),
     settingsPinLock: document.getElementById("settings-pin-lock"),
     settingsUserStatus: document.getElementById("settings-user-status"),
+    settingsActiveTextProvider: document.getElementById("settings-active-text-provider"),
+    settingsActiveImageProvider: document.getElementById("settings-active-image-provider"),
+    settingsActiveProviderStatus: document.getElementById("settings-active-provider-status"),
     settingsProvider: document.getElementById("settings-provider"),
     settingsProviderRefresh: document.getElementById("settings-provider-refresh"),
     settingsProviderApiKey: document.getElementById("settings-provider-api-key"),
+    settingsProviderBaseUrl: document.getElementById("settings-provider-base-url"),
     settingsProviderModel: document.getElementById("settings-provider-model"),
     settingsProviderImageModel: document.getElementById("settings-provider-image-model"),
     settingsProviderSave: document.getElementById("settings-provider-save"),
@@ -110,6 +114,29 @@ let activeShoppingListId = "";
 let cachedShoppingLists = [];
 let pendingImportBackup = null;
 let pendingSharePackage = null;
+
+const PROVIDER_DEFS = {
+  openai: {
+    label: "OpenAI (Responses)",
+    supports: { text: true, image: true },
+    fields: { api_key: true, base_url: false, model: true, image_model: true }
+  },
+  openai_chat: {
+    label: "OpenAI-compatible (Chat)",
+    supports: { text: true, image: false },
+    fields: { api_key: true, base_url: true, model: true, image_model: false }
+  },
+  ollama: {
+    label: "Ollama (local)",
+    supports: { text: true, image: false },
+    fields: { api_key: false, base_url: true, model: true, image_model: false }
+  },
+  none: {
+    label: "Disabled",
+    supports: { text: false, image: false },
+    fields: { api_key: false, base_url: false, model: false, image_model: false }
+  }
+};
 
 function escapeHtml(value = "") {
   return String(value ?? "")
@@ -184,9 +211,19 @@ function finishTelemetry(kind, payload = {}) {
   const llm = metrics?.llm ?? null;
   const timing = summarizeMetrics(metrics);
   const tokens = summarizeTokens(llm);
+  const providerBits = [];
+  if (llm?.provider) {
+    const model = String(llm.model ?? "").trim();
+    providerBits.push(`${llm.provider}${model ? `:${model}` : ""}`);
+  }
+  if (metrics?.image?.provider) {
+    const imageModel = String(metrics.image.model ?? "").trim();
+    providerBits.push(`${metrics.image.provider}${imageModel ? `:${imageModel}` : ""}`);
+  }
+  const providerLabel = providerBits.length ? ` • ${providerBits.join(" • ")}` : "";
   setTelemetry({
     phase: "idle",
-    title: `${kind || "Done"}${route ? ` • ${route}` : ""}${timing ? ` • ${timing}` : ""}`,
+    title: `${kind || "Done"}${route ? ` • ${route}` : ""}${timing ? ` • ${timing}` : ""}${providerLabel}`,
     detail: tokens || (metrics?.image?.imageUrl ? `Image: ${metrics.image.imageUrl}` : "Ready.")
   });
 }
@@ -371,6 +408,7 @@ function setMode(mode) {
   } else if (settings) {
     setTimeout(() => els.settingsExport?.focus?.(), 0);
     void refreshUsers();
+    void refreshActiveProviders();
     void refreshProviderSettings();
   }
 }
@@ -1171,6 +1209,28 @@ async function applyImport() {
 async function refreshProviderSettings() {
   if (!els.settingsProviderStatus) return;
   const providerId = String(els.settingsProvider?.value ?? "openai").trim() || "openai";
+  const def = PROVIDER_DEFS[providerId] ?? PROVIDER_DEFS.openai;
+
+  const toggle = (el, show) => {
+    if (!el) return;
+    el.style.display = show ? "" : "none";
+  };
+
+  toggle(els.settingsProviderApiKey, Boolean(def.fields.api_key));
+  toggle(els.settingsProviderClear, Boolean(def.fields.api_key));
+  toggle(els.settingsProviderBaseUrl, Boolean(def.fields.base_url));
+  toggle(els.settingsProviderModel, Boolean(def.fields.model));
+  toggle(els.settingsProviderImageModel, Boolean(def.fields.image_model));
+
+  if (providerId === "none") {
+    if (els.settingsProviderApiKey) els.settingsProviderApiKey.value = "";
+    if (els.settingsProviderBaseUrl) els.settingsProviderBaseUrl.value = "";
+    if (els.settingsProviderModel) els.settingsProviderModel.value = "";
+    if (els.settingsProviderImageModel) els.settingsProviderImageModel.value = "";
+    els.settingsProviderStatus.textContent = "AI disabled. Local-only mode.";
+    return;
+  }
+
   els.settingsProviderStatus.textContent = "Loading provider settings...";
 
   const { response, data } = await getJson(`/api/diabetic/provider-settings?provider_id=${encodeURIComponent(providerId)}`);
@@ -1182,6 +1242,7 @@ async function refreshProviderSettings() {
   const settings = Array.isArray(data.settings) ? data.settings : [];
   const meta = data.meta ?? {};
   const apiKeyRow = settings.find((row) => row.key === "api_key") ?? null;
+  const baseUrlRow = settings.find((row) => row.key === "base_url") ?? null;
   const modelRow = settings.find((row) => row.key === "model") ?? null;
   const imageModelRow = settings.find((row) => row.key === "image_model") ?? null;
 
@@ -1190,6 +1251,10 @@ async function refreshProviderSettings() {
 
   if (els.settingsProviderApiKey) {
     els.settingsProviderApiKey.value = "";
+  }
+  if (els.settingsProviderBaseUrl) {
+    els.settingsProviderBaseUrl.value = String(baseUrlRow?.value ?? "");
+    els.settingsProviderBaseUrl.placeholder = meta?.env?.base_url ? `Env: ${meta.env.base_url}` : "Base URL (optional)";
   }
   if (els.settingsProviderModel) {
     els.settingsProviderModel.value = String(modelRow?.value ?? "");
@@ -1201,26 +1266,43 @@ async function refreshProviderSettings() {
   }
 
   const keySource = envHasKey ? "environment" : savedHasKey ? "saved locally" : "not set";
-  els.settingsProviderStatus.textContent = `OpenAI key: ${keySource}.`;
+  const label = def.label || providerId;
+  if (def.fields.api_key) {
+    els.settingsProviderStatus.textContent = `${label} key: ${keySource}.`;
+  } else {
+    const envBaseUrl = String(meta?.env?.base_url ?? "").trim();
+    const savedBaseUrl = String(baseUrlRow?.value ?? "").trim();
+    const baseUrl = envBaseUrl || savedBaseUrl || "";
+    els.settingsProviderStatus.textContent = `${label}${baseUrl ? ` • ${baseUrl}` : ""}`;
+  }
 }
 
 async function saveProviderSettings() {
   if (!els.settingsProviderStatus) return;
   const providerId = String(els.settingsProvider?.value ?? "openai").trim() || "openai";
+  if (providerId === "none") {
+    els.settingsProviderStatus.textContent = "Nothing to save for Disabled provider.";
+    return;
+  }
+  const def = PROVIDER_DEFS[providerId] ?? PROVIDER_DEFS.openai;
   const apiKey = String(els.settingsProviderApiKey?.value ?? "").trim();
+  const baseUrl = String(els.settingsProviderBaseUrl?.value ?? "").trim();
   const model = String(els.settingsProviderModel?.value ?? "").trim();
   const imageModel = String(els.settingsProviderImageModel?.value ?? "").trim();
 
   els.settingsProviderStatus.textContent = "Saving settings...";
 
   const saves = [];
-  if (apiKey) {
+  if (def.fields.api_key && apiKey) {
     saves.push(postJson("/api/diabetic/provider-settings", { provider_id: providerId, key: "api_key", value: apiKey }));
   }
-  if (model) {
+  if (def.fields.base_url && baseUrl) {
+    saves.push(postJson("/api/diabetic/provider-settings", { provider_id: providerId, key: "base_url", value: baseUrl }));
+  }
+  if (def.fields.model && model) {
     saves.push(postJson("/api/diabetic/provider-settings", { provider_id: providerId, key: "model", value: model }));
   }
-  if (imageModel) {
+  if (def.fields.image_model && imageModel) {
     saves.push(postJson("/api/diabetic/provider-settings", { provider_id: providerId, key: "image_model", value: imageModel }));
   }
 
@@ -1246,6 +1328,11 @@ async function saveProviderSettings() {
 
 async function clearProviderKey() {
   const providerId = String(els.settingsProvider?.value ?? "openai").trim() || "openai";
+  const def = PROVIDER_DEFS[providerId] ?? PROVIDER_DEFS.openai;
+  if (!def.fields.api_key) {
+    if (els.settingsProviderStatus) els.settingsProviderStatus.textContent = "This provider does not use an API key.";
+    return;
+  }
   const ok = window.confirm("Clear the saved API key for this provider? (Environment variables will still work.)");
   if (!ok) return;
   if (els.settingsProviderStatus) els.settingsProviderStatus.textContent = "Clearing saved key...";
@@ -1256,6 +1343,57 @@ async function clearProviderKey() {
   }
   if (els.settingsProviderStatus) els.settingsProviderStatus.textContent = "Cleared ✓";
   await refreshProviderSettings();
+}
+
+async function refreshActiveProviders() {
+  if (!els.settingsActiveProviderStatus) return;
+  els.settingsActiveProviderStatus.textContent = "Loading active providers...";
+  const { response, data } = await getJson("/api/diabetic/provider-settings?provider_id=app");
+  if (!response.ok) {
+    els.settingsActiveProviderStatus.textContent = data?.error || `Failed to load active providers (HTTP ${response.status}).`;
+    return;
+  }
+
+  const settings = Array.isArray(data.settings) ? data.settings : [];
+  const textRow = settings.find((row) => row.key === "active_text_provider") ?? null;
+  const imageRow = settings.find((row) => row.key === "active_image_provider") ?? null;
+
+  const selectedText = String(textRow?.value ?? "openai").trim() || "openai";
+  const selectedImage = String(imageRow?.value ?? "openai").trim() || "openai";
+
+  const textProvider = PROVIDER_DEFS[selectedText]?.supports?.text ? selectedText : "openai";
+  const imageProvider = selectedImage === "none" ? "none" : "openai";
+
+  if (els.settingsActiveTextProvider) els.settingsActiveTextProvider.value = textProvider;
+  if (els.settingsActiveImageProvider) els.settingsActiveImageProvider.value = imageProvider;
+
+  const textLabel = PROVIDER_DEFS[textProvider]?.label ?? textProvider;
+  const imageLabel = imageProvider === "none" ? "Disabled" : PROVIDER_DEFS.openai.label;
+  els.settingsActiveProviderStatus.textContent = `Active text: ${textLabel} • Active images: ${imageLabel}`;
+}
+
+async function saveActiveProviders() {
+  if (!els.settingsActiveProviderStatus) return;
+  const textProvider = String(els.settingsActiveTextProvider?.value ?? "openai").trim() || "openai";
+  const imageProvider = String(els.settingsActiveImageProvider?.value ?? "openai").trim() || "openai";
+
+  els.settingsActiveProviderStatus.textContent = "Saving active providers...";
+  const results = await Promise.all([
+    postJson("/api/diabetic/provider-settings", { provider_id: "app", key: "active_text_provider", value: textProvider }),
+    postJson("/api/diabetic/provider-settings", { provider_id: "app", key: "active_image_provider", value: imageProvider })
+  ]);
+
+  const failed = results.find((r) => !r.response?.ok);
+  if (failed) {
+    els.settingsActiveProviderStatus.textContent = failed.data?.error || "Failed to save active providers.";
+    return;
+  }
+
+  els.settingsActiveProviderStatus.textContent = "Saved ✓";
+  setTimeout(() => {
+    if (els.settingsActiveProviderStatus.textContent === "Saved ✓") els.settingsActiveProviderStatus.textContent = "";
+  }, 900);
+  await refreshActiveProviders();
 }
 
 async function previewShareImport(packageJson) {
@@ -1924,7 +2062,15 @@ async function sendQuickMessage(message) {
   els.settingsProviderSave?.addEventListener("click", saveProviderSettings);
   els.settingsProviderClear?.addEventListener("click", clearProviderKey);
   els.settingsProvider?.addEventListener("change", refreshProviderSettings);
+  els.settingsActiveTextProvider?.addEventListener("change", saveActiveProviders);
+  els.settingsActiveImageProvider?.addEventListener("change", saveActiveProviders);
   els.settingsProviderApiKey?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      els.settingsProviderSave?.click();
+    }
+  });
+  els.settingsProviderBaseUrl?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
       els.settingsProviderSave?.click();

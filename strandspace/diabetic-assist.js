@@ -9,6 +9,7 @@ const DEFAULT_IMAGE_MODEL = process.env.DIABETICSPACE_IMAGE_MODEL || "gpt-image-
 
 let client = null;
 let clientApiKey = "";
+let clientBaseUrl = "";
 let mock = null;
 let imageMock = null;
 let resolvedApiKey = null;
@@ -97,16 +98,30 @@ function openAiUnavailableError() {
   return error;
 }
 
-function getClient({ apiKey } = {}) {
+function llmDisabledError(providerId) {
+  const error = new Error(`LLM provider disabled (${String(providerId ?? "none")})`);
+  error.code = "LLM_DISABLED";
+  return error;
+}
+
+function ollamaUnavailableError(message) {
+  const error = new Error(message || "Ollama server not reachable");
+  error.code = "OLLAMA_UNAVAILABLE";
+  return error;
+}
+
+function getClient({ apiKey, baseUrl } = {}) {
   const resolved = String(apiKey ?? "").trim() || resolveOpenAiApiKeyFromEnv();
   const finalKey = String(resolved ?? "").trim();
   if (!finalKey) {
     throw openAiUnavailableError();
   }
 
-  if (!client || clientApiKey !== finalKey) {
+  const normalizedBaseUrl = String(baseUrl ?? "").trim();
+  if (!client || clientApiKey !== finalKey || clientBaseUrl !== normalizedBaseUrl) {
     clientApiKey = finalKey;
-    client = new OpenAI({ apiKey: finalKey });
+    clientBaseUrl = normalizedBaseUrl;
+    client = new OpenAI(normalizedBaseUrl ? { apiKey: finalKey, baseURL: normalizedBaseUrl } : { apiKey: finalKey });
   }
 
   return client;
@@ -173,11 +188,27 @@ function parseJsonOrThrow(text, routeLabel = "diabetic-assist") {
   if (!raw) {
     throw new Error(`${routeLabel}: empty OpenAI response`);
   }
-  try {
-    return JSON.parse(raw);
-  } catch (error) {
-    throw new Error(`${routeLabel}: invalid JSON response (${error instanceof Error ? error.message : String(error)})`);
+
+  const attempt = (candidate) => {
+    try {
+      return { ok: true, value: JSON.parse(candidate) };
+    } catch (error) {
+      return { ok: false, error };
+    }
+  };
+
+  const direct = attempt(raw);
+  if (direct.ok) return direct.value;
+
+  const first = raw.indexOf("{");
+  const last = raw.lastIndexOf("}");
+  if (first !== -1 && last !== -1 && last > first) {
+    const sliced = raw.slice(first, last + 1);
+    const extracted = attempt(sliced);
+    if (extracted.ok) return extracted.value;
   }
+
+  throw new Error(`${routeLabel}: invalid JSON response (${direct.error instanceof Error ? direct.error.message : String(direct.error)})`);
 }
 
 function normalizeLocalRecall(localRecallResult) {
@@ -202,15 +233,17 @@ async function runOpenAi({
   input,
   routeLabel,
   apiKey = "",
-  model = ""
+  model = "",
+  baseUrl = "",
+  provider = "openai"
 }) {
   const chosenModel = String(model ?? "").trim() || DEFAULT_MODEL;
   if (mock) {
-    const recipe = await mock({ systemPrompt, input, routeLabel });
+    const recipe = await mock({ systemPrompt, input, routeLabel, provider, model: chosenModel, baseUrl });
     return {
       recipe,
       llm: {
-        provider: "openai",
+        provider,
         model: chosenModel,
         latencyMs: null,
         responseId: null,
@@ -221,7 +254,7 @@ async function runOpenAi({
     };
   }
 
-  const openai = getClient({ apiKey });
+  const openai = getClient({ apiKey, baseUrl });
   const started = performance.now();
   const response = await openai.responses.create({
     model: chosenModel,
@@ -244,7 +277,7 @@ async function runOpenAi({
   return {
     recipe,
     llm: {
-      provider: "openai",
+      provider,
       model: response.model ?? chosenModel,
       latencyMs: Number((performance.now() - started).toFixed(3)),
       responseId: response.id ?? null,
@@ -255,7 +288,144 @@ async function runOpenAi({
   };
 }
 
-export async function generateDiabeticRecipe(userMessage, localRecallResult, { apiKey = "", model = "" } = {}) {
+async function runOpenAiChat({
+  systemPrompt,
+  input,
+  routeLabel,
+  apiKey = "",
+  model = "",
+  baseUrl = "",
+  provider = "openai_chat"
+}) {
+  const chosenModel = String(model ?? "").trim() || DEFAULT_MODEL;
+  if (mock) {
+    const recipe = await mock({ systemPrompt, input, routeLabel, provider, model: chosenModel, baseUrl });
+    return {
+      recipe,
+      llm: {
+        provider,
+        model: chosenModel,
+        latencyMs: null,
+        responseId: null,
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null
+      }
+    };
+  }
+
+  const openai = getClient({ apiKey, baseUrl });
+  const started = performance.now();
+  const response = await openai.chat.completions.create({
+    model: chosenModel,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: input }
+    ],
+    temperature: 0.2
+  });
+
+  const content = response?.choices?.[0]?.message?.content ?? "";
+  const recipe = parseJsonOrThrow(content, routeLabel);
+  const usage = normalizeUsage(response?.usage ?? null);
+
+  return {
+    recipe,
+    llm: {
+      provider,
+      model: response?.model ?? chosenModel,
+      latencyMs: Number((performance.now() - started).toFixed(3)),
+      responseId: response?.id ?? null,
+      inputTokens: usage?.inputTokens ?? null,
+      outputTokens: usage?.outputTokens ?? null,
+      totalTokens: usage?.totalTokens ?? null
+    }
+  };
+}
+
+async function runOllama({
+  systemPrompt,
+  input,
+  routeLabel,
+  model = "",
+  baseUrl = "",
+  provider = "ollama"
+}) {
+  const chosenModel = String(model ?? "").trim() || String(process.env.DIABETICSPACE_OLLAMA_MODEL ?? "").trim() || "llama3.1";
+  const resolvedBaseUrl = String(baseUrl ?? "").trim() || String(process.env.DIABETICSPACE_OLLAMA_BASE_URL ?? "").trim() || "http://localhost:11434";
+
+  if (mock) {
+    const recipe = await mock({ systemPrompt, input, routeLabel, provider, model: chosenModel, baseUrl: resolvedBaseUrl });
+    return {
+      recipe,
+      llm: {
+        provider,
+        model: chosenModel,
+        latencyMs: null,
+        responseId: null,
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null
+      }
+    };
+  }
+
+  const started = performance.now();
+  const endpoint = resolvedBaseUrl.replace(/\/+$/, "");
+  let response;
+  try {
+    response = await fetch(`${endpoint}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: chosenModel,
+        prompt: `${systemPrompt}\n\n${input}`.trim(),
+        stream: false
+      })
+    });
+  } catch (error) {
+    throw ollamaUnavailableError(error instanceof Error ? error.message : "Ollama server not reachable");
+  }
+
+  if (!response.ok) {
+    throw ollamaUnavailableError(`Ollama returned HTTP ${response.status}`);
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  const recipe = parseJsonOrThrow(payload?.response ?? payload?.message?.content ?? "", routeLabel);
+
+  return {
+    recipe,
+    llm: {
+      provider,
+      model: chosenModel,
+      latencyMs: Number((performance.now() - started).toFixed(3)),
+      responseId: null,
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null
+    }
+  };
+}
+
+async function runRecipeProvider(providerId, args) {
+  const provider = String(providerId ?? "").trim().toLowerCase() || "openai";
+  if (provider === "openai") {
+    return runOpenAi({ ...args, provider: "openai" });
+  }
+  if (provider === "openai_chat") {
+    return runOpenAiChat({ ...args, provider: "openai_chat" });
+  }
+  if (provider === "ollama") {
+    return runOllama({ ...args, provider: "ollama" });
+  }
+  if (provider === "none") {
+    throw llmDisabledError(provider);
+  }
+  return runOpenAi({ ...args, provider: "openai" });
+}
+
+export async function generateDiabeticRecipe(userMessage, localRecallResult, { provider = "openai", apiKey = "", model = "", baseUrl = "" } = {}) {
   const systemPrompt = "You are a diabetic-friendly recipe assistant. You only suggest recipes appropriate for people managing Type 1 or Type 2 diabetes. All recipes must be low glycemic index (GI < 55 preferred), low in added sugar, and blood-sugar friendly. When asked for a recipe, always return a JSON object with these exact keys: recipe_id, title, meal_type, description, ingredients (array of {name,amount,unit,note}), substitutes (array of {original,substitute,reason}), instructions (array of strings), servings, serving_notes, tags (array), gi_notes. Return ONLY the JSON object. No markdown, no explanation.";
   const local = normalizeLocalRecall(localRecallResult);
   const input = [
@@ -263,16 +433,17 @@ export async function generateDiabeticRecipe(userMessage, localRecallResult, { a
     `Local recall context: ${JSON.stringify(local, null, 2)}`
   ].join("\n\n");
 
-  return runOpenAi({
+  return runRecipeProvider(provider, {
     systemPrompt,
     input,
     routeLabel: "generateDiabeticRecipe",
     apiKey,
-    model
+    model,
+    baseUrl
   });
 }
 
-export async function adaptDiabeticRecipe(changeRequest, localRecallResult, { apiKey = "", model = "" } = {}) {
+export async function adaptDiabeticRecipe(changeRequest, localRecallResult, { provider = "openai", apiKey = "", model = "", baseUrl = "" } = {}) {
   const systemPrompt = "You adapt existing diabetic-friendly recipes. Keep the recipe safe for people managing Type 1 or Type 2 diabetes. Preserve the core dish unless the requested change requires otherwise. Return a JSON object with these exact keys: recipe_id, title, meal_type, description, ingredients (array of {name,amount,unit,note}), substitutes (array of {original,substitute,reason}), instructions (array of strings), servings, serving_notes, tags (array), gi_notes. Return ONLY the JSON object. No markdown, no explanation.";
   const local = normalizeLocalRecall(localRecallResult);
   const input = [
@@ -280,16 +451,17 @@ export async function adaptDiabeticRecipe(changeRequest, localRecallResult, { ap
     `Original recipe: ${JSON.stringify(local, null, 2)}`
   ].join("\n\n");
 
-  return runOpenAi({
+  return runRecipeProvider(provider, {
     systemPrompt,
     input,
     routeLabel: "adaptDiabeticRecipe",
     apiKey,
-    model
+    model,
+    baseUrl
   });
 }
 
-export async function generateFromBuilderSession(sessionObj, localRecallResult, { apiKey = "", model = "" } = {}) {
+export async function generateFromBuilderSession(sessionObj, localRecallResult, { provider = "openai", apiKey = "", model = "", baseUrl = "" } = {}) {
   const systemPrompt = "You convert a structured diabetic recipe request into one diabetic-friendly recipe. The request includes meal type, health goal, ingredients to include, ingredients to avoid, servings, and extra notes. Return one JSON object with these exact keys: recipe_id, title, meal_type, description, ingredients (array of {name,amount,unit,note}), substitutes (array of {original,substitute,reason}), instructions (array of strings), servings, serving_notes, tags (array), gi_notes. Return ONLY the JSON object. No markdown, no explanation.";
   const local = normalizeLocalRecall(localRecallResult);
   const input = [
@@ -297,12 +469,13 @@ export async function generateFromBuilderSession(sessionObj, localRecallResult, 
     `Local recall context: ${JSON.stringify(local, null, 2)}`
   ].join("\n\n");
 
-  return runOpenAi({
+  return runRecipeProvider(provider, {
     systemPrompt,
     input,
     routeLabel: "generateFromBuilderSession",
     apiKey,
-    model
+    model,
+    baseUrl
   });
 }
 

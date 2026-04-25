@@ -284,9 +284,30 @@
           <h3 style="margin: 10px 0 6px 0;">AI provider (optional)</h3>
           <p class="ds-sub ds-sub-small">AI features are only used when you explicitly request them. Environment variables take priority over saved settings.</p>
 
+          <div class="ds-actions" style="gap: 12px; align-items: center; margin-top: 10px; flex-wrap: wrap;">
+            <label class="ds-sub ds-sub-small" style="min-width: 180px;">Active text LLM</label>
+            <select id="settings-active-text-provider" class="ds-input" style="max-width: 220px;">
+              <option value="openai">OpenAI (Responses)</option>
+              <option value="openai_chat">OpenAI-compatible (Chat)</option>
+              <option value="ollama">Ollama (local)</option>
+              <option value="none">Disabled</option>
+            </select>
+
+            <label class="ds-sub ds-sub-small" style="min-width: 180px;">Active image provider</label>
+            <select id="settings-active-image-provider" class="ds-input" style="max-width: 220px;">
+              <option value="openai">OpenAI</option>
+              <option value="none">Disabled</option>
+            </select>
+          </div>
+
+          <div class="ds-muted" id="settings-active-provider-status" style="margin-top: 10px;"></div>
+
           <div class="ds-actions" style="gap: 12px; align-items: center; margin-top: 10px;">
             <select id="settings-provider" class="ds-input" style="max-width: 220px;">
-              <option value="openai">OpenAI</option>
+              <option value="openai">OpenAI (Responses)</option>
+              <option value="openai_chat">OpenAI-compatible (Chat)</option>
+              <option value="ollama">Ollama (local)</option>
+              <option value="none">Disabled</option>
             </select>
             <button id="settings-provider-refresh" type="button" class="ghost-action">Refresh</button>
           </div>
@@ -298,6 +319,7 @@
           </div>
 
           <div class="ds-actions" style="gap: 12px; align-items: center; margin-top: 10px; flex-wrap: wrap;">
+            <input id="settings-provider-base-url" type="text" class="ds-input" placeholder="Base URL (optional)" style="max-width: 360px;" />
             <input id="settings-provider-model" type="text" class="ds-input" placeholder="Model (optional)" style="max-width: 240px;" />
             <input id="settings-provider-image-model" type="text" class="ds-input" placeholder="Image model (optional)" style="max-width: 240px;" />
           </div>
