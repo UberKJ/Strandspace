@@ -400,9 +400,7 @@ export async function generateDiabeticRecipeImageToFile(recipe, {
   const response = await openai.images.generate({
     model,
     prompt,
-    size,
-    response_format: "b64_json",
-    quality: "standard"
+    size
   });
 
   const item = Array.isArray(response?.data) ? response.data[0] : null;
