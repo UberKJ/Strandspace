@@ -296,14 +296,54 @@ npm test
 - `GET /api/diabetic/recipes`
 - `GET /api/diabetic/recipe?recipe_id=...`
 - `GET /api/diabetic/search?q=...`
+- `GET /api/diabetic/image/status`
 - `POST /api/diabetic/search-create`
 - `POST /api/diabetic/chat`
 - `POST /api/diabetic/save`
 - `POST /api/diabetic/adapt`
+- `POST /api/diabetic/image`
 - `POST /api/diabetic/ensure-image`
 - `POST /api/diabetic/builder/start`
 - `POST /api/diabetic/builder/next`
 - `POST /api/diabetic/builder/complete`
+
+### Low-cost image generation
+
+DiabeticSpace recipe text works without image generation. Images are off by default, must be explicitly requested in the UI/API, are cached locally, and are guarded by a daily SQLite-backed generation limit.
+
+OpenAI low-cost mode:
+
+```bash
+DIABETICSPACE_IMAGE_PROVIDER=openai
+DIABETICSPACE_IMAGE_MODEL=gpt-image-1
+DIABETICSPACE_IMAGE_QUALITY=low
+DIABETICSPACE_IMAGE_SIZE=1024x1024
+DIABETICSPACE_IMAGE_OUTPUT_FORMAT=webp
+DIABETICSPACE_IMAGE_OUTPUT_COMPRESSION=85
+DIABETICSPACE_AUTOGENERATE_IMAGES=0
+```
+
+xAI low-cost mode:
+
+```bash
+DIABETICSPACE_IMAGE_PROVIDER=xai
+DIABETICSPACE_XAI_IMAGE_MODEL=<your-xai-image-model>
+DIABETICSPACE_AUTOGENERATE_IMAGES=0
+```
+
+No image API mode:
+
+```bash
+DIABETICSPACE_IMAGE_PROVIDER=none
+DIABETICSPACE_AUTOGENERATE_IMAGES=0
+```
+
+Optional guardrails:
+
+```bash
+DIABETICSPACE_IMAGE_BUDGET_CENTS_PER_IMAGE=5
+DIABETICSPACE_IMAGE_DAILY_LIMIT=20
+```
 
 ---
 

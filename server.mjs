@@ -34,6 +34,8 @@ import {
   searchDiabeticRecipes,
   seedDiabeticRecipes,
   setDiabeticRecipeImage,
+  countDiabeticImagesGeneratedToday,
+  recordDiabeticImageGeneration,
   deleteDiabeticRecipe,
   saveDiabeticBuilderSession,
   getDiabeticBuilderSession,
@@ -70,9 +72,55 @@ let database = null;
 let databasePath = "";
 
 const DIABETIC_IMAGE_MAX_BYTES = 1_000_000;
+const DEFAULT_IMAGE_PROVIDER = "none";
 
 function resolveDiabeticImageDir() {
   return String(process.env.DIABETICSPACE_IMAGE_DIR ?? "").trim() || join(dataDir, "diabetic-images");
+}
+
+function parseBooleanEnv(value, defaultValue = false) {
+  const text = String(value ?? "").trim().toLowerCase();
+  if (!text) return Boolean(defaultValue);
+  return ["1", "true", "yes", "on"].includes(text);
+}
+
+function normalizeImageProvider(value = "") {
+  const provider = String(value ?? "").trim().toLowerCase();
+  if (provider === "openai" || provider === "xai" || provider === "none") return provider;
+  return DEFAULT_IMAGE_PROVIDER;
+}
+
+function getImageProviderConfig(providerOverride = "") {
+  const provider = normalizeImageProvider(providerOverride || process.env.DIABETICSPACE_IMAGE_PROVIDER || DEFAULT_IMAGE_PROVIDER);
+  const openAiModel = String(process.env.DIABETICSPACE_IMAGE_MODEL ?? "gpt-image-1").trim() || "gpt-image-1";
+  const xaiModel = String(process.env.DIABETICSPACE_XAI_IMAGE_MODEL ?? "").trim();
+  const model = provider === "xai" ? xaiModel : openAiModel;
+  const quality = String(process.env.DIABETICSPACE_IMAGE_QUALITY ?? "low").trim() || "low";
+  const size = String(process.env.DIABETICSPACE_IMAGE_SIZE ?? "1024x1024").trim() || "1024x1024";
+  const outputFormat = String(process.env.DIABETICSPACE_IMAGE_OUTPUT_FORMAT ?? "webp").trim() || "webp";
+  const outputCompression = Number.isFinite(Number(process.env.DIABETICSPACE_IMAGE_OUTPUT_COMPRESSION))
+    ? Number(process.env.DIABETICSPACE_IMAGE_OUTPUT_COMPRESSION)
+    : 85;
+  const dailyLimit = Number.isFinite(Number(process.env.DIABETICSPACE_IMAGE_DAILY_LIMIT))
+    ? Math.max(0, Math.floor(Number(process.env.DIABETICSPACE_IMAGE_DAILY_LIMIT)))
+    : 20;
+  const budgetCentsPerImage = Number.isFinite(Number(process.env.DIABETICSPACE_IMAGE_BUDGET_CENTS_PER_IMAGE))
+    ? Math.max(0, Number(process.env.DIABETICSPACE_IMAGE_BUDGET_CENTS_PER_IMAGE))
+    : 5;
+
+  return {
+    enabled: provider !== "none",
+    autogenerate: parseBooleanEnv(process.env.DIABETICSPACE_AUTOGENERATE_IMAGES, false),
+    provider,
+    model,
+    quality,
+    size,
+    outputFormat,
+    outputCompression,
+    dailyLimit,
+    budgetCentsPerImage,
+    cacheEnabled: true
+  };
 }
 
 function diabeticImageFilename(imageUrl = "") {
@@ -91,6 +139,20 @@ async function fileWithinLimit(filePath, maxBytes = DIABETIC_IMAGE_MAX_BYTES) {
   } catch {
     return false;
   }
+}
+
+async function findCachedRecipeImage(recipeId, outputDir = resolveDiabeticImageDir()) {
+  const basename = sanitizeImageBasename(recipeId);
+  for (const ext of [".webp", ".png", ".jpg", ".gif"]) {
+    const filePath = join(outputDir, `${basename}${ext}`);
+    if (await fileWithinLimit(filePath)) {
+      return {
+        image_url: `diabetic-images/${basename}${ext}`,
+        filePath
+      };
+    }
+  }
+  return null;
 }
 
 async function safeUnlink(filePath) {
@@ -393,6 +455,181 @@ function soundConstructAnswerPayload(source, question, construct, recall) {
   };
 }
 
+function imageMetadataPayload(recipe = null) {
+  return {
+    image_url: recipe?.image_url ?? null,
+    image_provider: recipe?.image_provider ?? null,
+    image_model: recipe?.image_model ?? null,
+    image_quality: recipe?.image_quality ?? null,
+    image_size: recipe?.image_size ?? null,
+    image_prompt_hash: recipe?.image_prompt_hash ?? null,
+    image_generated_at: recipe?.image_generated_at ?? null,
+    image_generation_latency_ms: recipe?.image_generation_latency_ms ?? null
+  };
+}
+
+async function handleDiabeticImagePost(req, res, db) {
+  if (req.method !== "POST") {
+    res.writeHead(405, { Allow: "POST" });
+    res.end();
+    return;
+  }
+
+  let payload = {};
+  try {
+    payload = await readJsonBody(req);
+  } catch {
+    sendJson(res, 400, { error: "Invalid JSON body" });
+    return;
+  }
+
+  const recipeId = String(payload.recipe_id ?? payload.recipeId ?? "").trim();
+  if (!recipeId) {
+    sendJson(res, 400, { error: "recipe_id is required" });
+    return;
+  }
+
+  let recipe = getDiabeticRecipeById(db, recipeId);
+  if (!recipe) {
+    sendJson(res, 404, { error: "Recipe not found" });
+    return;
+  }
+
+  const force = Boolean(payload.force_regenerate ?? payload.force ?? false);
+  const config = getImageProviderConfig(payload.provider);
+  const outputDir = resolveDiabeticImageDir();
+  await mkdir(outputDir, { recursive: true });
+
+  if (!force && recipe.image_url) {
+    const existingFilename = diabeticImageFilename(recipe.image_url);
+    if (!existingFilename || await fileWithinLimit(join(outputDir, existingFilename))) {
+      sendJson(res, 200, {
+        ok: true,
+        created: false,
+        cached: true,
+        provider: recipe.image_provider ?? config.provider,
+        recipe,
+        image: imageMetadataPayload(recipe),
+        metrics: { local: null, llm: null, image: null }
+      });
+      return;
+    }
+  }
+
+  if (!force) {
+    const cached = await findCachedRecipeImage(recipeId, outputDir);
+    if (cached) {
+      recipe = setDiabeticRecipeImage(db, recipeId, cached.image_url, {
+        image_provider: recipe.image_provider,
+        image_model: recipe.image_model,
+        image_quality: recipe.image_quality,
+        image_size: recipe.image_size,
+        image_prompt_hash: recipe.image_prompt_hash,
+        image_generated_at: recipe.image_generated_at,
+        image_generation_latency_ms: recipe.image_generation_latency_ms
+      }) ?? recipe;
+      sendJson(res, 200, {
+        ok: true,
+        created: false,
+        cached: true,
+        provider: recipe.image_provider ?? config.provider,
+        recipe,
+        image: imageMetadataPayload(recipe),
+        metrics: { local: null, llm: null, image: null }
+      });
+      return;
+    }
+  }
+
+  if (config.provider === "none") {
+    sendJson(res, 200, {
+      ok: true,
+      created: false,
+      cached: false,
+      provider: "none",
+      reason: "Image provider disabled",
+      recipe,
+      image: imageMetadataPayload(recipe),
+      metrics: { local: null, llm: null, image: null }
+    });
+    return;
+  }
+
+  const generatedToday = countDiabeticImagesGeneratedToday(db);
+  if (generatedToday >= config.dailyLimit) {
+    sendJson(res, 429, {
+      ok: false,
+      error: "Image generation is disabled for the day because the daily limit was reached.",
+      route: "image_daily_limit",
+      provider: config.provider,
+      daily_limit: config.dailyLimit,
+      generated_today: generatedToday,
+      recipe,
+      metrics: { local: null, llm: null, image: null }
+    });
+    return;
+  }
+
+  try {
+    const result = await generateDiabeticRecipeImageToFile(recipe, {
+      provider: config.provider,
+      outputDir,
+      model: config.model,
+      size: config.size,
+      quality: config.quality,
+      outputFormat: config.outputFormat,
+      outputCompression: config.outputCompression,
+      maxBytes: DIABETIC_IMAGE_MAX_BYTES,
+      force
+    });
+    const generatedAt = new Date().toISOString();
+    const metadata = {
+      image_provider: result.provider ?? config.provider,
+      image_model: result.model ?? config.model,
+      image_quality: result.quality ?? config.quality,
+      image_size: result.size ?? config.size,
+      image_prompt_hash: result.promptHash ?? null,
+      image_generated_at: generatedAt,
+      image_generation_latency_ms: result.latencyMs ?? null
+    };
+    const updated = setDiabeticRecipeImage(db, recipe.recipe_id, result.image_url, metadata) ?? recipe;
+    recordDiabeticImageGeneration(db, {
+      recipe_id: recipe.recipe_id,
+      image_provider: metadata.image_provider,
+      image_model: metadata.image_model,
+      image_url: result.image_url,
+      generated_at: generatedAt
+    });
+    sendJson(res, 200, {
+      ok: true,
+      created: true,
+      cached: false,
+      provider: metadata.image_provider,
+      recipe: updated,
+      image: imageMetadataPayload(updated),
+      metrics: {
+        local: null,
+        llm: null,
+        image: {
+          provider: metadata.image_provider,
+          model: metadata.image_model,
+          latencyMs: result.latencyMs ?? null,
+          imageUrl: result.image_url
+        }
+      }
+    });
+    return;
+  } catch (error) {
+    const code = String(error?.code ?? "");
+    if (code === "OPENAI_API_KEY_MISSING" || code === "XAI_API_KEY_MISSING" || code === "XAI_IMAGE_MODEL_MISSING") {
+      sendJson(res, 503, { error: error instanceof Error ? error.message : String(error), route: "api_unavailable", provider: config.provider });
+      return;
+    }
+    sendJson(res, 502, { error: error instanceof Error ? error.message : String(error), route: "image_failed", provider: config.provider });
+    return;
+  }
+}
+
 async function handleApi(req, res) {
   const url = new URL(req.url, "http://localhost");
   const db = openMemoryDatabase();
@@ -435,100 +672,33 @@ async function handleApi(req, res) {
     return;
   }
 
-  if (url.pathname === "/api/diabetic/ensure-image") {
-    if (req.method !== "POST") {
-      res.writeHead(405, { Allow: "POST" });
+  if (url.pathname === "/api/diabetic/image/status") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" });
       res.end();
       return;
     }
 
-    let payload = {};
-    try {
-      payload = await readJsonBody(req);
-    } catch {
-      sendJson(res, 400, { error: "Invalid JSON body" });
-      return;
-    }
-
-    const recipeId = String(payload.recipe_id ?? payload.recipeId ?? "").trim();
-    if (!recipeId) {
-      sendJson(res, 400, { error: "recipe_id is required" });
-      return;
-    }
-
-    let recipe = getDiabeticRecipeById(db, recipeId);
-    if (!recipe) {
-      sendJson(res, 404, { error: "Recipe not found" });
-      return;
-    }
-
-    const outputDir = resolveDiabeticImageDir();
-    const existingFilename = diabeticImageFilename(recipe.image_url);
-
-    if (existingFilename) {
-      const existingPath = join(outputDir, existingFilename);
-      if (await fileWithinLimit(existingPath)) {
-        sendJson(res, 200, {
-          ok: true,
-          created: false,
-          recipe,
-          metrics: {
-            local: null,
-            llm: null,
-            image: null
-          }
-        });
-        return;
-      }
-    }
-
-    if (recipe.image_url && !existingFilename) {
-      sendJson(res, 200, {
-        ok: true,
-        created: false,
-        recipe,
-        metrics: {
-          local: null,
-          llm: null,
-          image: null
-        }
-      });
-      return;
-    }
-
-    if (recipe.image_url && existingFilename) {
-      recipe = setDiabeticRecipeImage(db, recipe.recipe_id, "") ?? recipe;
-    }
-
-    try {
-      const result = await generateDiabeticRecipeImageToFile(recipe, { outputDir, maxBytes: DIABETIC_IMAGE_MAX_BYTES });
-      const updated = setDiabeticRecipeImage(db, recipe.recipe_id, result.image_url) ?? recipe;
-      sendJson(res, 200, {
-        ok: true,
-        created: true,
-        recipe: updated,
-        metrics: {
-          local: null,
-          llm: null,
-          image: {
-            provider: "openai",
-            model: result.model ?? null,
-            latencyMs: result.latencyMs ?? null,
-            imageUrl: result.image_url
-          }
-        }
-      });
-      return;
-    } catch (error) {
-      if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
-        sendJson(res, 503, { error: "OPENAI_API_KEY not configured", route: "api_unavailable" });
-        return;
-      }
-      sendJson(res, 502, { error: error instanceof Error ? error.message : String(error), route: "image_failed" });
-      return;
-    }
+    const config = getImageProviderConfig();
+    sendJson(res, 200, {
+      enabled: config.enabled,
+      provider: config.provider,
+      model: config.model,
+      quality: config.quality,
+      size: config.size,
+      daily_limit: config.dailyLimit,
+      generated_today: countDiabeticImagesGeneratedToday(db),
+      cache_enabled: config.cacheEnabled,
+      autogenerate: config.autogenerate,
+      budget_cents_per_image: config.budgetCentsPerImage
+    });
+    return;
   }
 
+  if (url.pathname === "/api/diabetic/image" || url.pathname === "/api/diabetic/ensure-image") {
+    await handleDiabeticImagePost(req, res, db);
+    return;
+  }
   if (url.pathname === "/api/diabetic/upload-image") {
     if (req.method !== "POST") {
       res.writeHead(405, { Allow: "POST" });

@@ -337,6 +337,8 @@
 
         const createBtn = bar.querySelector("button.create-image");
         const uploadBtn = bar.querySelector("button.upload-image");
+        const generateCheck = bar.querySelector("input.generate-image-credit");
+        const providerSelect = bar.querySelector("select.image-provider");
 
         const setDisabled = (disabled) => {
           if (createBtn) createBtn.disabled = disabled;
@@ -344,9 +346,13 @@
         };
 
         createBtn?.addEventListener("click", async () => {
+          if (!generateCheck?.checked) {
+            if (statusEl) statusEl.textContent = "Check the API credits box before generating an image.";
+            return;
+          }
           setDisabled(true);
           try {
-            await ensureImageForRecipe(recipe, card, statusEl);
+            await ensureImageForRecipe(recipe, card, statusEl, { provider: providerSelect?.value || "none" });
           } finally {
             setDisabled(false);
           }
@@ -371,7 +377,19 @@
           bar.innerHTML = `
             <div class="ds-image-actions-copy">
               <strong>No image yet.</strong>
-              <span>Create one with AI or upload your own (max 1MB).</span>
+              <span>Images may cost API credits. Cached images are reused.</span>
+              <label class="ds-check ds-image-credit-check">
+                <input class="generate-image-credit" type="checkbox" />
+                <span>Generate recipe image using API credits</span>
+              </label>
+              <label class="ds-image-provider-control">
+                <span>Image provider</span>
+                <select class="image-provider ds-input">
+                  <option value="none" selected>None</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="xai">xAI</option>
+                </select>
+              </label>
             </div>
             <div class="ds-image-actions-buttons">
               <button class="create-image ghost-action" type="button">Create image?</button>
@@ -394,16 +412,20 @@
         }, { once: true });
       }
 
-      async function ensureImageForRecipe(recipe, card, statusEl) {
+      async function ensureImageForRecipe(recipe, card, statusEl, { provider = "none", force_regenerate = false } = {}) {
         if (!recipe || !card) return;
         if (!recipe.recipe_id) return;
 
         if (statusEl) statusEl.textContent = "Generating image…";
         startAiTelemetry("Generating image", `Creating a photo for "${recipe.title || recipe.recipe_id}"...`);
-        const { response, data } = await postJson("/api/diabetic/ensure-image", { recipe_id: recipe.recipe_id });
+        const { response, data } = await postJson("/api/diabetic/image", {
+          recipe_id: recipe.recipe_id,
+          provider,
+          force_regenerate
+        });
         if (!response.ok) {
           const msg = data?.route === "api_unavailable"
-            ? "OpenAI not configured."
+            ? (data?.error || "Image provider not configured.")
             : (data?.error || `HTTP ${response.status}`);
           if (statusEl) statusEl.textContent = msg;
           failTelemetry("Image failed", msg);
@@ -412,7 +434,7 @@
 
         const imageUrl = normalizeAssetUrl(data?.recipe?.image_url ?? data?.image_url ?? "");
         if (!imageUrl) {
-          if (statusEl) statusEl.textContent = "Image unavailable";
+          if (statusEl) statusEl.textContent = data?.reason || "No image generated.";
           finishTelemetry("Image ready", data);
           return;
         }
@@ -589,7 +611,19 @@
             <div class="ds-image-actions" aria-label="Recipe image actions">
               <div class="ds-image-actions-copy">
                 <strong>No image yet.</strong>
-                <span>Create one with AI or upload your own (max 1MB).</span>
+                <span>Images may cost API credits. Cached images are reused.</span>
+                <label class="ds-check ds-image-credit-check">
+                  <input class="generate-image-credit" type="checkbox" />
+                  <span>Generate recipe image using API credits</span>
+                </label>
+                <label class="ds-image-provider-control">
+                  <span>Image provider</span>
+                  <select class="image-provider ds-input">
+                    <option value="none" selected>None</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="xai">xAI</option>
+                  </select>
+                </label>
               </div>
               <div class="ds-image-actions-buttons">
                 <button class="create-image ghost-action" type="button">Create image?</button>

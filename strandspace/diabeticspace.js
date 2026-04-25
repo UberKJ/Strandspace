@@ -177,6 +177,15 @@ function parseRecipeRow(row) {
     gi_notes: String(row.gi_notes ?? "").trim() || null,
     trigger_words: safeJsonParse(row.trigger_words, []),
     image_url: String(row.image_url ?? "").trim() || null,
+    image_provider: String(row.image_provider ?? "").trim() || null,
+    image_model: String(row.image_model ?? "").trim() || null,
+    image_quality: String(row.image_quality ?? "").trim() || null,
+    image_size: String(row.image_size ?? "").trim() || null,
+    image_prompt_hash: String(row.image_prompt_hash ?? "").trim() || null,
+    image_generated_at: String(row.image_generated_at ?? "").trim() || null,
+    image_generation_latency_ms: row.image_generation_latency_ms === null || row.image_generation_latency_ms === undefined
+      ? null
+      : Number(row.image_generation_latency_ms),
     source: String(row.source ?? "").trim() || null,
     recall_count: Number(row.recall_count ?? 0),
     created_at: String(row.created_at ?? "").trim() || null
@@ -245,6 +254,31 @@ export function initDiabeticDb(db) {
   if (!recipeColumns.includes("image_url")) {
     db.exec("ALTER TABLE diabetic_recipes ADD COLUMN image_url TEXT;");
   }
+  const imageColumns = {
+    image_provider: "TEXT",
+    image_model: "TEXT",
+    image_quality: "TEXT",
+    image_size: "TEXT",
+    image_prompt_hash: "TEXT",
+    image_generated_at: "TEXT",
+    image_generation_latency_ms: "REAL"
+  };
+  for (const [column, type] of Object.entries(imageColumns)) {
+    if (!recipeColumns.includes(column)) {
+      db.exec(`ALTER TABLE diabetic_recipes ADD COLUMN ${column} ${type};`);
+    }
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS diabetic_image_generations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recipe_id TEXT,
+      image_provider TEXT,
+      image_model TEXT,
+      image_url TEXT,
+      generated_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_diabetic_image_generations_generated_at ON diabetic_image_generations(generated_at);
+  `);
 }
 
 export function getDiabeticRecipeById(db, recipeId) {
@@ -336,13 +370,67 @@ export function saveDiabeticRecipe(db, recipeObj = {}) {
   return getDiabeticRecipeById(db, normalized.recipe_id);
 }
 
-export function setDiabeticRecipeImage(db, recipeId, imageUrl) {
+export function setDiabeticRecipeImage(db, recipeId, imageUrl, metadata = {}) {
   initDiabeticDb(db);
   const recipe_id = String(recipeId ?? "").trim();
   if (!recipe_id) return null;
   const image_url = String(imageUrl ?? "").trim() || null;
-  db.prepare("UPDATE diabetic_recipes SET image_url = ? WHERE recipe_id = ?").run(image_url, recipe_id);
+  db.prepare(`
+    UPDATE diabetic_recipes
+    SET image_url = ?,
+        image_provider = ?,
+        image_model = ?,
+        image_quality = ?,
+        image_size = ?,
+        image_prompt_hash = ?,
+        image_generated_at = ?,
+        image_generation_latency_ms = ?
+    WHERE recipe_id = ?
+  `).run(
+    image_url,
+    String(metadata?.image_provider ?? metadata?.provider ?? "").trim() || null,
+    String(metadata?.image_model ?? metadata?.model ?? "").trim() || null,
+    String(metadata?.image_quality ?? metadata?.quality ?? "").trim() || null,
+    String(metadata?.image_size ?? metadata?.size ?? "").trim() || null,
+    String(metadata?.image_prompt_hash ?? metadata?.promptHash ?? "").trim() || null,
+    String(metadata?.image_generated_at ?? metadata?.generatedAt ?? "").trim() || null,
+    Number.isFinite(Number(metadata?.image_generation_latency_ms ?? metadata?.latencyMs))
+      ? Number(metadata?.image_generation_latency_ms ?? metadata?.latencyMs)
+      : null,
+    recipe_id
+  );
   return getDiabeticRecipeById(db, recipe_id);
+}
+
+export function recordDiabeticImageGeneration(db, {
+  recipe_id = "",
+  image_provider = "",
+  image_model = "",
+  image_url = "",
+  generated_at = ""
+} = {}) {
+  initDiabeticDb(db);
+  db.prepare(`
+    INSERT INTO diabetic_image_generations (recipe_id, image_provider, image_model, image_url, generated_at)
+    VALUES (?, ?, ?, ?, COALESCE(NULLIF(?, ''), datetime('now')))
+  `).run(
+    String(recipe_id ?? "").trim() || null,
+    String(image_provider ?? "").trim() || null,
+    String(image_model ?? "").trim() || null,
+    String(image_url ?? "").trim() || null,
+    String(generated_at ?? "").trim()
+  );
+}
+
+export function countDiabeticImagesGeneratedToday(db, day = "") {
+  initDiabeticDb(db);
+  const targetDay = String(day ?? "").trim() || new Date().toISOString().slice(0, 10);
+  const row = db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM diabetic_image_generations
+    WHERE date(generated_at) = date(?)
+  `).get(targetDay);
+  return Number(row?.count ?? 0);
 }
 
 export function deleteDiabeticRecipe(db, recipeId) {

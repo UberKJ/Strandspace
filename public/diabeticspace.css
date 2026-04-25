@@ -541,7 +541,7 @@ body.diabeticspace {
 
 .ds-image-actions-copy {
   display: grid;
-  gap: 2px;
+  gap: 8px;
 }
 
 .ds-image-actions-copy strong {
@@ -558,6 +558,22 @@ body.diabeticspace {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.ds-image-credit-check {
+  margin-top: 4px;
+}
+
+.ds-image-provider-control {
+  display: grid;
+  gap: 6px;
+  color: rgba(199, 190, 228, 0.82);
+  font-weight: 750;
+}
+
+.ds-image-provider-control .ds-input {
+  min-height: 40px;
+  max-width: 220px;
 }
 
 .ds-recipe-image {

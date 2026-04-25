@@ -14,6 +14,14 @@ import {
 } from "../strandspace/diabeticspace.js";
 import { __setDiabeticAssistMock, __setDiabeticImageMock } from "../strandspace/diabetic-assist.js";
 
+function clearImageEnv() {
+  delete process.env.DIABETICSPACE_IMAGE_PROVIDER;
+  delete process.env.DIABETICSPACE_XAI_IMAGE_MODEL;
+  delete process.env.DIABETICSPACE_IMAGE_DAILY_LIMIT;
+  delete process.env.DIABETICSPACE_AUTOGENERATE_IMAGES;
+  delete process.env.XAI_API_KEY;
+}
+
 function buildMockRecipe({
   recipe_id = "mock-recipe",
   title = "Mock Recipe",
@@ -197,10 +205,14 @@ export async function registerDiabeticspaceTests({
       capturedInput = String(input ?? "");
       return buildMockRecipe({ recipe_id: `search-ai-${Date.now()}`, title: "Search AI Recipe", meal_type: "dinner" });
     });
-    __setDiabeticImageMock(() => Buffer.from(
+    let imageCalls = 0;
+    __setDiabeticImageMock(() => {
+      imageCalls += 1;
+      return Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+Xo2YAAAAASUVORK5CYII=",
       "base64"
-    ));
+      );
+    });
     await withServer(async (address) => {
       const response = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/search-create`, {
         query: "salmon dinner",
@@ -210,6 +222,8 @@ export async function registerDiabeticspaceTests({
       const payload = await response.json();
       assert.equal(payload.ai_used, true);
       assert.ok(payload.recipe);
+      assert.equal(payload.recipe.image_url, null);
+      assert.equal(imageCalls, 0);
       assert.ok(Array.isArray(payload.matches));
       assert.ok(payload.matches.length >= 1);
       assert.match(capturedInput, /baked-lemon-herb-salmon/);
@@ -282,39 +296,154 @@ export async function registerDiabeticspaceTests({
       assert.ok(String(got.recipe.image_url ?? "").includes(filename));
     });
   });
-  await check("POST /api/diabetic/ensure-image generates and persists image_url", async () => {
-    process.env.OPENAI_API_KEY = "test-key";
-    __setDiabeticImageMock(() => Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+Xo2YAAAAASUVORK5CYII=",
-      "base64"
-    ));
+  await check("GET /api/diabetic/image/status defaults images off", async () => {
+    clearImageEnv();
+    await withServer(async (address) => {
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/image/status`);
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.enabled, false);
+      assert.equal(payload.provider, "none");
+      assert.equal(payload.cache_enabled, true);
+    });
+  });
 
-    const recipeId = `ensure-image-${Date.now()}`;
+  await check("POST /api/diabetic/image with provider=none never calls image API", async () => {
+    let imageCalls = 0;
+    __setDiabeticImageMock(() => {
+      imageCalls += 1;
+      return Buffer.from("not-used");
+    });
+
+    const recipeId = `image-none-${Date.now()}`;
+    const db = new DatabaseSync(tempDatabasePath);
+    saveDiabeticRecipe(db, { ...buildMockRecipe({ recipe_id: recipeId, title: "No Image Recipe", meal_type: "dinner" }), source: "seed" });
+    db.close();
+
+    await withServer(async (address) => {
+      const response = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/image`, { recipe_id: recipeId, provider: "none" });
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.created, false);
+      assert.equal(payload.provider, "none");
+      assert.equal(payload.recipe.image_url, null);
+      assert.equal(imageCalls, 0);
+    });
+
+    __setDiabeticImageMock(null);
+  });
+
+  await check("POST /api/diabetic/image generates, caches, and force regenerates", async () => {
+    process.env.OPENAI_API_KEY = "test-key";
+    let imageCalls = 0;
+    __setDiabeticImageMock(() => {
+      imageCalls += 1;
+      return Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+Xo2YAAAAASUVORK5CYII=",
+        "base64"
+      );
+    });
+
+    const recipeId = `image-cache-${Date.now()}`;
     const db = new DatabaseSync(tempDatabasePath);
     saveDiabeticRecipe(db, { ...buildMockRecipe({ recipe_id: recipeId, title: "Ensure Image Recipe", meal_type: "dinner" }), source: "seed" });
     db.close();
 
     await withServer(async (address) => {
-      const response = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/ensure-image`, { recipe_id: recipeId });
-      assert.equal(response.status, 200);
-      const payload = await response.json();
-      assert.equal(payload.ok, true);
-      assert.ok(payload.recipe?.image_url);
+      const first = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/image`, { recipe_id: recipeId, provider: "openai" });
+      assert.equal(first.status, 200);
+      const firstPayload = await first.json();
+      assert.equal(firstPayload.created, true);
+      assert.ok(firstPayload.recipe?.image_url);
+      assert.equal(firstPayload.image.image_provider, "openai");
+      assert.equal(imageCalls, 1);
 
-      const filename = String(payload.recipe.image_url).split("/").pop();
+      const second = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/image`, { recipe_id: recipeId, provider: "openai" });
+      assert.equal(second.status, 200);
+      const secondPayload = await second.json();
+      assert.equal(secondPayload.cached, true);
+      assert.equal(imageCalls, 1);
+
+      const forced = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/image`, { recipe_id: recipeId, provider: "openai", force_regenerate: true });
+      assert.equal(forced.status, 200);
+      const forcedPayload = await forced.json();
+      assert.equal(forcedPayload.created, true);
+      assert.equal(imageCalls, 2);
+
+      const filename = String(forcedPayload.recipe.image_url).split("/").pop();
       const dir = String(process.env.DIABETICSPACE_IMAGE_DIR ?? "");
       assert.ok(dir);
       await access(join(dir, filename));
-
-      const followup = await fetch(`http://127.0.0.1:${address.port}/api/diabetic/recipe?recipe_id=${encodeURIComponent(recipeId)}`);
-      assert.equal(followup.status, 200);
-      const followupPayload = await followup.json();
-      assert.equal(followupPayload.recipe.recipe_id, recipeId);
-      assert.equal(followupPayload.recipe.image_url, payload.recipe.image_url);
     });
 
     __setDiabeticImageMock(null);
     delete process.env.OPENAI_API_KEY;
+  });
+
+  await check("POST /api/diabetic/image missing xAI key returns clean JSON", async () => {
+    clearImageEnv();
+    process.env.DIABETICSPACE_XAI_IMAGE_MODEL = "test-xai-image";
+    delete process.env.XAI_API_KEY;
+    __setDiabeticImageMock(null);
+
+    const recipeId = `image-xai-missing-${Date.now()}`;
+    const db = new DatabaseSync(tempDatabasePath);
+    saveDiabeticRecipe(db, { ...buildMockRecipe({ recipe_id: recipeId, title: "xAI Missing Recipe", meal_type: "dinner" }), source: "seed" });
+    db.close();
+
+    await withServer(async (address) => {
+      const response = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/image`, { recipe_id: recipeId, provider: "xai" });
+      assert.equal(response.status, 503);
+      const payload = await response.json();
+      assert.equal(payload.route, "api_unavailable");
+      assert.match(payload.error, /XAI_API_KEY/);
+    });
+
+    clearImageEnv();
+  });
+
+  await check("daily image limit blocks generation without blocking text recipes", async () => {
+    process.env.OPENAI_API_KEY = "test-key";
+    process.env.DIABETICSPACE_IMAGE_DAILY_LIMIT = "1";
+    let imageCalls = 0;
+    __setDiabeticImageMock(() => {
+      imageCalls += 1;
+      return Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+Xo2YAAAAASUVORK5CYII=",
+        "base64"
+      );
+    });
+    __setDiabeticAssistMock(() => buildMockRecipe({ recipe_id: `text-after-image-fail-${Date.now()}`, title: "Text Still Works" }));
+
+    const firstRecipeId = `image-limit-a-${Date.now()}`;
+    const secondRecipeId = `image-limit-b-${Date.now()}`;
+    const db = new DatabaseSync(tempDatabasePath);
+    initDiabeticDb(db);
+    db.exec("DELETE FROM diabetic_image_generations;");
+    saveDiabeticRecipe(db, { ...buildMockRecipe({ recipe_id: firstRecipeId, title: "Limit A", meal_type: "dinner" }), source: "seed" });
+    saveDiabeticRecipe(db, { ...buildMockRecipe({ recipe_id: secondRecipeId, title: "Limit B", meal_type: "dinner" }), source: "seed" });
+    db.close();
+
+    await withServer(async (address) => {
+      const first = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/image`, { recipe_id: firstRecipeId, provider: "openai" });
+      assert.equal(first.status, 200);
+      const blocked = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/image`, { recipe_id: secondRecipeId, provider: "openai" });
+      assert.equal(blocked.status, 429);
+      const blockedPayload = await blocked.json();
+      assert.equal(blockedPayload.route, "image_daily_limit");
+      assert.equal(imageCalls, 1);
+
+      const chat = await postJson(`http://127.0.0.1:${address.port}/api/diabetic/chat`, { message: "brand new low carb dinner idea" });
+      assert.equal(chat.status, 200);
+      const chatPayload = await chat.json();
+      assert.ok(chatPayload.recipe);
+      assert.equal(chatPayload.recipe.image_url, null);
+    });
+
+    __setDiabeticAssistMock(null);
+    __setDiabeticImageMock(null);
+    delete process.env.OPENAI_API_KEY;
+    clearImageEnv();
   });
 
   await check("recallDiabeticRecipe finds seeded recipe from matching query", async () => {
