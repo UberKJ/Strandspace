@@ -88,6 +88,7 @@
     settingsProviderModel: document.getElementById("settings-provider-model"),
     settingsProviderModels: document.getElementById("settings-provider-models"),
     settingsProviderImageModel: document.getElementById("settings-provider-image-model"),
+    settingsProviderImageModels: document.getElementById("settings-provider-image-models"),
     settingsProviderSave: document.getElementById("settings-provider-save"),
     settingsProviderClear: document.getElementById("settings-provider-clear"),
     settingsProviderStatus: document.getElementById("settings-provider-status"),
@@ -1698,7 +1699,7 @@ async function testProviderDefaults() {
   }
 }
 
-async function runProviderTestAndUpdateUI({ body, statusEl, modelEl, modelsEl }) {
+async function runProviderTestAndUpdateUI({ body, statusEl, modelEl, modelsEl, imageModelEl, imageModelsEl }) {
   if (!statusEl) return;
   statusEl.textContent = "Testing connection...";
 
@@ -1707,6 +1708,9 @@ async function runProviderTestAndUpdateUI({ body, statusEl, modelEl, modelsEl })
 
   const models = Array.isArray(data?.models) ? data.models : [];
   if (modelsEl && models.length) populateModelDatalist(modelsEl, models);
+
+  const imageModels = Array.isArray(data?.image_models) ? data.image_models : [];
+  if (imageModelsEl && imageModels.length) populateModelDatalist(imageModelsEl, imageModels);
 
   const suggested = String(data?.suggested_model ?? data?.suggestedModel ?? "").trim();
   let appliedSuggestion = false;
@@ -1717,6 +1721,15 @@ async function runProviderTestAndUpdateUI({ body, statusEl, modelEl, modelsEl })
     if (!current || currentLower === "grok" || (!currentValid && models.length)) {
       modelEl.value = suggested;
       appliedSuggestion = true;
+    }
+  }
+
+  const suggestedImage = String(data?.suggested_image_model ?? "").trim();
+  if (suggestedImage && imageModelEl) {
+    const current = String(imageModelEl.value ?? "").trim();
+    const currentValid = current && imageModels.includes(current);
+    if (!current || (!currentValid && imageModels.length)) {
+      imageModelEl.value = suggestedImage;
     }
   }
 
@@ -1773,14 +1786,17 @@ async function testProviderDefaultsEnhanced() {
     provider_id: providerId,
     api_key: String(els.settingsProviderApiKey?.value ?? "").trim(),
     base_url: String(els.settingsProviderBaseUrl?.value ?? "").trim(),
-    model: String(els.settingsProviderModel?.value ?? "").trim()
+    model: String(els.settingsProviderModel?.value ?? "").trim(),
+    image_model: String(els.settingsProviderImageModel?.value ?? "").trim()
   };
 
   await runProviderTestAndUpdateUI({
     body,
     statusEl: els.settingsProviderTestStatus,
     modelEl: els.settingsProviderModel,
-    modelsEl: els.settingsProviderModels
+    modelsEl: els.settingsProviderModels,
+    imageModelEl: els.settingsProviderImageModel,
+    imageModelsEl: els.settingsProviderImageModels
   });
 }
 

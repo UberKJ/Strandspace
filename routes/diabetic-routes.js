@@ -1093,6 +1093,7 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     let apiKey = String(payload.api_key ?? "").trim();
     let model = String(payload.model ?? "").trim();
     let baseUrl = String(payload.base_url ?? "").trim();
+    let imageModel = String(payload.image_model ?? "").trim();
 
     if (payload.profile_id) {
       const profile = listProfiles(db).find((p) => p.profile_id === String(payload.profile_id).trim()) ?? null;
@@ -1133,8 +1134,11 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     if (def?.fields?.base_url && !baseUrl) {
       baseUrl = String(overrides?.baseUrl ?? "").trim();
     }
+    if (def?.fields?.image_model && !imageModel) {
+      imageModel = String(overrides?.imageModel ?? "").trim();
+    }
 
-    const result = await testProviderConnection({ provider: providerId, apiKey, model, baseUrl });
+    const result = await testProviderConnection({ provider: providerId, apiKey, model, baseUrl, imageModel });
     sendJson(res, result.ok ? 200 : 502, result);
     return true;
   }

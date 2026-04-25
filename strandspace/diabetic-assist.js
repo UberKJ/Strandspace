@@ -685,6 +685,26 @@ async function listOpenAiModelIds({ apiKey = "", baseUrl = "" } = {}) {
     .filter(Boolean);
 }
 
+function deriveImageModelIdsFromModels(providerId, models) {
+  const provider = String(providerId ?? "").trim().toLowerCase();
+  const list = Array.isArray(models) ? models.map((m) => String(m ?? "").trim()).filter(Boolean) : [];
+  const image = list.filter((id) => {
+    const lower = id.toLowerCase();
+    return lower.includes("gpt-image") || lower.includes("dall-e") || lower.includes("image");
+  });
+
+  // The models endpoint does not always surface every image model. Provide a
+  // small, safe fallback for OpenAI so users can still select common options.
+  if (provider === "openai") {
+    const fallback = ["gpt-image-1", "dall-e-3", "dall-e-2"];
+    for (const id of fallback) {
+      if (!image.includes(id)) image.push(id);
+    }
+  }
+
+  return image;
+}
+
 async function listOllamaModelIds(baseUrl) {
   const endpoint = String(baseUrl ?? "").trim().replace(/\/+$/, "") || "http://localhost:11434";
   let response;
@@ -742,10 +762,28 @@ function suggestModelFromList(providerId, models, preferredModel) {
   return list[0] ?? "";
 }
 
+function suggestImageModelFromList(providerId, models, preferredModel) {
+  const provider = String(providerId ?? "").trim().toLowerCase();
+  const list = Array.isArray(models) ? models.map((m) => String(m ?? "").trim()).filter(Boolean) : [];
+  if (!list.length) return "";
+
+  const preferred = String(preferredModel ?? "").trim();
+  if (preferred && list.includes(preferred)) return preferred;
+
+  if (provider === "openai") {
+    const preferredOpenAi = ["gpt-image-1", "dall-e-3", "dall-e-2"];
+    for (const candidate of preferredOpenAi) {
+      if (list.includes(candidate)) return candidate;
+    }
+  }
+
+  return list[0] ?? "";
+}
+
 // Tiny ping used by the "Test connection" button. Returns latency + sample
 // reply text. Routes through the same dispatcher but uses a trivial prompt
 // that doesn't require structured JSON output.
-export async function testProviderConnection({ provider = "openai", apiKey = "", model = "", baseUrl = "" } = {}) {
+export async function testProviderConnection({ provider = "openai", apiKey = "", model = "", baseUrl = "", imageModel = "", image_model = "" } = {}) {
   const providerId = String(provider ?? "").trim().toLowerCase() || "openai";
   if (providerId === "none") {
     throw llmDisabledError(providerId);
@@ -777,6 +815,11 @@ export async function testProviderConnection({ provider = "openai", apiKey = "",
     } catch (listError) {
       modelsPayload = { ok: false, models: [], error: listError instanceof Error ? listError.message : String(listError) };
     }
+
+    const resolvedImageModel = String(imageModel || image_model || "").trim();
+    const imageModels = modelsPayload?.ok ? deriveImageModelIdsFromModels(providerId, modelsPayload.models) : [];
+    const suggestedImageModel = modelsPayload?.ok ? (suggestImageModelFromList(providerId, imageModels, resolvedImageModel) || null) : null;
+
     return {
       ok: false,
       provider: providerId,
@@ -785,7 +828,10 @@ export async function testProviderConnection({ provider = "openai", apiKey = "",
       code: error?.code ?? null,
       models: modelsPayload?.ok ? (modelsPayload.models ?? []) : [],
       models_error: modelsPayload && !modelsPayload.ok ? String(modelsPayload.error ?? "Unable to list models") : null,
-      suggested_model: modelsPayload?.ok ? (suggestModelFromList(providerId, modelsPayload.models, model) || null) : null
+      suggested_model: modelsPayload?.ok ? (suggestModelFromList(providerId, modelsPayload.models, model) || null) : null,
+      image_models: imageModels,
+      image_models_error: modelsPayload && !modelsPayload.ok ? String(modelsPayload.error ?? "Unable to list models") : null,
+      suggested_image_model: suggestedImageModel
     };
   }
 
@@ -795,6 +841,9 @@ export async function testProviderConnection({ provider = "openai", apiKey = "",
   } catch (listError) {
     modelsPayload = { ok: false, models: [], error: listError instanceof Error ? listError.message : String(listError) };
   }
+
+  const resolvedImageModel = String(imageModel || image_model || "").trim();
+  const imageModels = modelsPayload?.ok ? deriveImageModelIdsFromModels(providerId, modelsPayload.models) : [];
 
   return {
     ok: true,
@@ -809,7 +858,10 @@ export async function testProviderConnection({ provider = "openai", apiKey = "",
     models_error: modelsPayload && !modelsPayload.ok ? String(modelsPayload.error ?? "Unable to list models") : null,
     suggested_model: modelsPayload?.ok
       ? (suggestModelFromList(providerId, modelsPayload.models, result?.llm?.model ?? model) || null)
-      : null
+      : null,
+    image_models: imageModels,
+    image_models_error: modelsPayload && !modelsPayload.ok ? String(modelsPayload.error ?? "Unable to list models") : null,
+    suggested_image_model: modelsPayload?.ok ? (suggestImageModelFromList(providerId, imageModels, resolvedImageModel) || null) : null
   };
 }
 
