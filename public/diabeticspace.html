@@ -286,12 +286,7 @@
 
           <div class="ds-actions" style="gap: 12px; align-items: center; margin-top: 10px; flex-wrap: wrap;">
             <label class="ds-sub ds-sub-small" style="min-width: 180px;">Active text LLM</label>
-            <select id="settings-active-text-provider" class="ds-input" style="max-width: 220px;">
-              <option value="openai">OpenAI (Responses)</option>
-              <option value="openai_chat">OpenAI-compatible (Chat)</option>
-              <option value="ollama">Ollama (local)</option>
-              <option value="none">Disabled</option>
-            </select>
+            <select id="settings-active-text-provider" class="ds-input" style="max-width: 240px;"></select>
 
             <label class="ds-sub ds-sub-small" style="min-width: 180px;">Active image provider</label>
             <select id="settings-active-image-provider" class="ds-input" style="max-width: 220px;">
@@ -302,14 +297,53 @@
 
           <div class="ds-muted" id="settings-active-provider-status" style="margin-top: 10px;"></div>
 
-          <div class="ds-actions" style="gap: 12px; align-items: center; margin-top: 10px;">
-            <select id="settings-provider" class="ds-input" style="max-width: 220px;">
-              <option value="openai">OpenAI (Responses)</option>
-              <option value="openai_chat">OpenAI-compatible (Chat)</option>
-              <option value="ollama">Ollama (local)</option>
-              <option value="none">Disabled</option>
+          <hr style="border:0;border-top:1px solid rgba(170, 150, 255, 0.10); margin: 16px 0;" />
+
+          <h3 style="margin: 10px 0 6px 0;">Saved profiles</h3>
+          <p class="ds-sub ds-sub-small">Save several LLM configurations and switch between them. The active profile overrides the per-provider defaults below.</p>
+
+          <div class="ds-actions" style="gap: 12px; align-items: center; margin-top: 10px; flex-wrap: wrap;">
+            <select id="settings-profile-select" class="ds-input" style="max-width: 320px;">
+              <option value="">— No profile selected —</option>
             </select>
+            <button id="settings-profile-activate" type="button" class="primary-action">Set active</button>
+            <button id="settings-profile-clear-active" type="button" class="ghost-action">Clear active</button>
+            <button id="settings-profile-delete" type="button" class="ghost-action">Delete</button>
+          </div>
+
+          <details style="margin-top: 10px;">
+            <summary class="ds-sub ds-sub-small" style="cursor: pointer;">Add a new profile</summary>
+            <div class="ds-actions" style="gap: 12px; align-items: center; margin-top: 10px; flex-wrap: wrap;">
+              <input id="settings-profile-label" type="text" class="ds-input" placeholder="Profile label (e.g. 'Work Claude')" style="max-width: 280px;" />
+              <select id="settings-profile-provider" class="ds-input" style="max-width: 220px;"></select>
+            </div>
+            <div class="ds-actions" style="gap: 12px; align-items: center; margin-top: 10px; flex-wrap: wrap;">
+              <input id="settings-profile-api-key" type="password" class="ds-input" placeholder="API key (optional, stored locally)" style="max-width: 360px;" />
+              <input id="settings-profile-base-url" type="text" class="ds-input" placeholder="Base URL (optional)" style="max-width: 320px;" />
+              <input id="settings-profile-model" type="text" class="ds-input" placeholder="Model (optional)" style="max-width: 220px;" list="settings-profile-models" />
+              <datalist id="settings-profile-models"></datalist>
+            </div>
+            <div class="ds-actions" style="gap: 12px; align-items: center; margin-top: 10px;">
+              <button id="settings-profile-save" type="button" class="primary-action">Save profile</button>
+              <button id="settings-profile-test" type="button" class="ghost-action">Test connection</button>
+              <label class="ds-check">
+                <input id="settings-profile-set-active" type="checkbox" checked />
+                <span>Set as active after saving</span>
+              </label>
+            </div>
+          </details>
+
+          <div class="ds-muted" id="settings-profile-status" style="margin-top: 10px;"></div>
+
+          <hr style="border:0;border-top:1px solid rgba(170, 150, 255, 0.10); margin: 16px 0;" />
+
+          <h3 style="margin: 10px 0 6px 0;">Per-provider defaults</h3>
+          <p class="ds-sub ds-sub-small">These are the credentials used when no profile is active. Pick a provider, then save its key/model.</p>
+
+          <div class="ds-actions" style="gap: 12px; align-items: center; margin-top: 10px;">
+            <select id="settings-provider" class="ds-input" style="max-width: 240px;"></select>
             <button id="settings-provider-refresh" type="button" class="ghost-action">Refresh</button>
+            <button id="settings-provider-test" type="button" class="ghost-action">Test connection</button>
           </div>
 
           <div class="ds-actions" style="gap: 12px; align-items: center; margin-top: 10px; flex-wrap: wrap;">
@@ -320,11 +354,13 @@
 
           <div class="ds-actions" style="gap: 12px; align-items: center; margin-top: 10px; flex-wrap: wrap;">
             <input id="settings-provider-base-url" type="text" class="ds-input" placeholder="Base URL (optional)" style="max-width: 360px;" />
-            <input id="settings-provider-model" type="text" class="ds-input" placeholder="Model (optional)" style="max-width: 240px;" />
+            <input id="settings-provider-model" type="text" class="ds-input" placeholder="Model (optional)" style="max-width: 240px;" list="settings-provider-models" />
+            <datalist id="settings-provider-models"></datalist>
             <input id="settings-provider-image-model" type="text" class="ds-input" placeholder="Image model (optional)" style="max-width: 240px;" />
           </div>
 
           <div class="ds-muted" id="settings-provider-status" style="margin-top: 10px;"></div>
+          <div class="ds-muted" id="settings-provider-test-status" style="margin-top: 6px;"></div>
 
           <hr style="border:0;border-top:1px solid rgba(170, 150, 255, 0.16); margin: 16px 0;" />
 

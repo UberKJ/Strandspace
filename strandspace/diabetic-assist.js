@@ -1,3 +1,4 @@
+// Strandspace LLM dispatch module (multi-provider).
 import OpenAI from "openai";
 import { execFileSync } from "node:child_process";
 import { access, mkdir, writeFile } from "node:fs/promises";
@@ -408,6 +409,225 @@ async function runOllama({
   };
 }
 
+// --- Named OpenAI-compatible providers ----------------------------------
+// Each entry is a label + default base URL + default model. The actual call
+// is made through runOpenAiChat with the configured base_url + api_key, so
+// any vendor that implements the OpenAI Chat Completions schema works here.
+const OPENAI_COMPATIBLE_PRESETS = {
+  mistral: { label: "Mistral", baseUrl: "https://api.mistral.ai/v1", defaultModel: "mistral-large-latest" },
+  groq: { label: "Groq", baseUrl: "https://api.groq.com/openai/v1", defaultModel: "llama-3.3-70b-versatile" },
+  xai: { label: "xAI (Grok)", baseUrl: "https://api.x.ai/v1", defaultModel: "grok-2-latest" },
+  together: { label: "Together AI", baseUrl: "https://api.together.xyz/v1", defaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo" },
+  openrouter: { label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", defaultModel: "openrouter/auto" },
+  deepseek: { label: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", defaultModel: "deepseek-chat" },
+  custom: { label: "Custom (OpenAI-compatible)", baseUrl: "", defaultModel: "" }
+};
+
+export function getOpenAiCompatiblePresets() {
+  return Object.fromEntries(Object.entries(OPENAI_COMPATIBLE_PRESETS).map(([k, v]) => [k, { ...v }]));
+}
+
+function isOpenAiCompatibleProvider(providerId) {
+  return Object.prototype.hasOwnProperty.call(OPENAI_COMPATIBLE_PRESETS, String(providerId ?? "").toLowerCase());
+}
+
+async function runOpenAiCompatible({
+  systemPrompt,
+  input,
+  routeLabel,
+  apiKey = "",
+  model = "",
+  baseUrl = "",
+  provider = "custom"
+}) {
+  const preset = OPENAI_COMPATIBLE_PRESETS[provider] ?? OPENAI_COMPATIBLE_PRESETS.custom;
+  const resolvedBaseUrl = String(baseUrl ?? "").trim() || preset.baseUrl;
+  const chosenModel = String(model ?? "").trim() || preset.defaultModel || DEFAULT_MODEL;
+
+  if (!resolvedBaseUrl) {
+    const error = new Error(`${provider}: base_url is required (no default for custom)`);
+    error.code = "PROVIDER_BASE_URL_MISSING";
+    throw error;
+  }
+
+  return runOpenAiChat({
+    systemPrompt,
+    input,
+    routeLabel,
+    apiKey,
+    model: chosenModel,
+    baseUrl: resolvedBaseUrl,
+    provider
+  });
+}
+
+function anthropicUnavailableError(message) {
+  const error = new Error(message || "Anthropic API not reachable");
+  error.code = "ANTHROPIC_UNAVAILABLE";
+  return error;
+}
+
+async function runAnthropic({
+  systemPrompt,
+  input,
+  routeLabel,
+  apiKey = "",
+  model = "",
+  baseUrl = "",
+  provider = "anthropic"
+}) {
+  const resolvedKey = String(apiKey ?? "").trim() || String(process.env.ANTHROPIC_API_KEY ?? "").trim();
+  if (!resolvedKey) {
+    const error = new Error("ANTHROPIC_API_KEY not configured");
+    error.code = "ANTHROPIC_API_KEY_MISSING";
+    throw error;
+  }
+  const chosenModel = String(model ?? "").trim() || String(process.env.ANTHROPIC_MODEL ?? "").trim() || "claude-sonnet-4-6";
+  const endpoint = (String(baseUrl ?? "").trim() || "https://api.anthropic.com").replace(/\/+$/, "");
+
+  if (mock) {
+    const recipe = await mock({ systemPrompt, input, routeLabel, provider, model: chosenModel, baseUrl: endpoint });
+    return {
+      recipe,
+      llm: {
+        provider, model: chosenModel, latencyMs: null, responseId: null,
+        inputTokens: null, outputTokens: null, totalTokens: null
+      }
+    };
+  }
+
+  const started = performance.now();
+  let response;
+  try {
+    response = await fetch(`${endpoint}/v1/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": resolvedKey,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model: chosenModel,
+        max_tokens: 2048,
+        system: systemPrompt,
+        messages: [{ role: "user", content: input }]
+      })
+    });
+  } catch (error) {
+    throw anthropicUnavailableError(error instanceof Error ? error.message : "Anthropic API not reachable");
+  }
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw anthropicUnavailableError(`Anthropic returned HTTP ${response.status}${text ? `: ${text.slice(0, 240)}` : ""}`);
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  const content = Array.isArray(payload?.content)
+    ? payload.content.map((block) => String(block?.text ?? "")).join("")
+    : "";
+  const recipe = parseJsonOrThrow(content, routeLabel);
+  const usage = normalizeUsage({
+    input_tokens: payload?.usage?.input_tokens,
+    output_tokens: payload?.usage?.output_tokens
+  });
+
+  return {
+    recipe,
+    llm: {
+      provider,
+      model: payload?.model ?? chosenModel,
+      latencyMs: Number((performance.now() - started).toFixed(3)),
+      responseId: payload?.id ?? null,
+      inputTokens: usage?.inputTokens ?? null,
+      outputTokens: usage?.outputTokens ?? null,
+      totalTokens: usage?.totalTokens ?? null
+    }
+  };
+}
+
+function geminiUnavailableError(message) {
+  const error = new Error(message || "Google Gemini API not reachable");
+  error.code = "GEMINI_UNAVAILABLE";
+  return error;
+}
+
+async function runGemini({
+  systemPrompt,
+  input,
+  routeLabel,
+  apiKey = "",
+  model = "",
+  baseUrl = "",
+  provider = "gemini"
+}) {
+  const resolvedKey = String(apiKey ?? "").trim()
+    || String(process.env.GOOGLE_API_KEY ?? "").trim()
+    || String(process.env.GEMINI_API_KEY ?? "").trim();
+  if (!resolvedKey) {
+    const error = new Error("GOOGLE_API_KEY (or GEMINI_API_KEY) not configured");
+    error.code = "GEMINI_API_KEY_MISSING";
+    throw error;
+  }
+  const chosenModel = String(model ?? "").trim() || String(process.env.GEMINI_MODEL ?? "").trim() || "gemini-1.5-flash";
+  const endpoint = (String(baseUrl ?? "").trim() || "https://generativelanguage.googleapis.com").replace(/\/+$/, "");
+
+  if (mock) {
+    const recipe = await mock({ systemPrompt, input, routeLabel, provider, model: chosenModel, baseUrl: endpoint });
+    return {
+      recipe,
+      llm: {
+        provider, model: chosenModel, latencyMs: null, responseId: null,
+        inputTokens: null, outputTokens: null, totalTokens: null
+      }
+    };
+  }
+
+  const started = performance.now();
+  let response;
+  const url = `${endpoint}/v1beta/models/${encodeURIComponent(chosenModel)}:generateContent?key=${encodeURIComponent(resolvedKey)}`;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { role: "system", parts: [{ text: systemPrompt }] },
+        contents: [{ role: "user", parts: [{ text: input }] }],
+        generationConfig: { responseMimeType: "application/json", temperature: 0.2 }
+      })
+    });
+  } catch (error) {
+    throw geminiUnavailableError(error instanceof Error ? error.message : "Gemini API not reachable");
+  }
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw geminiUnavailableError(`Gemini returned HTTP ${response.status}${text ? `: ${text.slice(0, 240)}` : ""}`);
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  const content = (payload?.candidates?.[0]?.content?.parts ?? [])
+    .map((part) => String(part?.text ?? ""))
+    .join("");
+  const recipe = parseJsonOrThrow(content, routeLabel);
+  const usage = normalizeUsage({
+    prompt_tokens: payload?.usageMetadata?.promptTokenCount,
+    completion_tokens: payload?.usageMetadata?.candidatesTokenCount,
+    total_tokens: payload?.usageMetadata?.totalTokenCount
+  });
+
+  return {
+    recipe,
+    llm: {
+      provider,
+      model: chosenModel,
+      latencyMs: Number((performance.now() - started).toFixed(3)),
+      responseId: payload?.responseId ?? null,
+      inputTokens: usage?.inputTokens ?? null,
+      outputTokens: usage?.outputTokens ?? null,
+      totalTokens: usage?.totalTokens ?? null
+    }
+  };
+}
+
 async function runRecipeProvider(providerId, args) {
   const provider = String(providerId ?? "").trim().toLowerCase() || "openai";
   if (provider === "openai") {
@@ -419,12 +639,181 @@ async function runRecipeProvider(providerId, args) {
   if (provider === "ollama") {
     return runOllama({ ...args, provider: "ollama" });
   }
+  if (provider === "anthropic") {
+    return runAnthropic({ ...args, provider: "anthropic" });
+  }
+  if (provider === "gemini") {
+    return runGemini({ ...args, provider: "gemini" });
+  }
+  if (isOpenAiCompatibleProvider(provider)) {
+    return runOpenAiCompatible({ ...args, provider });
+  }
   if (provider === "none") {
     throw llmDisabledError(provider);
   }
   return runOpenAi({ ...args, provider: "openai" });
 }
 
+function resolveProviderBaseUrl(providerId, baseUrl) {
+  const trimmed = String(baseUrl ?? "").trim();
+  if (trimmed) return trimmed;
+  if (isOpenAiCompatibleProvider(providerId)) {
+    return OPENAI_COMPATIBLE_PRESETS[providerId]?.baseUrl ?? "";
+  }
+  if (providerId === "ollama") {
+    return "http://localhost:11434";
+  }
+  return "";
+}
+
+function resolveProviderDefaultModel(providerId) {
+  if (isOpenAiCompatibleProvider(providerId)) {
+    return OPENAI_COMPATIBLE_PRESETS[providerId]?.defaultModel ?? "";
+  }
+  if (providerId === "ollama") {
+    return "llama3.1";
+  }
+  return "";
+}
+
+async function listOpenAiModelIds({ apiKey = "", baseUrl = "" } = {}) {
+  const openai = getClient({ apiKey, baseUrl });
+  const page = await openai.models.list();
+  const data = Array.isArray(page?.data) ? page.data : [];
+  return data
+    .map((row) => String(row?.id ?? "").trim())
+    .filter(Boolean);
+}
+
+async function listOllamaModelIds(baseUrl) {
+  const endpoint = String(baseUrl ?? "").trim().replace(/\/+$/, "") || "http://localhost:11434";
+  let response;
+  try {
+    response = await fetch(`${endpoint}/api/tags`, { method: "GET" });
+  } catch (error) {
+    throw ollamaUnavailableError(error instanceof Error ? error.message : "Ollama server not reachable");
+  }
+  if (!response.ok) {
+    throw ollamaUnavailableError(`Ollama returned HTTP ${response.status}`);
+  }
+  const payload = await response.json().catch(() => ({}));
+  const models = Array.isArray(payload?.models) ? payload.models : [];
+  return models
+    .map((row) => String(row?.name ?? "").trim())
+    .filter(Boolean);
+}
+
+async function tryListProviderModels(providerId, { apiKey = "", baseUrl = "" } = {}) {
+  const provider = String(providerId ?? "").trim().toLowerCase() || "openai";
+  if (provider === "openai") {
+    const models = await listOpenAiModelIds({ apiKey, baseUrl: "" });
+    return { ok: true, models };
+  }
+  if (provider === "openai_chat" || isOpenAiCompatibleProvider(provider)) {
+    const resolvedBaseUrl = resolveProviderBaseUrl(provider, baseUrl);
+    if (!resolvedBaseUrl) {
+      return { ok: false, models: [], error: "base_url is required to list models" };
+    }
+    const models = await listOpenAiModelIds({ apiKey, baseUrl: resolvedBaseUrl });
+    return { ok: true, models };
+  }
+  if (provider === "ollama") {
+    const resolvedBaseUrl = resolveProviderBaseUrl(provider, baseUrl);
+    const models = await listOllamaModelIds(resolvedBaseUrl);
+    return { ok: true, models };
+  }
+  return { ok: false, models: [], error: "Model listing not supported for this provider." };
+}
+
+function suggestModelFromList(providerId, models, preferredModel) {
+  const list = Array.isArray(models) ? models.map((m) => String(m ?? "").trim()).filter(Boolean) : [];
+  if (!list.length) return "";
+  const preferred = String(preferredModel ?? "").trim();
+  if (preferred && list.includes(preferred)) return preferred;
+
+  const fallback = resolveProviderDefaultModel(providerId);
+  if (fallback && list.includes(fallback)) return fallback;
+
+  if (providerId === "xai") {
+    const grok = list.find((m) => m === "grok-2-latest" || m.startsWith("grok-2")) ?? "";
+    if (grok) return grok;
+  }
+
+  return list[0] ?? "";
+}
+
+// Tiny ping used by the "Test connection" button. Returns latency + sample
+// reply text. Routes through the same dispatcher but uses a trivial prompt
+// that doesn't require structured JSON output.
+export async function testProviderConnection({ provider = "openai", apiKey = "", model = "", baseUrl = "" } = {}) {
+  const providerId = String(provider ?? "").trim().toLowerCase() || "openai";
+  if (providerId === "none") {
+    throw llmDisabledError(providerId);
+  }
+  const started = performance.now();
+  // We reuse the recipe dispatcher but with a no-op JSON shape: a system that
+  // asks for {"ok": true} guarantees a small, parseable response everywhere.
+  const args = {
+    systemPrompt: "You are a connection test. Reply ONLY with the JSON object: {\"ok\": true}. No prose.",
+    input: "ping",
+    routeLabel: "testProviderConnection",
+    apiKey,
+    model,
+    baseUrl
+  };
+  let result;
+  try {
+    if (providerId === "openai") result = await runOpenAi({ ...args, provider: providerId });
+    else if (providerId === "openai_chat") result = await runOpenAiChat({ ...args, provider: providerId });
+    else if (providerId === "ollama") result = await runOllama({ ...args, provider: providerId });
+    else if (providerId === "anthropic") result = await runAnthropic({ ...args, provider: providerId });
+    else if (providerId === "gemini") result = await runGemini({ ...args, provider: providerId });
+    else if (isOpenAiCompatibleProvider(providerId)) result = await runOpenAiCompatible({ ...args, provider: providerId });
+    else result = await runOpenAi({ ...args, provider: "openai" });
+  } catch (error) {
+    let modelsPayload = null;
+    try {
+      modelsPayload = await tryListProviderModels(providerId, { apiKey, baseUrl });
+    } catch (listError) {
+      modelsPayload = { ok: false, models: [], error: listError instanceof Error ? listError.message : String(listError) };
+    }
+    return {
+      ok: false,
+      provider: providerId,
+      latencyMs: Number((performance.now() - started).toFixed(3)),
+      error: error instanceof Error ? error.message : String(error),
+      code: error?.code ?? null,
+      models: modelsPayload?.ok ? (modelsPayload.models ?? []) : [],
+      models_error: modelsPayload && !modelsPayload.ok ? String(modelsPayload.error ?? "Unable to list models") : null,
+      suggested_model: modelsPayload?.ok ? (suggestModelFromList(providerId, modelsPayload.models, model) || null) : null
+    };
+  }
+
+  let modelsPayload = null;
+  try {
+    modelsPayload = await tryListProviderModels(providerId, { apiKey, baseUrl });
+  } catch (listError) {
+    modelsPayload = { ok: false, models: [], error: listError instanceof Error ? listError.message : String(listError) };
+  }
+
+  return {
+    ok: true,
+    provider: providerId,
+    latencyMs: result?.llm?.latencyMs ?? Number((performance.now() - started).toFixed(3)),
+    model: result?.llm?.model ?? model,
+    inputTokens: result?.llm?.inputTokens ?? null,
+    outputTokens: result?.llm?.outputTokens ?? null,
+    totalTokens: result?.llm?.totalTokens ?? null,
+    sample: result?.recipe ?? null,
+    models: modelsPayload?.ok ? (modelsPayload.models ?? []) : [],
+    models_error: modelsPayload && !modelsPayload.ok ? String(modelsPayload.error ?? "Unable to list models") : null,
+    suggested_model: modelsPayload?.ok
+      ? (suggestModelFromList(providerId, modelsPayload.models, result?.llm?.model ?? model) || null)
+      : null
+  };
+}
+
+// ----- recipe entry points -----------------------------------------------
 export async function generateDiabeticRecipe(userMessage, localRecallResult, { provider = "openai", apiKey = "", model = "", baseUrl = "" } = {}) {
   const systemPrompt = "You are a diabetic-friendly recipe assistant. You only suggest recipes appropriate for people managing Type 1 or Type 2 diabetes. All recipes must be low glycemic index (GI < 55 preferred), low in added sugar, and blood-sugar friendly. When asked for a recipe, always return a JSON object with these exact keys: recipe_id, title, meal_type, description, ingredients (array of {name,amount,unit,note}), substitutes (array of {original,substitute,reason}), instructions (array of strings), servings, serving_notes, tags (array), gi_notes. Return ONLY the JSON object. No markdown, no explanation.";
   const local = normalizeLocalRecall(localRecallResult);

@@ -86,10 +86,27 @@
     settingsProviderApiKey: document.getElementById("settings-provider-api-key"),
     settingsProviderBaseUrl: document.getElementById("settings-provider-base-url"),
     settingsProviderModel: document.getElementById("settings-provider-model"),
+    settingsProviderModels: document.getElementById("settings-provider-models"),
     settingsProviderImageModel: document.getElementById("settings-provider-image-model"),
     settingsProviderSave: document.getElementById("settings-provider-save"),
     settingsProviderClear: document.getElementById("settings-provider-clear"),
     settingsProviderStatus: document.getElementById("settings-provider-status"),
+    settingsProviderTest: document.getElementById("settings-provider-test"),
+    settingsProviderTestStatus: document.getElementById("settings-provider-test-status"),
+    settingsProfileSelect: document.getElementById("settings-profile-select"),
+    settingsProfileActivate: document.getElementById("settings-profile-activate"),
+    settingsProfileClearActive: document.getElementById("settings-profile-clear-active"),
+    settingsProfileDelete: document.getElementById("settings-profile-delete"),
+    settingsProfileLabel: document.getElementById("settings-profile-label"),
+    settingsProfileProvider: document.getElementById("settings-profile-provider"),
+    settingsProfileApiKey: document.getElementById("settings-profile-api-key"),
+    settingsProfileBaseUrl: document.getElementById("settings-profile-base-url"),
+    settingsProfileModel: document.getElementById("settings-profile-model"),
+    settingsProfileModels: document.getElementById("settings-profile-models"),
+    settingsProfileSave: document.getElementById("settings-profile-save"),
+    settingsProfileTest: document.getElementById("settings-profile-test"),
+    settingsProfileSetActive: document.getElementById("settings-profile-set-active"),
+    settingsProfileStatus: document.getElementById("settings-profile-status"),
     settingsImportFile: document.getElementById("settings-import-file"),
     settingsImportOverwrite: document.getElementById("settings-import-overwrite"),
     settingsImportApply: document.getElementById("settings-import-apply"),
@@ -115,28 +132,88 @@ let cachedShoppingLists = [];
 let pendingImportBackup = null;
 let pendingSharePackage = null;
 
+// PROVIDER_DEFS is populated at runtime from /api/diabetic/provider-catalog.
+// We seed it with the same defaults the server ships so the UI still renders
+// gracefully if the catalog fetch is slow or fails.
 const PROVIDER_DEFS = {
   openai: {
     label: "OpenAI (Responses)",
     supports: { text: true, image: true },
-    fields: { api_key: true, base_url: false, model: true, image_model: true }
+    fields: { api_key: true, base_url: false, model: true, image_model: true },
+    defaults: {}
   },
   openai_chat: {
     label: "OpenAI-compatible (Chat)",
     supports: { text: true, image: false },
-    fields: { api_key: true, base_url: true, model: true, image_model: false }
+    fields: { api_key: true, base_url: true, model: true, image_model: false },
+    defaults: {}
   },
   ollama: {
     label: "Ollama (local)",
     supports: { text: true, image: false },
-    fields: { api_key: false, base_url: true, model: true, image_model: false }
+    fields: { api_key: false, base_url: true, model: true, image_model: false },
+    defaults: { base_url: "http://localhost:11434", model: "llama3.1" }
   },
   none: {
     label: "Disabled",
     supports: { text: false, image: false },
-    fields: { api_key: false, base_url: false, model: false, image_model: false }
+    fields: { api_key: false, base_url: false, model: false, image_model: false },
+    defaults: {}
   }
 };
+
+let providerCatalogLoaded = false;
+let cachedProfiles = [];
+let cachedActiveProfileId = "";
+
+function applyProviderDef(id, def) {
+  PROVIDER_DEFS[id] = {
+    label: String(def.label ?? id),
+    supports: { text: Boolean(def.supports?.text), image: Boolean(def.supports?.image) },
+    fields: {
+      api_key: Boolean(def.fields?.api_key),
+      base_url: Boolean(def.fields?.base_url),
+      model: Boolean(def.fields?.model),
+      image_model: Boolean(def.fields?.image_model)
+    },
+    defaults: { ...(def.defaults ?? {}) }
+  };
+}
+
+function rebuildProviderSelects() {
+  const fillSelect = (selectEl, { textOnly = false, includeNone = true } = {}) => {
+    if (!selectEl) return;
+    const previousValue = selectEl.value;
+    selectEl.innerHTML = "";
+    for (const [id, def] of Object.entries(PROVIDER_DEFS)) {
+      if (id === "none" && !includeNone) continue;
+      if (textOnly && !def.supports.text && id !== "none") continue;
+      const option = document.createElement("option");
+      option.value = id;
+      option.textContent = def.label;
+      selectEl.appendChild(option);
+    }
+    if (previousValue && PROVIDER_DEFS[previousValue]) {
+      selectEl.value = previousValue;
+    }
+  };
+
+  fillSelect(els.settingsActiveTextProvider, { textOnly: true });
+  fillSelect(els.settingsProvider, { textOnly: false });
+  fillSelect(els.settingsProfileProvider, { textOnly: true, includeNone: false });
+}
+
+async function ensureProviderCatalog() {
+  if (providerCatalogLoaded) return;
+  const { response, data } = await getJson("/api/diabetic/provider-catalog");
+  if (response?.ok && Array.isArray(data?.providers)) {
+    for (const entry of data.providers) {
+      if (entry?.id) applyProviderDef(entry.id, entry);
+    }
+  }
+  providerCatalogLoaded = true;
+  rebuildProviderSelects();
+}
 
 function escapeHtml(value = "") {
   return String(value ?? "")
@@ -162,6 +239,23 @@ function formatTokens(value) {
   }
 
   return `${Math.round(Number(value))}`;
+}
+
+function populateModelDatalist(datalistEl, models) {
+  if (!datalistEl) return;
+  const list = Array.isArray(models) ? models.map((m) => String(m ?? "").trim()).filter(Boolean) : [];
+  datalistEl.innerHTML = "";
+  for (const id of list.slice(0, 120)) {
+    const option = document.createElement("option");
+    option.value = id;
+    datalistEl.appendChild(option);
+  }
+}
+
+function summarizeModelList(models) {
+  const list = Array.isArray(models) ? models.map((m) => String(m ?? "").trim()).filter(Boolean) : [];
+  if (!list.length) return "";
+  return list.slice(0, 6).join(", ") + (list.length > 6 ? ` (+${list.length - 6} more)` : "");
 }
 
 function normalizeAssetUrl(url) {
@@ -408,8 +502,12 @@ function setMode(mode) {
   } else if (settings) {
     setTimeout(() => els.settingsExport?.focus?.(), 0);
     void refreshUsers();
-    void refreshActiveProviders();
-    void refreshProviderSettings();
+    (async () => {
+      await ensureProviderCatalog();
+      await refreshProfiles();
+      await refreshActiveProviders();
+      await refreshProviderSettings();
+    })();
   }
 }
 
@@ -1245,6 +1343,7 @@ async function refreshProviderSettings() {
   const baseUrlRow = settings.find((row) => row.key === "base_url") ?? null;
   const modelRow = settings.find((row) => row.key === "model") ?? null;
   const imageModelRow = settings.find((row) => row.key === "image_model") ?? null;
+  const defaults = def.defaults ?? {};
 
   const envHasKey = Boolean(meta?.env?.api_key);
   const savedHasKey = Boolean(apiKeyRow?.has_value);
@@ -1254,11 +1353,21 @@ async function refreshProviderSettings() {
   }
   if (els.settingsProviderBaseUrl) {
     els.settingsProviderBaseUrl.value = String(baseUrlRow?.value ?? "");
-    els.settingsProviderBaseUrl.placeholder = meta?.env?.base_url ? `Env: ${meta.env.base_url}` : "Base URL (optional)";
+    const defaultBaseUrl = String(defaults.base_url ?? "").trim();
+    els.settingsProviderBaseUrl.placeholder = meta?.env?.base_url
+      ? `Env: ${meta.env.base_url}`
+      : defaultBaseUrl
+        ? `Default: ${defaultBaseUrl}`
+        : "Base URL (optional)";
   }
   if (els.settingsProviderModel) {
     els.settingsProviderModel.value = String(modelRow?.value ?? "");
-    els.settingsProviderModel.placeholder = meta?.env?.model ? `Env: ${meta.env.model}` : "Model (optional)";
+    const defaultModel = String(defaults.model ?? "").trim();
+    els.settingsProviderModel.placeholder = meta?.env?.model
+      ? `Env: ${meta.env.model}`
+      : defaultModel
+        ? `Default: ${defaultModel}`
+        : "Model (optional)";
   }
   if (els.settingsProviderImageModel) {
     els.settingsProviderImageModel.value = String(imageModelRow?.value ?? "");
@@ -1369,7 +1478,19 @@ async function refreshActiveProviders() {
 
   const textLabel = PROVIDER_DEFS[textProvider]?.label ?? textProvider;
   const imageLabel = imageProvider === "none" ? "Disabled" : PROVIDER_DEFS.openai.label;
-  els.settingsActiveProviderStatus.textContent = `Active text: ${textLabel} • Active images: ${imageLabel}`;
+
+  // If a profile is active it overrides the per-provider active selection on
+  // the server. Show that so the user isn't confused why the dropdown above
+  // doesn't match what's actually being used.
+  let suffix = "";
+  if (cachedActiveProfileId) {
+    const active = cachedProfiles.find((p) => p.profile_id === cachedActiveProfileId);
+    if (active) {
+      const providerLabel = PROVIDER_DEFS[active.provider_id]?.label ?? active.provider_id;
+      suffix = ` • Profile in use: ${active.label} (${providerLabel})`;
+    }
+  }
+  els.settingsActiveProviderStatus.textContent = `Active text: ${textLabel} • Active images: ${imageLabel}${suffix}`;
 }
 
 async function saveActiveProviders() {
@@ -1394,6 +1515,273 @@ async function saveActiveProviders() {
     if (els.settingsActiveProviderStatus.textContent === "Saved ✓") els.settingsActiveProviderStatus.textContent = "";
   }, 900);
   await refreshActiveProviders();
+}
+
+// ---------------------------------------------------------------------------
+// Profiles (multi-config switching)
+// ---------------------------------------------------------------------------
+async function refreshProfiles() {
+  if (!els.settingsProfileSelect) return;
+  const { response, data } = await getJson("/api/diabetic/profiles");
+  if (!response?.ok) {
+    if (els.settingsProfileStatus) els.settingsProfileStatus.textContent = data?.error || "Failed to load profiles.";
+    return;
+  }
+  cachedProfiles = Array.isArray(data.profiles) ? data.profiles : [];
+  cachedActiveProfileId = String(data.active_profile_id ?? "").trim();
+
+  const previousValue = els.settingsProfileSelect.value;
+  els.settingsProfileSelect.innerHTML = "";
+
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = cachedProfiles.length ? "— Pick a profile —" : "— No saved profiles —";
+  els.settingsProfileSelect.appendChild(placeholder);
+
+  for (const profile of cachedProfiles) {
+    const option = document.createElement("option");
+    option.value = profile.profile_id;
+    const providerLabel = PROVIDER_DEFS[profile.provider_id]?.label ?? profile.provider_id;
+    const isActive = profile.profile_id === cachedActiveProfileId;
+    option.textContent = `${profile.label} • ${providerLabel}${profile.model ? ` (${profile.model})` : ""}${isActive ? " ✓ active" : ""}`;
+    els.settingsProfileSelect.appendChild(option);
+  }
+  els.settingsProfileSelect.value = previousValue && cachedProfiles.some((p) => p.profile_id === previousValue)
+    ? previousValue
+    : cachedActiveProfileId || "";
+
+  if (els.settingsProfileStatus) {
+    if (cachedActiveProfileId) {
+      const active = cachedProfiles.find((p) => p.profile_id === cachedActiveProfileId);
+      els.settingsProfileStatus.textContent = active
+        ? `Active profile: ${active.label} (${PROVIDER_DEFS[active.provider_id]?.label ?? active.provider_id})`
+        : "Active profile id is set, but profile is missing.";
+    } else {
+      els.settingsProfileStatus.textContent = cachedProfiles.length
+        ? "No profile is active — falling back to per-provider defaults."
+        : "No profiles yet. Add one below.";
+    }
+  }
+}
+
+async function saveProfile() {
+  if (!els.settingsProfileStatus) return;
+  const label = String(els.settingsProfileLabel?.value ?? "").trim();
+  const provider_id = String(els.settingsProfileProvider?.value ?? "").trim();
+  if (!label) {
+    els.settingsProfileStatus.textContent = "Profile label is required.";
+    return;
+  }
+  if (!provider_id) {
+    els.settingsProfileStatus.textContent = "Pick a provider.";
+    return;
+  }
+
+  els.settingsProfileStatus.textContent = "Saving profile...";
+  const { response, data } = await postJson("/api/diabetic/profiles", {
+    label,
+    provider_id,
+    api_key: String(els.settingsProfileApiKey?.value ?? "").trim(),
+    base_url: String(els.settingsProfileBaseUrl?.value ?? "").trim(),
+    model: String(els.settingsProfileModel?.value ?? "").trim(),
+    set_active: Boolean(els.settingsProfileSetActive?.checked)
+  });
+  if (!response?.ok) {
+    els.settingsProfileStatus.textContent = data?.error || `Save failed (HTTP ${response?.status}).`;
+    return;
+  }
+
+  if (els.settingsProfileLabel) els.settingsProfileLabel.value = "";
+  if (els.settingsProfileApiKey) els.settingsProfileApiKey.value = "";
+  if (els.settingsProfileBaseUrl) els.settingsProfileBaseUrl.value = "";
+  if (els.settingsProfileModel) els.settingsProfileModel.value = "";
+
+  els.settingsProfileStatus.textContent = "Saved ✓";
+  await refreshProfiles();
+  await refreshActiveProviders();
+}
+
+async function activateSelectedProfile() {
+  const profileId = String(els.settingsProfileSelect?.value ?? "").trim();
+  if (!profileId) {
+    if (els.settingsProfileStatus) els.settingsProfileStatus.textContent = "Pick a profile to activate.";
+    return;
+  }
+  if (els.settingsProfileStatus) els.settingsProfileStatus.textContent = "Activating profile...";
+  const { response, data } = await postJson("/api/diabetic/profiles/active", { profile_id: profileId });
+  if (!response?.ok) {
+    if (els.settingsProfileStatus) els.settingsProfileStatus.textContent = data?.error || "Failed to activate profile.";
+    return;
+  }
+  await refreshProfiles();
+  await refreshActiveProviders();
+}
+
+async function clearActiveProfile() {
+  if (els.settingsProfileStatus) els.settingsProfileStatus.textContent = "Clearing active profile...";
+  const { response, data } = await postJson("/api/diabetic/profiles/active", { profile_id: "" });
+  if (!response?.ok) {
+    if (els.settingsProfileStatus) els.settingsProfileStatus.textContent = data?.error || "Failed.";
+    return;
+  }
+  await refreshProfiles();
+  await refreshActiveProviders();
+}
+
+async function deleteSelectedProfile() {
+  const profileId = String(els.settingsProfileSelect?.value ?? "").trim();
+  if (!profileId) {
+    if (els.settingsProfileStatus) els.settingsProfileStatus.textContent = "Pick a profile to delete.";
+    return;
+  }
+  if (typeof window !== "undefined" && typeof window.confirm === "function") {
+    if (!window.confirm("Delete this profile? This will remove its saved API key.")) return;
+  }
+  if (els.settingsProfileStatus) els.settingsProfileStatus.textContent = "Deleting...";
+  const response = await fetch(`/api/diabetic/profiles?profile_id=${encodeURIComponent(profileId)}`, { method: "DELETE" });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (els.settingsProfileStatus) els.settingsProfileStatus.textContent = data?.error || `Delete failed (HTTP ${response.status}).`;
+    return;
+  }
+  if (els.settingsProfileStatus) els.settingsProfileStatus.textContent = "Deleted ✓";
+  await refreshProfiles();
+  await refreshActiveProviders();
+}
+
+async function testProfileConnection() {
+  const profileId = String(els.settingsProfileSelect?.value ?? "").trim();
+  if (els.settingsProfileStatus) els.settingsProfileStatus.textContent = "Testing connection...";
+
+  // If a profile is selected, test it server-side. Otherwise build a draft
+  // payload from the form fields so the user can test before saving.
+  const draftLabel = String(els.settingsProfileLabel?.value ?? "").trim();
+  const useSelected = profileId && !draftLabel;
+
+  const body = useSelected
+    ? { profile_id: profileId }
+    : {
+        provider_id: String(els.settingsProfileProvider?.value ?? "").trim(),
+        api_key: String(els.settingsProfileApiKey?.value ?? "").trim(),
+        base_url: String(els.settingsProfileBaseUrl?.value ?? "").trim(),
+        model: String(els.settingsProfileModel?.value ?? "").trim()
+      };
+
+  const { response, data } = await postJson("/api/diabetic/provider-test", body);
+  if (response?.ok && data?.ok) {
+    els.settingsProfileStatus.textContent = `OK in ${formatMilliseconds(data.latencyMs)} • ${data.model || "(model not reported)"}`;
+  } else {
+    els.settingsProfileStatus.textContent = `Test failed: ${data?.error || `HTTP ${response?.status}`}`;
+  }
+}
+
+// Test connection for the per-provider-defaults card.
+async function testProviderDefaults() {
+  if (!els.settingsProviderTestStatus) return;
+  const providerId = String(els.settingsProvider?.value ?? "openai").trim() || "openai";
+  if (providerId === "none") {
+    els.settingsProviderTestStatus.textContent = "Pick a provider before testing.";
+    return;
+  }
+  els.settingsProviderTestStatus.textContent = "Testing connection...";
+  const body = {
+    provider_id: providerId,
+    api_key: String(els.settingsProviderApiKey?.value ?? "").trim(),
+    base_url: String(els.settingsProviderBaseUrl?.value ?? "").trim(),
+    model: String(els.settingsProviderModel?.value ?? "").trim()
+  };
+  const { response, data } = await postJson("/api/diabetic/provider-test", body);
+  if (response?.ok && data?.ok) {
+    els.settingsProviderTestStatus.textContent = `OK in ${formatMilliseconds(data.latencyMs)} • ${data.model || "(model not reported)"}`;
+  } else {
+    els.settingsProviderTestStatus.textContent = `Test failed: ${data?.error || `HTTP ${response?.status}`}`;
+  }
+}
+
+async function runProviderTestAndUpdateUI({ body, statusEl, modelEl, modelsEl }) {
+  if (!statusEl) return;
+  statusEl.textContent = "Testing connection...";
+
+  const { response, data } = await postJson("/api/diabetic/provider-test", body);
+  const ok = Boolean(response?.ok && data?.ok);
+
+  const models = Array.isArray(data?.models) ? data.models : [];
+  if (modelsEl && models.length) populateModelDatalist(modelsEl, models);
+
+  const suggested = String(data?.suggested_model ?? data?.suggestedModel ?? "").trim();
+  let appliedSuggestion = false;
+  if (suggested && modelEl) {
+    const current = String(modelEl.value ?? "").trim();
+    const currentLower = current.toLowerCase();
+    const currentValid = current && models.includes(current);
+    if (!current || currentLower === "grok" || (!currentValid && models.length)) {
+      modelEl.value = suggested;
+      appliedSuggestion = true;
+    }
+  }
+
+  const modelLabel = String(data?.model ?? "").trim() || (suggested ? suggested : "(model not reported)");
+  const modelsSummary = models.length
+    ? ` • Models: ${models.length} (${summarizeModelList(models)})`
+    : data?.models_error
+      ? ` • Models: ${String(data.models_error)}`
+      : "";
+  const suggestionSummary = suggested
+    ? ` • Suggested: ${suggested}${appliedSuggestion ? " (applied)" : ""}`
+    : "";
+
+  if (ok) {
+    statusEl.textContent = `OK in ${formatMilliseconds(data.latencyMs)} • ${modelLabel}${modelsSummary}${suggestionSummary}`;
+  } else {
+    statusEl.textContent = `Test failed: ${data?.error || `HTTP ${response?.status}`}${modelsSummary}${suggestionSummary}`;
+  }
+}
+
+async function testProfileConnectionEnhanced() {
+  const profileId = String(els.settingsProfileSelect?.value ?? "").trim();
+  if (!els.settingsProfileStatus) return;
+
+  const draftLabel = String(els.settingsProfileLabel?.value ?? "").trim();
+  const useSelected = profileId && !draftLabel;
+
+  const body = useSelected
+    ? { profile_id: profileId }
+    : {
+        provider_id: String(els.settingsProfileProvider?.value ?? "").trim(),
+        api_key: String(els.settingsProfileApiKey?.value ?? "").trim(),
+        base_url: String(els.settingsProfileBaseUrl?.value ?? "").trim(),
+        model: String(els.settingsProfileModel?.value ?? "").trim()
+      };
+
+  await runProviderTestAndUpdateUI({
+    body,
+    statusEl: els.settingsProfileStatus,
+    modelEl: els.settingsProfileModel,
+    modelsEl: els.settingsProfileModels
+  });
+}
+
+async function testProviderDefaultsEnhanced() {
+  if (!els.settingsProviderTestStatus) return;
+  const providerId = String(els.settingsProvider?.value ?? "openai").trim() || "openai";
+  if (providerId === "none") {
+    els.settingsProviderTestStatus.textContent = "Pick a provider before testing.";
+    return;
+  }
+
+  const body = {
+    provider_id: providerId,
+    api_key: String(els.settingsProviderApiKey?.value ?? "").trim(),
+    base_url: String(els.settingsProviderBaseUrl?.value ?? "").trim(),
+    model: String(els.settingsProviderModel?.value ?? "").trim()
+  };
+
+  await runProviderTestAndUpdateUI({
+    body,
+    statusEl: els.settingsProviderTestStatus,
+    modelEl: els.settingsProviderModel,
+    modelsEl: els.settingsProviderModels
+  });
 }
 
 async function previewShareImport(packageJson) {
@@ -2062,8 +2450,16 @@ async function sendQuickMessage(message) {
   els.settingsProviderSave?.addEventListener("click", saveProviderSettings);
   els.settingsProviderClear?.addEventListener("click", clearProviderKey);
   els.settingsProvider?.addEventListener("change", refreshProviderSettings);
+  els.settingsProviderTest?.addEventListener("click", testProviderDefaultsEnhanced);
   els.settingsActiveTextProvider?.addEventListener("change", saveActiveProviders);
   els.settingsActiveImageProvider?.addEventListener("change", saveActiveProviders);
+
+  // Profiles
+  els.settingsProfileSave?.addEventListener("click", saveProfile);
+  els.settingsProfileActivate?.addEventListener("click", activateSelectedProfile);
+  els.settingsProfileClearActive?.addEventListener("click", clearActiveProfile);
+  els.settingsProfileDelete?.addEventListener("click", deleteSelectedProfile);
+  els.settingsProfileTest?.addEventListener("click", testProfileConnectionEnhanced);
   els.settingsProviderApiKey?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();

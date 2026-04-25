@@ -53,8 +53,261 @@ import {
   generateDiabeticRecipe,
   generateFromBuilderSession,
   generateDiabeticRecipeImageToFile,
-  resolveOpenAiApiKeyFromEnv
+  getOpenAiCompatiblePresets,
+  resolveOpenAiApiKeyFromEnv,
+  testProviderConnection
 } from "../strandspace/diabetic-assist.js";
+
+// ---------------------------------------------------------------------------
+// Provider catalog
+// ---------------------------------------------------------------------------
+// Single source of truth for what each provider supports, what env vars feed
+// it, and which DB keys it persists. Adding a new LLM = adding an entry here
+// (and, if it's not OpenAI-compatible, a runner in strandspace/diabetic-assist.js).
+// ---------------------------------------------------------------------------
+const _COMPAT_PRESETS = getOpenAiCompatiblePresets();
+
+const PROVIDER_CATALOG = {
+  openai: {
+    label: "OpenAI (Responses)",
+    supports: { text: true, image: true },
+    fields: { api_key: true, base_url: false, model: true, image_model: true },
+    env: { api_key: ["OPENAI_API_KEY"], model: ["DIABETICSPACE_OPENAI_MODEL", "OPENAI_MODEL"], image_model: ["DIABETICSPACE_IMAGE_MODEL"] },
+    defaults: {}
+  },
+  openai_chat: {
+    label: "OpenAI-compatible (Chat)",
+    supports: { text: true, image: false },
+    fields: { api_key: true, base_url: true, model: true, image_model: false },
+    env: { api_key: ["OPENAI_API_KEY"], model: ["DIABETICSPACE_OPENAI_CHAT_MODEL"], base_url: ["DIABETICSPACE_OPENAI_CHAT_BASE_URL"] },
+    defaults: {}
+  },
+  ollama: {
+    label: "Ollama (local)",
+    supports: { text: true, image: false },
+    fields: { api_key: false, base_url: true, model: true, image_model: false },
+    env: { model: ["DIABETICSPACE_OLLAMA_MODEL"], base_url: ["DIABETICSPACE_OLLAMA_BASE_URL"] },
+    defaults: { base_url: "http://localhost:11434", model: "llama3.1" }
+  },
+  anthropic: {
+    label: "Anthropic (Claude)",
+    supports: { text: true, image: false },
+    fields: { api_key: true, base_url: true, model: true, image_model: false },
+    env: { api_key: ["ANTHROPIC_API_KEY"], model: ["ANTHROPIC_MODEL"], base_url: ["ANTHROPIC_BASE_URL"] },
+    defaults: { model: "claude-sonnet-4-6" }
+  },
+  gemini: {
+    label: "Google Gemini",
+    supports: { text: true, image: false },
+    fields: { api_key: true, base_url: true, model: true, image_model: false },
+    env: { api_key: ["GOOGLE_API_KEY", "GEMINI_API_KEY"], model: ["GEMINI_MODEL"], base_url: ["GEMINI_BASE_URL"] },
+    defaults: { model: "gemini-1.5-flash" }
+  },
+  none: {
+    label: "Disabled",
+    supports: { text: false, image: false },
+    fields: { api_key: false, base_url: false, model: false, image_model: false },
+    env: {},
+    defaults: {}
+  }
+};
+
+// Add OpenAI-compatible vendors (Mistral, Groq, xAI, Together, OpenRouter, DeepSeek, Custom).
+for (const [providerId, preset] of Object.entries(_COMPAT_PRESETS)) {
+  const upper = providerId.toUpperCase();
+  PROVIDER_CATALOG[providerId] = {
+    label: preset.label,
+    supports: { text: true, image: false },
+    fields: { api_key: true, base_url: true, model: true, image_model: false },
+    env: {
+      api_key: [`DIABETICSPACE_${upper}_API_KEY`, `${upper}_API_KEY`],
+      model: [`DIABETICSPACE_${upper}_MODEL`, `${upper}_MODEL`],
+      base_url: [`DIABETICSPACE_${upper}_BASE_URL`, `${upper}_BASE_URL`]
+    },
+    defaults: {
+      base_url: preset.baseUrl || "",
+      model: preset.defaultModel || ""
+    }
+  };
+}
+
+function isKnownProvider(providerId) {
+  return Object.prototype.hasOwnProperty.call(PROVIDER_CATALOG, String(providerId ?? "").toLowerCase());
+}
+
+function listKnownProviders() {
+  return Object.entries(PROVIDER_CATALOG).map(([id, def]) => ({
+    id,
+    label: def.label,
+    supports: { ...def.supports },
+    fields: { ...def.fields },
+    defaults: { ...def.defaults }
+  }));
+}
+
+function readEnvFirst(names = []) {
+  for (const name of names) {
+    const value = String(process.env[name] ?? "").trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+// Active profile id (if profiles are in use, this overrides the per-provider
+// active selection).
+function getActiveProfileId(db) {
+  const value = String(getDiabeticProviderSetting(db, "app", "active_profile_id", { includeSensitive: true }) ?? "").trim();
+  return value || "";
+}
+
+function profileNamespace(profileId) {
+  return `profile:${String(profileId ?? "").trim()}`;
+}
+
+function readProfileSetting(db, profileId, key, { sensitive = false } = {}) {
+  return getDiabeticProviderSetting(db, profileNamespace(profileId), key, { includeSensitive: sensitive });
+}
+
+function listProfiles(db) {
+  const all = listDiabeticProviderSettings(db, "app").filter((row) => row.key === "profile_index").map((row) => row.value);
+  // profile_index is a JSON array of profile ids. Fall back to scanning if missing.
+  let ids = [];
+  if (all.length) {
+    try {
+      const parsed = JSON.parse(String(all[0] ?? "[]"));
+      if (Array.isArray(parsed)) ids = parsed.map((id) => String(id ?? "").trim()).filter(Boolean);
+    } catch {
+      ids = [];
+    }
+  }
+  return ids.map((profileId) => ({
+    profile_id: profileId,
+    label: String(readProfileSetting(db, profileId, "label") ?? "").trim() || profileId,
+    provider_id: String(readProfileSetting(db, profileId, "provider_id") ?? "").trim() || "openai",
+    base_url: String(readProfileSetting(db, profileId, "base_url") ?? "").trim(),
+    model: String(readProfileSetting(db, profileId, "model") ?? "").trim(),
+    image_model: String(readProfileSetting(db, profileId, "image_model") ?? "").trim(),
+    has_api_key: Boolean(String(readProfileSetting(db, profileId, "api_key", { sensitive: true }) ?? "").trim())
+  }));
+}
+
+function writeProfileIndex(db, ids) {
+  setDiabeticProviderSetting(db, "app", "profile_index", JSON.stringify(ids));
+}
+
+function generateProfileId() {
+  return `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createOrUpdateProfile(db, { profile_id = "", label = "", provider_id = "", base_url = "", model = "", image_model = "", api_key = "" } = {}) {
+  const cleanProvider = String(provider_id ?? "").trim().toLowerCase();
+  if (!cleanProvider || !isKnownProvider(cleanProvider)) {
+    const err = new Error(`Unknown provider: ${cleanProvider || "(empty)"}`);
+    err.code = "UNKNOWN_PROVIDER";
+    throw err;
+  }
+  const cleanLabel = String(label ?? "").trim();
+  if (!cleanLabel) {
+    const err = new Error("Profile label is required");
+    err.code = "LABEL_REQUIRED";
+    throw err;
+  }
+
+  let id = String(profile_id ?? "").trim();
+  const existing = listProfiles(db);
+  const existingIds = existing.map((p) => p.profile_id);
+  if (!id) id = generateProfileId();
+
+  setDiabeticProviderSetting(db, profileNamespace(id), "label", cleanLabel);
+  setDiabeticProviderSetting(db, profileNamespace(id), "provider_id", cleanProvider);
+  setDiabeticProviderSetting(db, profileNamespace(id), "base_url", String(base_url ?? "").trim());
+  setDiabeticProviderSetting(db, profileNamespace(id), "model", String(model ?? "").trim());
+  setDiabeticProviderSetting(db, profileNamespace(id), "image_model", String(image_model ?? "").trim());
+  // api_key is sensitive but explicitly settable here (set "" to clear).
+  setDiabeticProviderSetting(db, profileNamespace(id), "api_key", String(api_key ?? "").trim());
+
+  if (!existingIds.includes(id)) {
+    writeProfileIndex(db, [...existingIds, id]);
+  }
+  return id;
+}
+
+function deleteProfile(db, profileId) {
+  const id = String(profileId ?? "").trim();
+  if (!id) return false;
+  const ns = profileNamespace(id);
+  for (const key of ["label", "provider_id", "base_url", "model", "image_model", "api_key"]) {
+    setDiabeticProviderSetting(db, ns, key, ""); // empty value deletes the row
+  }
+  const remaining = listProfiles(db).filter((p) => p.profile_id !== id).map((p) => p.profile_id);
+  writeProfileIndex(db, remaining);
+  if (getActiveProfileId(db) === id) {
+    setDiabeticProviderSetting(db, "app", "active_profile_id", "");
+  }
+  return true;
+}
+
+function setActiveProfile(db, profileId) {
+  const id = String(profileId ?? "").trim();
+  if (id) {
+    const exists = listProfiles(db).some((p) => p.profile_id === id);
+    if (!exists) {
+      const err = new Error(`Unknown profile: ${id}`);
+      err.code = "UNKNOWN_PROFILE";
+      throw err;
+    }
+  }
+  setDiabeticProviderSetting(db, "app", "active_profile_id", id);
+}
+
+// Resolve effective config for a given provider, merging env > saved > default.
+function resolveProviderOverrides(db, providerId) {
+  const def = PROVIDER_CATALOG[providerId];
+  if (!def) {
+    return { apiKey: "", model: "", baseUrl: "", imageModel: "", meta: { env: {}, saved: {} } };
+  }
+
+  const envApiKey = def.fields.api_key ? readEnvFirst(def.env.api_key ?? []) : "";
+  const envModel = def.fields.model ? readEnvFirst(def.env.model ?? []) : "";
+  const envBaseUrl = def.fields.base_url ? readEnvFirst(def.env.base_url ?? []) : "";
+  const envImageModel = def.fields.image_model ? readEnvFirst(def.env.image_model ?? []) : "";
+
+  const savedApiKeyRaw = def.fields.api_key ? String(getDiabeticProviderSetting(db, providerId, "api_key", { includeSensitive: true }) ?? "").trim() : "";
+  const savedModelRaw = def.fields.model ? String(getDiabeticProviderSetting(db, providerId, "model", { includeSensitive: true }) ?? "").trim() : "";
+  const savedBaseUrlRaw = def.fields.base_url ? String(getDiabeticProviderSetting(db, providerId, "base_url", { includeSensitive: true }) ?? "").trim() : "";
+  const savedImageModelRaw = def.fields.image_model ? String(getDiabeticProviderSetting(db, providerId, "image_model", { includeSensitive: true }) ?? "").trim() : "";
+
+  // Env wins. Otherwise saved. Otherwise the runner-side defaults handle it.
+  const runnerReadsEnvApiKey = providerId === "openai" || providerId === "openai_chat" || providerId === "anthropic" || providerId === "gemini";
+  const apiKey = envApiKey
+    ? (runnerReadsEnvApiKey ? "" : envApiKey)
+    : savedApiKeyRaw;
+  const model = envModel || savedModelRaw || def.defaults.model || "";
+  const baseUrl = envBaseUrl || savedBaseUrlRaw || def.defaults.base_url || "";
+  const imageModel = envImageModel || savedImageModelRaw || "";
+
+  return {
+    apiKey,
+    model,
+    baseUrl,
+    imageModel,
+    meta: {
+      env: {
+        api_key: Boolean(envApiKey),
+        model: envModel || null,
+        base_url: envBaseUrl || null,
+        image_model: envImageModel || null
+      },
+      saved: {
+        api_key: Boolean(savedApiKeyRaw),
+        model: Boolean(savedModelRaw),
+        base_url: Boolean(savedBaseUrlRaw),
+        image_model: Boolean(savedImageModelRaw)
+      },
+      defaults: { ...def.defaults }
+    }
+  };
+}
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
@@ -103,6 +356,7 @@ function measureSync(task) {
   };
 }
 
+// Legacy helper: kept only for the image pipeline which still calls it directly.
 function resolveOpenAiOverrides(db) {
   const envApiKey = resolveOpenAiApiKeyFromEnv();
   const storedApiKey = getDiabeticProviderSetting(db, "openai", "api_key", { includeSensitive: true });
@@ -155,10 +409,7 @@ function resolveActiveProviderId(db, kind) {
     return candidate === "none" ? "none" : "openai";
   }
 
-  if (candidate === "openai" || candidate === "openai_chat" || candidate === "ollama" || candidate === "none") {
-    return candidate;
-  }
-
+  if (isKnownProvider(candidate)) return candidate;
   return DEFAULT_TEXT_PROVIDER;
 }
 
@@ -220,46 +471,42 @@ function resolveOllamaOverrides(db) {
 }
 
 function resolveTextProviderConfig(db) {
+  // If an active named profile is set, it overrides the per-provider default.
+  const activeProfileId = getActiveProfileId(db);
+  if (activeProfileId) {
+    const profile = listProfiles(db).find((p) => p.profile_id === activeProfileId) ?? null;
+    if (profile) {
+      const def = PROVIDER_CATALOG[profile.provider_id] ?? PROVIDER_CATALOG.openai;
+      const envApiKey = def.fields.api_key ? readEnvFirst(def.env.api_key ?? []) : "";
+      const envModel = def.fields.model ? readEnvFirst(def.env.model ?? []) : "";
+      const envBaseUrl = def.fields.base_url ? readEnvFirst(def.env.base_url ?? []) : "";
+      const profileApiKey = String(readProfileSetting(db, profile.profile_id, "api_key", { sensitive: true }) ?? "").trim();
+      return {
+        provider_id: profile.provider_id,
+        // Env wins for API keys; otherwise use the profile's saved key.
+        apiKey: envApiKey ? "" : profileApiKey,
+        model: envModel || profile.model || def.defaults.model || "",
+        baseUrl: envBaseUrl || profile.base_url || def.defaults.base_url || "",
+        meta: {
+          env: { api_key: Boolean(envApiKey), model: envModel || null, base_url: envBaseUrl || null },
+          saved: { api_key: Boolean(profileApiKey), model: Boolean(profile.model), base_url: Boolean(profile.base_url) },
+          profile: { id: profile.profile_id, label: profile.label }
+        }
+      };
+    }
+  }
+
   const provider_id = resolveActiveProviderId(db, "text");
-  if (provider_id === "openai") {
-    const openai = resolveOpenAiOverrides(db);
-    return {
-      provider_id,
-      apiKey: openai.apiKey,
-      model: openai.model,
-      baseUrl: "",
-      meta: openai.meta
-    };
+  if (provider_id === "none") {
+    return { provider_id: "none", apiKey: "", model: "", baseUrl: "", meta: { env: {}, saved: {} } };
   }
-
-  if (provider_id === "openai_chat") {
-    const openai = resolveOpenAiChatOverrides(db);
-    return {
-      provider_id,
-      apiKey: openai.apiKey,
-      model: openai.model,
-      baseUrl: openai.baseUrl,
-      meta: openai.meta
-    };
-  }
-
-  if (provider_id === "ollama") {
-    const ollama = resolveOllamaOverrides(db);
-    return {
-      provider_id,
-      apiKey: "",
-      model: ollama.model,
-      baseUrl: ollama.baseUrl,
-      meta: ollama.meta
-    };
-  }
-
+  const overrides = resolveProviderOverrides(db, provider_id);
   return {
-    provider_id: "none",
-    apiKey: "",
-    model: "",
-    baseUrl: "",
-    meta: { env: {}, saved: {} }
+    provider_id,
+    apiKey: overrides.apiKey,
+    model: overrides.model,
+    baseUrl: overrides.baseUrl,
+    meta: overrides.meta
   };
 }
 
@@ -705,15 +952,12 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
         const rows = listDiabeticProviderSettings(db, providerId);
         const byKey = new Map(rows.map((row) => [row.key, row]));
 
-        const knownKeys = providerId === "openai"
-          ? ["api_key", "model", "image_model"]
-          : providerId === "openai_chat"
-            ? ["api_key", "base_url", "model"]
-            : providerId === "ollama"
-              ? ["base_url", "model"]
-              : providerId === "app"
-                ? ["active_text_provider", "active_image_provider"]
-                : [];
+        const def = PROVIDER_CATALOG[providerId];
+        const knownKeys = def
+          ? Object.entries(def.fields).filter(([, on]) => on).map(([k]) => k)
+          : providerId === "app"
+            ? ["active_text_provider", "active_image_provider", "active_profile_id", "profile_index"]
+            : [];
         for (const key of knownKeys) {
           if (byKey.has(key)) continue;
           const sensitive = key.includes("key") || key.includes("token") || key.includes("secret") || key.includes("password");
@@ -728,13 +972,9 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
         }
 
         const settings = Array.from(byKey.values()).sort((a, b) => String(a.key).localeCompare(String(b.key)));
-        const meta = providerId === "openai"
-          ? resolveOpenAiOverrides(db).meta
-          : providerId === "openai_chat"
-            ? resolveOpenAiChatOverrides(db).meta
-            : providerId === "ollama"
-              ? resolveOllamaOverrides(db).meta
-              : { env: {}, saved: {} };
+        const meta = def
+          ? resolveProviderOverrides(db, providerId).meta
+          : { env: {}, saved: {} };
         sendJson(res, 200, { ok: true, provider_id: providerId, settings, meta });
         return true;
       } catch (error) {
@@ -775,6 +1015,127 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
     }
 
     sendMethodNotAllowed(res, "GET, POST");
+    return true;
+  }
+
+  // ---- Provider catalog ---------------------------------------------------
+  // Lists every provider the server knows about, with the field schema and
+  // env-var hints. The frontend uses this to render its provider picker
+  // dynamically — adding a provider on the server side is enough to surface
+  // it in the UI.
+  if (url.pathname === "/api/diabetic/provider-catalog") {
+    if (!requireMethod(req, res, "GET")) return true;
+    sendJson(res, 200, { ok: true, providers: listKnownProviders() });
+    return true;
+  }
+
+  // ---- Profiles -----------------------------------------------------------
+  // Named LLM configurations the user can save and switch between. Stored on
+  // top of the existing KV settings table under provider_id="profile:<id>".
+  if (url.pathname === "/api/diabetic/profiles") {
+    if (req.method === "GET") {
+      sendJson(res, 200, {
+        ok: true,
+        profiles: listProfiles(db),
+        active_profile_id: getActiveProfileId(db) || null
+      });
+      return true;
+    }
+    if (req.method === "POST") {
+      let payload = {};
+      try { payload = await readJsonBody(req); } catch { sendJson(res, 400, { error: "Invalid JSON body" }); return true; }
+      try {
+        const id = createOrUpdateProfile(db, payload);
+        if (payload.set_active) setActiveProfile(db, id);
+        sendJson(res, 200, { ok: true, profile_id: id });
+        return true;
+      } catch (error) {
+        sendJson(res, 400, { error: error instanceof Error ? error.message : String(error), code: error?.code ?? null });
+        return true;
+      }
+    }
+    if (req.method === "DELETE") {
+      const profileId = String(url.searchParams.get("profile_id") ?? "").trim();
+      if (!profileId) { sendJson(res, 400, { error: "profile_id is required" }); return true; }
+      deleteProfile(db, profileId);
+      sendJson(res, 200, { ok: true, deleted: profileId });
+      return true;
+    }
+    sendMethodNotAllowed(res, "GET, POST, DELETE");
+    return true;
+  }
+
+  if (url.pathname === "/api/diabetic/profiles/active") {
+    if (!requireMethod(req, res, "POST")) return true;
+    let payload = {};
+    try { payload = await readJsonBody(req); } catch { sendJson(res, 400, { error: "Invalid JSON body" }); return true; }
+    try {
+      setActiveProfile(db, payload.profile_id ?? "");
+      sendJson(res, 200, { ok: true, active_profile_id: getActiveProfileId(db) || null });
+      return true;
+    } catch (error) {
+      sendJson(res, 400, { error: error instanceof Error ? error.message : String(error), code: error?.code ?? null });
+      return true;
+    }
+  }
+
+  // ---- Test connection ----------------------------------------------------
+  // Fires a tiny JSON-only request against the configured provider/model and
+  // returns latency + error so the user can verify a key/model before relying
+  // on it. Accepts either { profile_id } or an explicit { provider_id, ... }
+  // override (used when the user is editing a draft they haven't saved yet).
+  if (url.pathname === "/api/diabetic/provider-test") {
+    if (!requireMethod(req, res, "POST")) return true;
+    let payload = {};
+    try { payload = await readJsonBody(req); } catch { sendJson(res, 400, { error: "Invalid JSON body" }); return true; }
+
+    let providerId = String(payload.provider_id ?? "").trim().toLowerCase();
+    let apiKey = String(payload.api_key ?? "").trim();
+    let model = String(payload.model ?? "").trim();
+    let baseUrl = String(payload.base_url ?? "").trim();
+
+    if (payload.profile_id) {
+      const profile = listProfiles(db).find((p) => p.profile_id === String(payload.profile_id).trim()) ?? null;
+      if (!profile) { sendJson(res, 404, { error: "Profile not found" }); return true; }
+      providerId = profile.provider_id;
+      const savedKey = String(readProfileSetting(db, profile.profile_id, "api_key", { sensitive: true }) ?? "").trim();
+      if (!apiKey) apiKey = savedKey;
+      if (!model) model = profile.model;
+      if (!baseUrl) baseUrl = profile.base_url;
+    } else if (!providerId) {
+      // Fall through to whatever resolveTextProviderConfig says is active.
+      const cfg = resolveTextProviderConfig(db);
+      providerId = cfg.provider_id;
+      if (!apiKey) apiKey = cfg.apiKey;
+      if (!model) model = cfg.model;
+      if (!baseUrl) baseUrl = cfg.baseUrl;
+    }
+
+    if (!isKnownProvider(providerId)) {
+      sendJson(res, 400, { error: `Unknown provider: ${providerId || "(empty)"}` });
+      return true;
+    }
+    if (providerId === "none") {
+      sendJson(res, 400, { error: "AI is disabled. Pick a provider first." });
+      return true;
+    }
+
+    // If the editor didn't supply an api_key, fall back to the saved one for
+    // that provider (env vars are read inside the runner regardless).
+    const def = PROVIDER_CATALOG[providerId];
+    const overrides = def ? resolveProviderOverrides(db, providerId) : null;
+    if (def?.fields?.api_key && !apiKey) {
+      apiKey = String(overrides?.apiKey ?? "").trim();
+    }
+    if (def?.fields?.model && !model) {
+      model = String(overrides?.model ?? "").trim();
+    }
+    if (def?.fields?.base_url && !baseUrl) {
+      baseUrl = String(overrides?.baseUrl ?? "").trim();
+    }
+
+    const result = await testProviderConnection({ provider: providerId, apiKey, model, baseUrl });
+    sendJson(res, result.ok ? 200 : 502, result);
     return true;
   }
 
