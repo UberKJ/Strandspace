@@ -111,8 +111,8 @@ function ollamaUnavailableError(message) {
   return error;
 }
 
-function getClient({ apiKey, baseUrl } = {}) {
-  const resolved = String(apiKey ?? "").trim() || resolveOpenAiApiKeyFromEnv();
+function getClient({ apiKey, baseUrl, allowOpenAiEnv = true } = {}) {
+  const resolved = String(apiKey ?? "").trim() || (allowOpenAiEnv ? resolveOpenAiApiKeyFromEnv() : "");
   const finalKey = String(resolved ?? "").trim();
   if (!finalKey) {
     throw openAiUnavailableError();
@@ -296,6 +296,7 @@ async function runOpenAiChat({
   apiKey = "",
   model = "",
   baseUrl = "",
+  allowOpenAiEnv = true,
   provider = "openai_chat"
 }) {
   const chosenModel = String(model ?? "").trim() || DEFAULT_MODEL;
@@ -315,7 +316,7 @@ async function runOpenAiChat({
     };
   }
 
-  const openai = getClient({ apiKey, baseUrl });
+  const openai = getClient({ apiKey, baseUrl, allowOpenAiEnv });
   const started = performance.now();
   const response = await openai.chat.completions.create({
     model: chosenModel,
@@ -416,11 +417,11 @@ async function runOllama({
 const OPENAI_COMPATIBLE_PRESETS = {
   mistral: { label: "Mistral", baseUrl: "https://api.mistral.ai/v1", defaultModel: "mistral-large-latest" },
   groq: { label: "Groq", baseUrl: "https://api.groq.com/openai/v1", defaultModel: "llama-3.3-70b-versatile" },
-  xai: { label: "xAI (Grok)", baseUrl: "https://api.x.ai/v1", defaultModel: "grok-2-latest" },
+  xai: { label: "xAI (Grok)", baseUrl: "https://api.x.ai/v1", defaultModel: "grok-2-latest", supportsImage: true },
   together: { label: "Together AI", baseUrl: "https://api.together.xyz/v1", defaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo" },
   openrouter: { label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", defaultModel: "openrouter/auto" },
   deepseek: { label: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", defaultModel: "deepseek-chat" },
-  custom: { label: "Custom (OpenAI-compatible)", baseUrl: "", defaultModel: "" }
+  custom: { label: "Custom (OpenAI-compatible)", baseUrl: "", defaultModel: "", supportsImage: true }
 };
 
 export function getOpenAiCompatiblePresets() {
@@ -441,6 +442,11 @@ async function runOpenAiCompatible({
   provider = "custom"
 }) {
   const preset = OPENAI_COMPATIBLE_PRESETS[provider] ?? OPENAI_COMPATIBLE_PRESETS.custom;
+  if (!String(apiKey ?? "").trim()) {
+    const error = new Error(`${provider}: API key not configured`);
+    error.code = `${String(provider).toUpperCase()}_API_KEY_MISSING`;
+    throw error;
+  }
   const resolvedBaseUrl = String(baseUrl ?? "").trim() || preset.baseUrl;
   const chosenModel = String(model ?? "").trim() || preset.defaultModel || DEFAULT_MODEL;
 
@@ -457,6 +463,7 @@ async function runOpenAiCompatible({
     apiKey,
     model: chosenModel,
     baseUrl: resolvedBaseUrl,
+    allowOpenAiEnv: false,
     provider
   });
 }
@@ -676,8 +683,8 @@ function resolveProviderDefaultModel(providerId) {
   return "";
 }
 
-async function listOpenAiModelIds({ apiKey = "", baseUrl = "" } = {}) {
-  const openai = getClient({ apiKey, baseUrl });
+async function listOpenAiModelIds({ apiKey = "", baseUrl = "", allowOpenAiEnv = true } = {}) {
+  const openai = getClient({ apiKey, baseUrl, allowOpenAiEnv });
   const page = await openai.models.list();
   const data = Array.isArray(page?.data) ? page.data : [];
   return data
@@ -726,7 +733,7 @@ async function listOllamaModelIds(baseUrl) {
 async function tryListProviderModels(providerId, { apiKey = "", baseUrl = "" } = {}) {
   const provider = String(providerId ?? "").trim().toLowerCase() || "openai";
   if (provider === "openai") {
-    const models = await listOpenAiModelIds({ apiKey, baseUrl: "" });
+    const models = await listOpenAiModelIds({ apiKey, baseUrl: "", allowOpenAiEnv: true });
     return { ok: true, models };
   }
   if (provider === "openai_chat" || isOpenAiCompatibleProvider(provider)) {
@@ -734,7 +741,8 @@ async function tryListProviderModels(providerId, { apiKey = "", baseUrl = "" } =
     if (!resolvedBaseUrl) {
       return { ok: false, models: [], error: "base_url is required to list models" };
     }
-    const models = await listOpenAiModelIds({ apiKey, baseUrl: resolvedBaseUrl });
+    const allowOpenAiEnv = provider === "openai_chat";
+    const models = await listOpenAiModelIds({ apiKey, baseUrl: resolvedBaseUrl, allowOpenAiEnv });
     return { ok: true, models };
   }
   if (provider === "ollama") {
@@ -959,6 +967,8 @@ function sanitizeRecipeImageFilename(recipeId) {
 
 export async function generateDiabeticRecipeImageToFile(recipe, {
   outputDir = "",
+  provider = "openai",
+  baseUrl = "",
   model = DEFAULT_IMAGE_MODEL,
   size = "1024x1024",
   force = false,
@@ -1010,7 +1020,22 @@ export async function generateDiabeticRecipeImageToFile(recipe, {
     };
   }
 
-  const openai = getClient({ apiKey });
+  const providerId = String(provider ?? "").trim().toLowerCase() || "openai";
+  const allowOpenAiEnv = providerId === "openai";
+  const resolvedBaseUrl = allowOpenAiEnv ? "" : resolveProviderBaseUrl(providerId, baseUrl);
+
+  if (!allowOpenAiEnv && !String(apiKey ?? "").trim()) {
+    const error = new Error(`${providerId}: API key not configured`);
+    error.code = `${providerId.toUpperCase()}_API_KEY_MISSING`;
+    throw error;
+  }
+  if (!allowOpenAiEnv && !resolvedBaseUrl) {
+    const error = new Error(`${providerId}: base_url is required for image generation`);
+    error.code = "PROVIDER_BASE_URL_MISSING";
+    throw error;
+  }
+
+  const openai = getClient({ apiKey, baseUrl: resolvedBaseUrl, allowOpenAiEnv });
   const response = await openai.images.generate({
     model,
     prompt,

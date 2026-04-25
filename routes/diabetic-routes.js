@@ -115,14 +115,16 @@ const PROVIDER_CATALOG = {
 // Add OpenAI-compatible vendors (Mistral, Groq, xAI, Together, OpenRouter, DeepSeek, Custom).
 for (const [providerId, preset] of Object.entries(_COMPAT_PRESETS)) {
   const upper = providerId.toUpperCase();
+  const supportsImage = Boolean(preset?.supportsImage);
   PROVIDER_CATALOG[providerId] = {
     label: preset.label,
-    supports: { text: true, image: false },
-    fields: { api_key: true, base_url: true, model: true, image_model: false },
+    supports: { text: true, image: supportsImage },
+    fields: { api_key: true, base_url: true, model: true, image_model: supportsImage },
     env: {
       api_key: [`DIABETICSPACE_${upper}_API_KEY`, `${upper}_API_KEY`],
       model: [`DIABETICSPACE_${upper}_MODEL`, `${upper}_MODEL`],
-      base_url: [`DIABETICSPACE_${upper}_BASE_URL`, `${upper}_BASE_URL`]
+      base_url: [`DIABETICSPACE_${upper}_BASE_URL`, `${upper}_BASE_URL`],
+      ...(supportsImage ? { image_model: [`DIABETICSPACE_${upper}_IMAGE_MODEL`, `${upper}_IMAGE_MODEL`] } : {})
     },
     defaults: {
       base_url: preset.baseUrl || "",
@@ -406,7 +408,9 @@ function resolveActiveProviderId(db, kind) {
   const candidate = envValue || savedValue || (kind === "image" ? DEFAULT_IMAGE_PROVIDER : DEFAULT_TEXT_PROVIDER);
 
   if (kind === "image") {
-    return candidate === "none" ? "none" : "openai";
+    if (candidate === "none") return "none";
+    if (isKnownProvider(candidate) && Boolean(PROVIDER_CATALOG[candidate]?.supports?.image)) return candidate;
+    return DEFAULT_IMAGE_PROVIDER;
   }
 
   if (isKnownProvider(candidate)) return candidate;
@@ -512,15 +516,16 @@ function resolveTextProviderConfig(db) {
 
 function resolveImageProviderConfig(db) {
   const provider_id = resolveActiveProviderId(db, "image");
-  if (provider_id !== "openai") {
-    return { provider_id: "none" };
+  if (provider_id === "none") {
+    return { provider_id: "none", apiKey: "", baseUrl: "", imageModel: "", meta: { env: {}, saved: {} } };
   }
-  const openai = resolveOpenAiOverrides(db);
+  const overrides = resolveProviderOverrides(db, provider_id);
   return {
-    provider_id: "openai",
-    apiKey: openai.apiKey,
-    model: openai.imageModel,
-    meta: openai.meta
+    provider_id,
+    apiKey: overrides.apiKey,
+    baseUrl: overrides.baseUrl,
+    imageModel: overrides.imageModel,
+    meta: overrides.meta
   };
 }
 
@@ -537,10 +542,16 @@ async function ensureDiabeticRecipeImage(db, recipe, dataDir) {
 
   try {
     const provider = resolveImageProviderConfig(db);
-    if (provider.provider_id !== "openai") {
+    if (provider.provider_id === "none") {
       return { recipe, image: null };
     }
-    const result = await generateDiabeticRecipeImageToFile(recipe, { outputDir, apiKey: provider.apiKey, model: provider.model || undefined });
+    const result = await generateDiabeticRecipeImageToFile(recipe, {
+      outputDir,
+      provider: provider.provider_id,
+      apiKey: provider.apiKey,
+      baseUrl: provider.baseUrl,
+      model: provider.imageModel || undefined
+    });
     if (result?.image_url) {
       const updated = setDiabeticRecipeImage(db, recipe.recipe_id, result.image_url) ?? recipe;
       return {
@@ -554,7 +565,8 @@ async function ensureDiabeticRecipeImage(db, recipe, dataDir) {
       };
     }
   } catch (error) {
-    if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
+    const code = String(error?.code ?? "");
+    if (code === "OPENAI_API_KEY_MISSING" || code.endsWith("_API_KEY_MISSING")) {
       return { recipe, image: null };
     }
   }
@@ -1418,13 +1430,20 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
 
     const outputDir = String(process.env.DIABETICSPACE_IMAGE_DIR ?? "").trim() || join(resolvedDataDir, "diabetic-images");
     const provider = resolveImageProviderConfig(db);
-    if (provider.provider_id !== "openai") {
+    if (provider.provider_id === "none") {
       sendJson(res, 503, { error: "Image provider disabled", route: "api_unavailable" });
       return true;
     }
 
     try {
-      const result = await generateDiabeticRecipeImageToFile(recipe, { outputDir, force, apiKey: provider.apiKey, model: provider.model || undefined });
+      const result = await generateDiabeticRecipeImageToFile(recipe, {
+        outputDir,
+        force,
+        provider: provider.provider_id,
+        apiKey: provider.apiKey,
+        baseUrl: provider.baseUrl,
+        model: provider.imageModel || undefined
+      });
       const updated = setDiabeticRecipeImage(db, recipe.recipe_id, result.image_url) ?? recipe;
       sendJson(res, 200, {
         ok: true,
@@ -1443,8 +1462,14 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
       });
       return true;
     } catch (error) {
-      if (String(error?.code ?? "") === "OPENAI_API_KEY_MISSING") {
+      const code = String(error?.code ?? "");
+      if (code === "OPENAI_API_KEY_MISSING") {
         sendJson(res, 503, { error: "OPENAI_API_KEY not configured", route: "api_unavailable" });
+        return true;
+      }
+
+      if (code.endsWith("_API_KEY_MISSING")) {
+        sendJson(res, 503, { error: `${provider.provider_id.toUpperCase()} API key not configured`, route: "api_unavailable" });
         return true;
       }
 

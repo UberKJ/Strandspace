@@ -182,13 +182,14 @@ function applyProviderDef(id, def) {
 }
 
 function rebuildProviderSelects() {
-  const fillSelect = (selectEl, { textOnly = false, includeNone = true } = {}) => {
+  const fillSelect = (selectEl, { textOnly = false, imageOnly = false, includeNone = true } = {}) => {
     if (!selectEl) return;
     const previousValue = selectEl.value;
     selectEl.innerHTML = "";
     for (const [id, def] of Object.entries(PROVIDER_DEFS)) {
       if (id === "none" && !includeNone) continue;
       if (textOnly && !def.supports.text && id !== "none") continue;
+      if (imageOnly && !def.supports.image && id !== "none") continue;
       const option = document.createElement("option");
       option.value = id;
       option.textContent = def.label;
@@ -200,6 +201,7 @@ function rebuildProviderSelects() {
   };
 
   fillSelect(els.settingsActiveTextProvider, { textOnly: true });
+  fillSelect(els.settingsActiveImageProvider, { imageOnly: true });
   fillSelect(els.settingsProvider, { textOnly: false });
   fillSelect(els.settingsProfileProvider, { textOnly: true, includeNone: false });
 }
@@ -1372,7 +1374,12 @@ async function refreshProviderSettings() {
   }
   if (els.settingsProviderImageModel) {
     els.settingsProviderImageModel.value = String(imageModelRow?.value ?? "");
-    els.settingsProviderImageModel.placeholder = meta?.env?.image_model ? `Env: ${meta.env.image_model}` : "Image model (optional)";
+    const defaultImageModel = String(defaults.image_model ?? "").trim();
+    els.settingsProviderImageModel.placeholder = meta?.env?.image_model
+      ? `Env: ${meta.env.image_model}`
+      : defaultImageModel
+        ? `Default: ${defaultImageModel}`
+        : "Image model (optional)";
   }
 
   const keySource = envHasKey ? "environment" : savedHasKey ? "saved locally" : "not set";
@@ -1472,13 +1479,17 @@ async function refreshActiveProviders() {
   const selectedImage = String(imageRow?.value ?? "openai").trim() || "openai";
 
   const textProvider = PROVIDER_DEFS[selectedText]?.supports?.text ? selectedText : "openai";
-  const imageProvider = selectedImage === "none" ? "none" : "openai";
+  const imageProvider = selectedImage === "none"
+    ? "none"
+    : PROVIDER_DEFS[selectedImage]?.supports?.image
+      ? selectedImage
+      : "openai";
 
   if (els.settingsActiveTextProvider) els.settingsActiveTextProvider.value = textProvider;
   if (els.settingsActiveImageProvider) els.settingsActiveImageProvider.value = imageProvider;
 
   const textLabel = PROVIDER_DEFS[textProvider]?.label ?? textProvider;
-  const imageLabel = imageProvider === "none" ? "Disabled" : PROVIDER_DEFS.openai.label;
+  const imageLabel = imageProvider === "none" ? "Disabled" : (PROVIDER_DEFS[imageProvider]?.label ?? imageProvider);
 
   // If a profile is active it overrides the per-provider active selection on
   // the server. Show that so the user isn't confused why the dropdown above
