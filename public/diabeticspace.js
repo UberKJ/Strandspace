@@ -283,8 +283,8 @@ async function uploadImageForRecipe(recipe, card, file, statusEl) {
   if (!recipe || !card) return;
   if (!recipe.recipe_id) return;
   if (!file) return;
-  if (file.size > 1_000_000) {
-    if (statusEl) statusEl.textContent = "Image must be 1MB or smaller.";
+  if (file.size > 1_800_000) {
+    if (statusEl) statusEl.textContent = "Image must be 1.8MB or smaller.";
     return;
   }
 

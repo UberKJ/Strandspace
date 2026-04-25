@@ -422,8 +422,8 @@ export async function generateDiabeticRecipeImageToFile(recipe, {
     throw new Error("generateDiabeticRecipeImageToFile: OpenAI image response was missing image bytes");
   }
 
-  if (bytes.length > 1_000_000) {
-    throw Object.assign(new Error("generateDiabeticRecipeImageToFile: generated image exceeded 1MB limit"), {
+  if (bytes.length > 1_800_000) {
+    throw Object.assign(new Error("generateDiabeticRecipeImageToFile: generated image exceeded 1.8MB limit"), {
       code: "IMAGE_TOO_LARGE",
       bytes: bytes.length
     });

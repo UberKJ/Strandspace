@@ -17,7 +17,7 @@ Notes:
 - `POST /api/diabetic/rate` `{ recipe_id, rating }`
 - `POST /api/diabetic/favorite` `{ recipe_id, favorite }`
 - `POST /api/diabetic/ensure-image` `{ recipe_id, force? }`
-- `POST /api/diabetic/recipe-image/upload` `{ recipe_id, data_url }` (base64 data URL; <= 1MB)
+- `POST /api/diabetic/recipe-image/upload` `{ recipe_id, data_url }` (base64 data URL; <= 1.8MB)
 
 ## Search + AI
 
@@ -83,4 +83,3 @@ Notes:
 - `/print/recipe.html?recipe_id=...`
 - `/print/meal-plan.html?plan_id=...`
 - `/print/shopping-list.html?list_id=...`
-

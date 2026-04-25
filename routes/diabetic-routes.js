@@ -983,8 +983,8 @@ export async function handleDiabeticApiRoutes(req, res, url, db, { dataDir } = {
       return true;
     }
 
-    if (bytes.length > 1_000_000) {
-      sendJson(res, 413, { error: "Image must be 1MB or smaller" });
+    if (bytes.length > 1_800_000) {
+      sendJson(res, 413, { error: "Image must be 1.8MB or smaller" });
       return true;
     }
 
