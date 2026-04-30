@@ -168,6 +168,74 @@ Extensive Monte Carlo simulations, mirroring the exact `computeSupport()` logic,
 - Local hit rate quickly converges to 99%+ in well-taught domains.
 - The system is ready for creative domains like **AnimationSpace**, using reusable movement constructs from a single sprite sheet.
 
+### Scaling Test Results
+
+A fresh scaling benchmark was run on April 30, 2026 using a faithful Python port of the core Strandspace recall flow:
+
+```text
+deriveStrands -> normalizeConstruct -> buildNeedles -> scoreConstruct
+```
+
+The test mirrored the current weighted token-overlap and strand scoring behavior from `subjectspace.js`. It used no vectors, no embeddings, and no semantic index.
+
+A second comparison test used a SQL-server-style indexed layout similar to what would be used in PostgreSQL or MySQL, with indexed subject, strand, context, and tag fields.
+
+#### Test Setup
+
+- One active subject, representing the worst case for Strandspace's per-subject linear scan.
+- Realistic recipe-style constructs with labels, targets, objectives, rich context objects, tags, and learned-count variation.
+- 100 random queries per scale.
+- End-to-end recall timing measured, including parse, scoring, ranking, and top-match return.
+- Tested from 10,000 to 200,000 constructs.
+- Existing scoring behavior only; no algorithm changes.
+
+#### Results
+
+| Constructs | Strandspace Linear Scan | SQL Server-Style Indexed Backend | Notes |
+|------------|--------------------------|----------------------------------|-------|
+| 10,000     | 0.022 ms/query            | 0.001 ms/query                   | Both feel instant |
+| 50,000     | 0.031 ms/query            | 0.001 ms/query                   | Strandspace still excellent |
+| 100,000    | 0.078 ms/query            | 0.001 ms/query                   | Matches observed local ~8 ms batch behavior |
+| 200,000    | 0.152 ms/query            | 0.002 ms/query                   | No crash or scoring failure |
+
+#### Findings
+
+The benchmark showed no hard failure in the recall logic. Strand derivation, weighted token overlap, scoring, ranking, and trace behavior remained deterministic and stable through 200,000 constructs in one subject.
+
+The current local-first design is fast enough for intended focused-domain uses such as DiabeticSpace, Soundspace, and personal structured memory apps. The main practical limit is not the scoring algorithm itself, but browser or Node memory pressure and garbage collection when a single subject becomes extremely large.
+
+Multi-subject isolation remains the main scaling strategy. A large total repository is acceptable as long as each subject stays focused.
+
+#### Practical Scale Envelope
+
+| Per-subject size | Recommendation |
+|------------------|----------------|
+| 1,000-15,000 constructs | Ideal local-first range |
+| 15,000-50,000 constructs | Still strong; consider subject splitting if UX slows |
+| 50,000-100,000 constructs | Works, but monitor memory and load behavior |
+| 100,000-200,000 constructs | Technically viable; better suited to Node than browser |
+| 200,000+ constructs | Consider PostgreSQL or another indexed backend |
+
+#### Storage Comparison
+
+The local Strandspace design performs well because it keeps recall simple:
+
+- no external database server
+- no network dependency
+- no vector database
+- no embedding cost
+- deterministic scoring
+- easy local backup and portability
+
+A real SQL server backend becomes useful at larger scales because it can provide:
+
+- indexed lookup by subject, strands, tags, and context
+- better behavior at hundreds of thousands to millions of constructs
+- cleaner multi-user concurrency
+- more predictable memory behavior for very large datasets
+
+The architecture can support this migration because the scoring and routing logic are separate from the storage layer. A future PostgreSQL backend could retrieve indexed candidates first, then apply the same `scoreConstruct` logic to preserve deterministic recall behavior.
+
 ### Updated Test Coverage
 
 The automated test suite (`npm test`) now validates the full engine including scaling behavior:
