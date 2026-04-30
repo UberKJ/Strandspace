@@ -141,6 +141,36 @@ Strandspace is built on a fast, deterministic recall engine using strand derivat
 
 **Scaling summary:** Current tests show Strandspace remains stable and extremely fast for focused local-first subjects. Multi-subject simulations stayed under 2.1 ms at more than 25,000 total constructs, while a single-subject stress test stayed deterministic through 200,000 constructs. The practical limit is not the scoring logic itself, but memory and garbage-collection pressure when one subject becomes very large. SQLite/local-first remains the recommended default, with PostgreSQL-style indexing as the clean future path for very large deployments.
 
+### Local Performance
+
+The local-first engine is optimized for focused subjects running on a laptop, desktop, or small local server with SQLite. For this use case, Strandspace keeps recall simple: load or fetch the relevant subject, derive query strands, score known constructs deterministically, and return the strongest match.
+
+This design is well suited for DiabeticSpace, Soundspace, personal structured memory, small team workflows, and other repeated-domain apps where each subject stays focused.
+
+Benefits of the local-first path:
+
+- no external database server
+- no network dependency
+- no vector database
+- no embedding cost
+- deterministic scoring
+- easy local backup and portability
+- practical sub-millisecond to low-millisecond recall for focused domains
+
+### Scale Path
+
+For larger deployments, Strandspace can move from SQLite/local-first storage to an indexed SQL backend while keeping the same scoring model. PostgreSQL, MySQL, or another server database can retrieve a smaller candidate set first using indexed subject, strand, context, and tag fields. The existing `scoreConstruct` logic can then rank those candidates deterministically.
+
+This means the scale path does not require replacing Strandspace recall. It mainly changes how candidate constructs are fetched before scoring.
+
+A larger SQL backend becomes useful when a project needs:
+
+- hundreds of thousands to millions of constructs per subject
+- multi-user concurrency
+- server-side indexing
+- lower memory pressure in browser or Node runtimes
+- more predictable behavior for very large datasets
+
 ### Core Recall Mathematics
 
 The local recall engine performs a linear scan **per subject only**. Theoretical latency is:
@@ -220,16 +250,7 @@ Multi-subject isolation remains the main scaling strategy. A large total reposit
 
 #### Storage Comparison
 
-The local Strandspace design performs well because it keeps recall simple:
-
-- no external database server
-- no network dependency
-- no vector database
-- no embedding cost
-- deterministic scoring
-- easy local backup and portability
-
-A real SQL server backend becomes useful at larger scales because it can provide:
+The local Strandspace design performs well because it keeps recall simple. A real SQL server backend becomes useful at larger scales because it can provide:
 
 - indexed lookup by subject, strands, tags, and context
 - better behavior at hundreds of thousands to millions of constructs
