@@ -139,6 +139,8 @@ It first asks whether local memory is already sufficient.
 
 Strandspace is built on a fast, deterministic recall engine using strand derivation and weighted token overlap scoring instead of embeddings or vector search. This delivers exceptional performance for repeated, domain-specific tasks.
 
+**Scaling summary:** Current tests show Strandspace remains stable and extremely fast for focused local-first subjects. Multi-subject simulations stayed under 2.1 ms at more than 25,000 total constructs, while a single-subject stress test stayed deterministic through 200,000 constructs. The practical limit is not the scoring logic itself, but memory and garbage-collection pressure when one subject becomes very large. SQLite/local-first remains the recommended default, with PostgreSQL-style indexing as the clean future path for very large deployments.
+
 ### Core Recall Mathematics
 
 The local recall engine performs a linear scan **per subject only**. Theoretical latency is:
