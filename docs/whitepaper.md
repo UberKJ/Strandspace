@@ -1,110 +1,151 @@
 # Strandspace White Paper
 
-**Updated April 23, 2026**
+**Updated August 17, 2026**
 
-**Local-first structured memory for repeated tasks, adaptive workflows, and domain apps that learn over time**
+**Local-first structured memory, verified expertise, and adaptive personal AI**
 
-> Store the useful pattern. Recall it when it matters. Expand only when memory is not enough.
+> Reason when the problem is new. Verify what is learned. Condense useful knowledge. Recall it locally when it is needed again.
 
 ---
 
 ## Executive Summary
 
-Strandspace is a working platform built around one practical claim:
+Strandspace is a working local-first structured memory platform built around a practical claim:
 
-**When a system has already learned a useful setup, recipe, workflow, or troubleshooting path, it should try local recall first instead of rebuilding the answer from scratch every time.**
+**Repeated successful reasoning should become cheaper to reactivate than novel reasoning.**
 
-Strandspace is not a claim of general intelligence and it is not framed as a replacement for large language models.
-It is a **local-first structured memory layer** for repeated work.
+Large language models are extraordinarily capable generalists, but many AI systems repeatedly send the same context, preferences, instructions, examples, and previously solved information back to large models. Strandspace explores a different division of labor:
 
-That repeated work can include:
+**frontier reasoning -> verification -> condensation -> trusted local construct -> inexpensive reuse -> re-verification or escalation when uncertainty warrants it.**
 
-- recurring technical setups
-- repeated troubleshooting paths
-- reusable recipes and recipe variants
-- event workflows
-- repeated domain questions with small variations
-- assistants that should improve through use rather than restart from zero every time
+The goal is not to replace large language models. The goal is to spend expensive general intelligence where uncertainty actually exists and preserve useful learned structure locally after it has earned trust.
 
-The platform now includes multiple implementation surfaces built on the same memory pattern:
+The current repository already implements the earlier form of this idea through:
 
-- **Subjectspace**, a generic structured memory layer
-- **Soundspace**, a live sound and karaoke-oriented domain app
-- **DiabeticSpace**, a diabetic-friendly recipe and adaptation app
+- structured local constructs
+- subject-isolated SQLite persistence
+- deterministic recall from partial cues
+- local-first routing
+- optional LLM validation and expansion
+- learn-back of improved results
+- domain applications demonstrating repeated reuse and adaptation
 
-The central economic claim is narrow and practical:
+The next research direction extends that foundation toward **Adaptive Personal AI**: a user-owned intelligence layer that learns an individual's capabilities, preferences, successful workflows, and areas of friction, then gives specialized agents only the trusted context they need for the task at hand.
 
-> Repeated work should become cheaper, faster, and more dependable after the system has already learned the right construct.
-
-In the current implementation, Strandspace attempts to recall locally first, routes to AI only when the local match is narrow or incomplete, and can learn refined results back into local memory for future use.
+Disability is the first and most demanding application of this direction. The system should not require a diagnostic label to decide how to help. It should learn where the gap exists between what a person wants to accomplish and what is difficult for that individual, then adapt tools, workflows, agents, and levels of assistance around that gap.
 
 ---
 
-## Abstract
+## 1. The Problem: General Intelligence Repeatedly Reconstructs Local Expertise
 
-Strandspace is a query-triggered structured recall framework for **repeated learned behavior**.
+Today's LLMs contain broad general capability, yet application architectures often repeatedly purchase reasoning that has effectively happened before.
 
-A prompt is treated as an activation event rather than only a text-search event.
-The system attempts to reactivate a useful stored construct from local memory before escalating to an external model.
+A personal assistant may resend:
 
-The current architecture uses a recurring pattern:
+- user preferences
+- project history
+- operating instructions
+- successful prior solutions
+- communication style
+- examples of desired behavior
+- previously verified facts
+- long conversation histories
 
-- **trigger strands** identify the active task or intent
-- **anchor strands** narrow the working region of meaning
-- **composite constructs** stabilize reusable knowledge
-- the **expression field** emits a temporary answer when a construct is stable enough to trust
-- **stabilized memory** stores the learned construct for later reactivation
+This is appropriate when the system is discovering something new. It becomes increasingly inefficient after useful behavior has been learned.
 
-The result is not a general-purpose thinker.
-It is better understood as a **memory layer for repeated work**.
+Humans provide a useful design inspiration without implying neurological equivalence. We do not hold all information internally; we use books, tools, external records, other experts, and fragments of remembered context. Repetition also changes the cost of familiar work. A difficult new procedure can eventually become expertise that is reactivated with far less deliberate effort.
 
-When local evidence is strong enough, Strandspace answers directly.
-When the match is weak, narrow, or incomplete, the system can route to AI for validation or expansion and then learn the refined answer back into local memory.
+Strandspace asks whether AI systems can make a similar computational transition:
 
----
+> **Move computation from reasoning toward expertise as experience accumulates.**
 
-## 1. Problem Statement
-
-Most assistants still pay the broad reasoning or retrieval cost again and again, even when the user keeps asking about the same underlying setup.
-
-That pattern has recurring drawbacks:
-
-- it does not preserve reusable working structure especially well
-- it often resends more context than the current question really needs
-- repeated domain recall stays slower and more expensive than it has to be
-- useful variants are often regenerated rather than remembered
-
-Strandspace addresses this by shifting from **answer everything from scratch** toward **reactivate a learned construct when the evidence is strong enough**.
-
-The goal is not to remove external reasoning.
-The goal is to reserve it for cases where local memory is too thin, too partial, or too uncertain.
-
-A helpful mental model is not “replace the thinker.”
-It is “build the worker that remembers how this job usually goes.”
+The system should not forget how to reason. It should stop paying full reasoning cost when a trusted learned construct is already sufficient.
 
 ---
 
-## 2. Architectural Model
+## 2. Core Thesis: Spend Intelligence Where Uncertainty Exists
 
-The current architecture includes these conceptual parts:
+The guiding principle is:
 
-- **Trigger strands** identify intent such as recall, compare, adapt, or assist
-- **Anchor strands** narrow the active region of meaning
-- **Composite constructs** stabilize reusable knowledge such as a mixer setup, recipe variant, or troubleshooting path
-- an **expression field** acts as the temporary workspace where the active answer forms
-- **stabilized memory** stores a learned construct that can be reactivated later with lower effort
+> **Never spend more intelligence than the uncertainty of the problem requires.**
 
-The system does not aim to store every possible phrasing.
-It aims to store a reusable construct and the cues that can reactivate it.
+A task may require only deterministic local recall. Another may require a small local model. A partially known task may require validation. A genuinely novel or ambiguous problem may justify a frontier model.
+
+The desired hierarchy is:
+
+1. deterministic rules or trusted local constructs when sufficient
+2. small/local models for familiar execution and adaptation
+3. specialized models or agents when domain reasoning is required
+4. frontier models for novel, difficult, or unresolved reasoning
+5. verification of useful results
+6. condensation and learn-back so the next encounter can begin lower in the hierarchy
+
+This is not anti-LLM architecture. Frontier models remain extremely valuable. Strandspace attempts to use them as powerful generalists and teachers rather than automatically rehiring them for every familiar task.
 
 ---
 
-## 3. Current Platform Architecture
+## 3. Knowledge Is More Than Known or Unknown
 
-### 3.1 Subjectspace
+A useful personal AI needs to distinguish several properties of memory.
 
-Subjectspace is the generic structured memory layer.
-A stored construct can include:
+### Memory strength
+
+How strongly has the construct been learned or repeatedly used?
+
+### Trust
+
+Why should the system believe the construct is reliable? Trust may come from deterministic tests, user confirmation, authoritative sources, repeated successful execution, independent verification, or other domain-appropriate evidence.
+
+### Freshness
+
+Could the outside world have changed since the construct was verified?
+
+A personal preference may remain valid until the user changes it. A government requirement may be remembered perfectly while becoming factually obsolete. Memory failure and world-state change are different problems.
+
+### Provenance
+
+Where did the construct originate, who or what modified it, and how was it verified?
+
+### Readiness
+
+Is the construct sufficiently learned, trusted, and current to act on without additional reasoning?
+
+This leads to richer states than simply `known` and `unknown`:
+
+**new -> learned -> practiced -> trusted -> dormant -> reactivated -> refreshed**
+
+A dormant construct need not be relearned from zero. It may simply require reactivation or verification before use.
+
+---
+
+## 4. The Strandspace Expertise Loop
+
+The long-term loop is:
+
+1. **Encounter** a task or problem.
+2. **Recall** any relevant local constructs from partial cues.
+3. **Assess** strength, trust, freshness, provenance, and uncertainty.
+4. **Route** to the least expensive capable intelligence.
+5. **Reason or act** using only the context required for that task.
+6. **Verify** the result using a method appropriate to the domain.
+7. **Condense** reusable structure rather than preserving unnecessary conversational bulk.
+8. **Learn back** the verified construct locally.
+9. **Reuse** it cheaply when a related task returns.
+10. **Escalate again** only when the construct is stale, contradictory, incomplete, or insufficient.
+
+In compact form:
+
+**novel problem -> reason -> verify -> condense -> store -> reuse -> escalate on uncertainty**
+
+This is the central research direction of Strandspace.
+
+---
+
+## 5. Current Platform Architecture
+
+### 5.1 Subjectspace
+
+Subjectspace is the generic structured memory layer. A stored construct can include:
 
 - subject label and subject ID
 - construct label
@@ -120,234 +161,271 @@ A stored construct can include:
 
 The recall pipeline parses a prompt, scores stored constructs against active cues, and emits a stable answer only when the winning construct crosses the readiness threshold.
 
-When the match is weaker, the system can recommend another local example first or route to AI assistance.
+### 5.2 Current routing
 
-### 3.2 Soundspace
-
-Soundspace is a domain-specific app for live sound and karaoke-oriented workflows.
-It demonstrates that the same local-first memory pattern can serve music-engineering tasks such as:
-
-- microphone gain staging
-- karaoke vocal setups
-- host-forward music bingo scenes
-- venue-size variations
-- monitor and speaker configuration patterns
-
-This domain matters because the work repeats with small variation. A good host mic scene or mixer setup often needs refinement, not reinvention.
-
-### 3.3 DiabeticSpace
-
-DiabeticSpace is a domain-specific app for diabetic-friendly recipe recall, generation, and adaptation.
-It demonstrates that Strandspace can carry structured food knowledge and variant evolution, including:
-
-- local-first recipe recall
-- local recipe search
-- AI-assisted first-pass recipe creation
-- adaptation of saved recipes into new variants
-- GI-oriented notes and substitutions
-- saved results with local image handling
-- builder-style generation flows for creating new meals
-
-This domain matters because food planning is repetitive but personal. People often want not only a new recipe, but the recipe that worked before, the modified version, and the next variation built from that known baseline.
-
-### 3.4 Routing Logic
-
-The current local routing modes include:
+The current implementation already contains a first version of uncertainty-aware routing:
 
 - `local_recall`: the construct is stable enough to answer directly
 - `api_validate`: local recall is usable, but the match is narrow or contested
-- `api_expand`: the system found partial recall, but not enough to trust without help
-- `teach_local`: local memory is too thin to justify expansion yet
+- `api_expand`: partial local memory exists but additional reasoning is needed
+- `teach_local`: local evidence is too thin and another example should be captured
 
-This matters because the platform is not designed to call an external model by default.
-It first asks whether local memory is already sufficient.
+The future router generalizes this idea to additional compute tiers, including deterministic logic, local models, specialized agents, and interchangeable frontier providers.
 
-### 3.5 Learn-Back Loop
+### 5.3 Learn-back
 
-Across the current apps, the active loop is:
+The active implementation can take a result improved with external assistance and store the useful structure locally. Future prompts can then reactivate the improved construct without reconstructing the entire interaction.
 
-1. Local recall attempts to answer
-2. AI assistance is used only when the local route says it is warranted
-3. The refined construct is optionally learned back into local memory
-4. Future prompts can recall the improved construct faster
-5. Variants can accumulate instead of being regenerated from nothing
+### 5.4 Domain applications
 
----
+The repository currently demonstrates the pattern through:
 
-## 4. Benchmarking and Prompt Compaction
+- **Strandspace Studio**, a general construct teaching, recall, and trace surface
+- **Soundspace**, repeated live-sound and karaoke workflows
+- **DiabeticSpace**, recipe generation, recall, adaptation, variants, and learn-back
 
-One of the most important current ideas in Strandspace is that the original long user prompt may not be the fairest benchmark input for the external AI path.
-
-The compare route can generate shorter candidate prompts and accept one only if the system can prove locally that the shorter prompt reactivates the same construct.
-
-The current benchmark flow is:
-
-1. Start from the user question
-2. Generate shorter recall candidates from the matched construct
-3. Re-run local recall on those shorter candidates
-4. Accept a compact benchmark prompt only if it lands on the same construct
-5. Time local recall and the external assist route against that compact, semantically equivalent prompt
-
-This matters because it tests whether Strandspace can compress the active cue set while preserving recall identity.
-
-The broader point is not just that local recall can be faster.
-It is that repeated tasks may not need to keep paying the same external prompt cost once the construct is already known.
+These are experimental surfaces for the same underlying memory architecture rather than separate theories.
 
 ---
 
-## 5. Current Validation Status
+## 6. Personal Strandspace
 
-The current repository includes automated regression coverage across the main app surfaces and recall flows.
+The next major architecture separates personal intelligence into three layers.
 
-The active suite covers areas such as:
+### Model intelligence
 
-### App shell and routing
+Language, planning, reasoning, transformation, and general problem solving. Models should be replaceable components rather than the permanent owner of personal learning.
 
-- serving the DiabeticSpace launcher or main app surface
-- serving Strandspace Studio
-- serving the standalone Soundspace app
+### Personal Strandspace
 
-### Subjectspace memory behavior
+User-owned durable knowledge such as:
 
-- exposing seeded subject fields
-- storing and recalling a custom construct
-- routing narrow-but-ambiguous recall toward API validation
-- reporting disabled assist status when no API key is present
-- comparing local recall against a mocked external round-trip
-- returning an AI-backed draft that can be saved into local memory
+- preferences
+- capabilities and areas of friction
+- trusted personal facts
+- successful workflows
+- project state
+- learned adaptations
+- permissions and autonomy boundaries
+- provenance and verification state
 
-### Soundspace retrieval and learning
+### Agents
 
-- recalling a seeded mixer setup
-- storing a new sound construct for later recall
-- generating and storing a missing sound construct on demand
+Specialized workers that receive only the relevant slice of trusted Strandspace context and the tools required for their responsibility.
 
-### DiabeticSpace behavior
+A paperwork agent does not need live-sound knowledge. A coding agent does not need recipe memory. Least-necessary-context routing should reduce token use, latency, privacy exposure, and irrelevant information presented to the model.
 
-- recipe recall and search flows
-- save and adaptation flows
-- builder-style session behavior
-- image handling and local persistence paths
+The personal assistant therefore becomes:
 
-The tests do not prove universal correctness, but they do provide real implementation coverage around the core claim: local memory is supposed to recall repeated structured work, and external assistance is supposed to be selective rather than default.
+**Personal Strandspace + agents + permissions + accumulated verified knowledge**
+
+rather than being permanently synonymous with any particular LLM vendor.
 
 ---
 
-## 6. Current Findings
+## 7. Adaptive Personal AI and Disability
 
-The practical findings so far support a narrower claim than “AI replacement.”
+Disability provides a demanding proving ground for Personal Strandspace because human capability is not uniform.
 
-### 6.1 Local recall is extremely cheap on repeated prompts
+Traditional accessibility systems often begin with a category or predefined accommodation. Adaptive Personal AI instead asks:
 
-In benchmark flows, local Strandspace recall has repeatedly shown the expected directional result: when a construct is already known, local recall is dramatically faster than an external assist round-trip.
+> **What is this person trying to accomplish, where is the friction, and what is the least burdensome way to bridge that gap?**
 
-### 6.2 Prompt compaction preserves recall identity in at least some repeated cases
+Relevant friction may be:
 
-The compare path now attempts to shorten the benchmark prompt only when the system can verify locally that the shorter prompt still lands on the same construct.
+- physical or motor
+- sensory
+- cognitive
+- communication
+- executive-function
+- memory
+- attention
+- stamina or fluctuating capacity
+- combinations that do not fit one diagnostic label
 
-This is important because it suggests the system may be able to preserve meaning while sending less user-query material outward.
+The capability profile should belong to the user and evolve through experience. The AI can learn successful accommodations and preserve them as reusable constructs.
 
-### 6.3 Variant memory is as important as first-pass generation
+An early application is paperwork and complex-document assistance. The system can learn how a user prefers documents explained, remember ongoing matters, retrieve approved personal facts, ask only for missing information, prepare responses, preserve task state across interruptions, and escalate when legal, factual, or procedural uncertainty requires stronger reasoning or fresh verification.
 
-The newer app surfaces, especially DiabeticSpace, show a practical pattern that matters a great deal:
-
-- a first-pass construct can be generated
-- the result can be saved into local memory
-- a later prompt can recall that construct locally
-- the recalled construct can be adapted into a new variant
-- the changed version can be saved for future reuse
-
-This matters because many real-world tasks are not just “find me the answer again.”
-They are “find me the version that worked and adjust it.”
-
-### 6.4 Local-first labeling improves product clarity
-
-When a user can see whether a result was recalled locally, adapted from a local construct, or generated with help, the memory behavior becomes understandable at the product level rather than only in backend theory.
+The larger goal is not an assistant for one disability. It is open infrastructure for growing a personal AI around the individual.
 
 ---
 
-## 7. Why These Results Matter
+## 8. Verification-Driven Trust
 
-The current results support a practical conclusion:
+Distributed and condensed knowledge is useful only if the system can determine what deserves trust.
 
-- when the system has already learned a reusable construct, local recall is extremely cheap
-- repeated work does not always need broad external reasoning
-- the economic opportunity is not only answering faster, but routing less work outward
-- useful variants become more valuable when they are stored and evolved rather than regenerated from zero
-- domain apps can make the memory behavior visible to real users
+Verification should be domain appropriate rather than simply asking another LLM whether an answer looks correct.
 
-This means Strandspace is better understood as a **platform for structured memory-backed apps** than as an abstract theory artifact.
+Possible mechanisms include:
+
+- deterministic tests for software and calculations
+- authoritative sources for changing factual claims
+- multiple independent sources when appropriate
+- provenance and version history
+- cryptographic signatures or checksums for shared constructs
+- user confirmation for personal preferences
+- specialized evaluators for domain outputs
+- independent agent comparison
+- expiry or freshness policies for time-sensitive knowledge
+
+A future construct may therefore carry metadata such as:
+
+- source/provenance
+- verification method
+- confidence or trust state
+- last verification time
+- freshness policy
+- learned/practice count
+- lineage and versions
+- estimated creation cost
+- estimated recall cost
+
+The agent can then ask not merely "Do I know this?" but:
+
+> **What do I know, how do I know it, how current is it, and what is the cheapest responsible way to verify it?**
 
 ---
 
-## 8. Limitations
+## 9. Distributed Knowledge Instead of Monolithic Context
 
-The current platform still has important limits:
+A local personal AI does not need to contain all human knowledge.
+
+It needs enough intelligence to:
+
+- recognize familiar constructs
+- manipulate useful fragments
+- know what belongs locally
+- discover external knowledge when necessary
+- evaluate provenance and uncertainty
+- retrieve specialized information
+- verify changing claims
+- escalate genuinely novel problems
+
+This creates a distributed hierarchy:
+
+**personal constructs -> local specialized knowledge -> trusted/shared constructs -> specialized agents/models -> frontier reasoning**
+
+The important optimization is not simply model size. It is determining the smallest amount of intelligence and trusted context necessary to complete the task reliably.
+
+---
+
+## 10. Open and Closed Models
+
+Strandspace should not depend on one model provider.
+
+A small open local model may execute familiar tasks privately. A larger open model may handle more difficult local reasoning. A proprietary frontier model may be the best choice for a genuinely novel problem. The router should select based on capability, privacy, cost, latency, and uncertainty.
+
+Personal learning remains outside the replaceable model layer.
+
+If a better model provider appears, the user should be able to switch without losing years of accumulated preferences, workflows, adaptations, project memory, or trusted constructs.
+
+This separation makes the user's learned intelligence portable rather than rented.
+
+---
+
+## 11. Measuring Expertise Formation
+
+The expanded thesis should be experimentally testable.
+
+Useful measurements include:
+
+- **frontier escalation rate**: percentage of tasks requiring a large external model
+- **local completion rate**: percentage completed using local constructs/models
+- **context compression ratio**: original context versus task-specific trusted context
+- **cost per completed task**
+- **latency per completed task**
+- **tokens per completed task**
+- **compute or energy per completed task**, where measurable
+- **construct reactivation accuracy**
+- **verification failure rate**
+- **stale-construct detection rate**
+- **expertise formation curve**: whether repeated successful execution reduces compute requirements without unacceptable loss of quality
+
+The central empirical question is:
+
+> **Does repeated verified experience measurably reduce the computational cost of reliable task completion?**
+
+---
+
+## 12. Current Evidence and Limitations
+
+Current Strandspace testing supports a narrower claim than the full Personal Strandspace vision.
+
+The repository demonstrates:
+
+- deterministic local construct recall
+- subject isolation
+- local SQLite persistence
+- local-first routing
+- optional external validation/expansion
+- learn-back behavior
+- prompt compaction experiments
+- application-level reuse and variant memory
+- automated regression and scaling simulations
+
+Local recall shows the expected directional advantage for known repeated tasks compared with external model round trips.
+
+Important limitations remain:
 
 - benchmark samples are still narrow and prompt-specific
-- LLM timing varies with provider latency and model routing
-- assist payloads can still carry more context than a final optimized design should
-- local memory quality depends heavily on how well the construct is taught or saved
-- the repository currently contains multiple growing app surfaces, so product boundaries are still being refined
-- some parts of the codebase still need cleanup, rewrites, and stronger separation between platform and app concerns
+- stronger p50/p95/p99 real-hardware measurements are needed
+- correctness and adversarial recall testing need expansion
+- trust, freshness, and provenance require richer implementation
+- local-model routing is not yet the full multi-tier hierarchy described here
+- personal capability modeling and accessibility adapters are the next research phase, not shipped claims
+- assist payloads can still be reduced further
 
-These limits do not erase the core result, but they define the next engineering work clearly.
-
----
-
-## 9. Near-Term Roadmap
-
-The most practical near-term steps are:
-
-- reduce external assist payload size so prompt compaction produces larger end-to-end savings
-- keep improving local-first recall and adaptation behavior
-- add benchmark history logging so repeated runs can be analyzed over time
-- improve documentation so the platform layer and app layers are easier to understand
-- polish one app surface into a cleaner user-facing product
-- strengthen variant lineage so users can see how a saved construct changed over time
-- continue separating engine concerns from app-specific concerns inside the codebase
+These limitations define the engineering work rather than invalidate the thesis.
 
 ---
 
-## 10. Conclusion
+## 13. Falsification Conditions
 
-Strandspace now represents a clearer and more defensible platform concept than the earlier single-surface prototype.
+The Strandspace thesis should be reconsidered if:
 
-The active repository includes:
+- local recall stops providing meaningful cost or latency advantages for repeated known tasks
+- recall accuracy degrades unacceptably as construct count grows
+- compact trusted context cannot preserve task identity under realistic variation
+- verification costs erase the savings from reuse
+- learn-back pollutes memory faster than it improves useful expertise
+- stale or contradictory constructs cannot be detected reliably enough for responsible use
+- small/local execution cannot perform learned tasks reliably enough to reduce frontier escalation
+- indexed retrieval cannot preserve inspectable deterministic scoring at larger scales
 
-- a generic structured memory layer
-- multiple domain apps built on the same memory pattern
-- local-first routing with controlled AI escalation
-- benchmark logic that tests compact prompt equivalence
-- automated coverage around the main recall and learning flows
-- visible evidence that repeated local recall can be dramatically cheaper than external assist round-trips
-
-The central claim remains narrow, practical, and increasingly testable:
-
-> When useful meaning can be reactivated from a learned construct, the system should recall locally first and spend external tokens only when local memory is not yet sufficient.
-
-Strandspace is not best understood as a general chatbot.
-It is better understood as a **local-first structured memory platform for apps that need to remember, adapt, and reuse repeated work**.
+A useful architecture must state what evidence would prove it wrong.
 
 ---
 
-## Appendix A: Current Conceptual Loop
+## 14. Near-Term Research Roadmap
 
-Across the current apps, the repeating loop is:
+The next phase is to:
 
-1. teach or generate a structured construct
-2. store it locally
-3. recall it from a future prompt
-4. route to AI only when local memory is weak or incomplete
-5. learn the improved answer back into memory
-6. reuse and adapt the stored result later
+1. extend constructs with explicit provenance, trust, freshness, and lineage metadata
+2. build a Personal Strandspace capability-profile layer
+3. implement least-necessary-context retrieval for specialized agents
+4. add local-model routing before frontier escalation
+5. build the first adaptive accessibility agent around paperwork/document workflows
+6. improve benchmark history with p50/p95/p99 latency and cost measurements
+7. measure context compression and frontier-escalation rates
+8. strengthen adversarial testing for ambiguity, stale knowledge, collisions, and memory pollution
+9. continue separating reusable engine code from domain-specific applications
+10. document open adapter interfaces so other developers can build capability bridges for different users and domains
 
 ---
 
-## Appendix B: Current Repository Surfaces
+## 15. Conclusion
 
-- `/` serves the DiabeticSpace launcher or main app surface
-- `/studio.html` serves Strandspace Studio
-- `/soundspace` serves the standalone Soundspace app
+Strandspace began with a narrow observation: a system should not repeatedly rebuild a useful answer when it can reactivate a learned construct locally.
 
-These surfaces are different demonstrations of the same underlying Strandspace memory pattern.
+That observation now points toward a larger architecture.
+
+AI systems need a path from **general reasoning to accumulated expertise**. They need to preserve useful learned structure, verify it, route familiar work to cheaper intelligence, recognize when knowledge has become stale or insufficient, and escalate only when uncertainty requires more capability.
+
+For personal AI, this also separates the user's accumulated intelligence from the model provider. Models can improve, disappear, become expensive, or be replaced. The user's learned preferences, workflows, adaptations, and trusted constructs should remain theirs.
+
+The long-term Strandspace thesis is therefore:
+
+> **Use powerful intelligence to discover what is new. Verify what is learned. Preserve useful expertise locally. Spend expensive intelligence again only when uncertainty returns.**
+
+Adaptive Personal AI for disability is the first major proving ground for that thesis because human capability is limited, variable, and deeply personal. If the architecture works there, the same efficiency and ownership principles can apply much more broadly.
