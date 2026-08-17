@@ -1,36 +1,122 @@
 # Strandspace
 
-Strandspace is a local-first construct memory engine that recalls reusable knowledge from partial cues and routes to an LLM only when local recall is not sufficient.
+**Local-first structured memory that turns repeated reasoning into reusable expertise.**
 
-It is built for repeated structured work: recipes, troubleshooting paths, live-sound setups, domain workflows, and assistants that should improve through use instead of starting over every time.
+Strandspace is a working construct-memory engine that recalls useful learned structure from partial cues, verifies or expands it when necessary, and routes to larger AI only when local knowledge is not sufficient.
+
+The long-term goal is simple:
+
+> **Use powerful intelligence to discover what is new. Verify what is learned. Preserve useful expertise locally. Spend expensive intelligence again only when uncertainty returns.**
 
 ---
 
 ## Why It Matters
 
-Most AI-assisted systems repeatedly spend full inference cost on tasks they have already solved before. Strandspace tests a narrower claim:
+Large language models are extraordinarily capable, but many AI applications repeatedly resend the same context, preferences, examples, instructions, and previously solved information to large models.
 
-> If a useful construct has already been learned, the system should try to recall it locally before rebuilding the answer from scratch.
+That makes sense for genuinely new problems. It becomes increasingly inefficient after useful behavior has already been learned.
 
-The current repository demonstrates that loop in working applications:
+Strandspace explores a different loop:
 
-1. store a structured construct locally
-2. recall it from a related future prompt
-3. route to AI only when the local match is thin or uncertain
-4. save the improved result back into memory
-5. recall the improved construct faster next time
+**reason -> verify -> condense -> store -> reuse -> escalate on uncertainty**
+
+The project asks whether repeated successful reasoning can progressively become cheaper to reactivate than novel reasoning.
+
+This is not about eliminating frontier AI. It is about **spending intelligence where uncertainty actually exists**.
 
 ---
 
-## What This Is Not
+## Current Working Pattern
 
-Strandspace is not a vector database.
+The current repository already demonstrates the foundation:
 
-It is not an LLM wrapper.
+1. store a structured construct locally
+2. recall it later from a related prompt
+3. assess whether local memory is sufficient
+4. route to AI when the match is thin, partial, or uncertain
+5. save the improved result back into local memory
+6. reuse or adapt the improved construct later
 
-It is not a replacement for LLMs.
+The existing routing modes include:
 
-It is a local-first structured memory layer for repeated work where the same underlying construct appears with small variations over time.
+- `local_recall` — local memory is strong enough to use directly
+- `api_validate` — local memory appears useful but needs validation
+- `api_expand` — partial memory exists but additional reasoning is needed
+- `teach_local` — evidence is too thin and another example should be learned
+
+---
+
+## What Strandspace Is Becoming
+
+The next research direction extends construct memory into **verified local expertise**.
+
+A useful construct should eventually carry more than content. It should be able to express:
+
+- memory/learning strength
+- provenance
+- verification method
+- trust state
+- freshness or expiry policy
+- lineage and versions
+- estimated cost to create and recall
+
+That lets an agent ask more useful questions than simply "Do I know this?"
+
+> **What do I know, how do I know it, how current is it, and what is the cheapest responsible way to verify or use it?**
+
+The desired compute hierarchy is:
+
+1. deterministic rules or trusted local constructs
+2. small/local models for familiar execution and adaptation
+3. specialized models or agents when needed
+4. frontier models for novel, difficult, or unresolved reasoning
+5. verification and learn-back so the next encounter can begin lower in the hierarchy
+
+---
+
+## Personal Strandspace
+
+A major next application is **Adaptive Personal AI**.
+
+Instead of making a user's assistant synonymous with one LLM provider, the architecture separates:
+
+### Model intelligence
+
+Replaceable reasoning engines: local open models, specialized models, or frontier services.
+
+### Personal Strandspace
+
+User-owned durable knowledge such as preferences, capabilities, successful workflows, project state, trusted facts, learned adaptations, and permissions.
+
+### Agents
+
+Specialized workers that receive only the trusted context relevant to their responsibility.
+
+A paperwork agent should not need live-sound knowledge. A coding agent should not need recipe memory. This **least-necessary-context** approach can reduce token cost, latency, privacy exposure, and irrelevant model context.
+
+The personal assistant becomes:
+
+**Personal Strandspace + agents + permissions + accumulated verified knowledge**
+
+rather than a permanent dependency on one model vendor.
+
+---
+
+## Adaptive Personal AI for Human Capability
+
+Disability is the first major proving ground for Personal Strandspace.
+
+The design principle is not to begin with a diagnosis. It is to ask:
+
+> **What is the person trying to accomplish, where is the friction, and what is the least burdensome way to bridge that gap?**
+
+That friction can involve physical or motor ability, sensory access, cognition, communication, executive function, memory, attention, stamina, or combinations that do not fit one category.
+
+The system should learn successful accommodations and preserve them as reusable local constructs.
+
+An early target is paperwork and complex-document assistance: understanding what a document requires, remembering an ongoing matter, retrieving user-approved information, asking only for what is missing, preparing responses, preserving task state across interruptions, and escalating when fresh verification or stronger reasoning is required.
+
+The goal is not an assistant for one disability. It is open infrastructure for growing a personal AI around the individual.
 
 ---
 
@@ -48,6 +134,8 @@ The repository currently includes:
 - learn-back flows that save improved results locally
 - automated tests for core recall, routing, app behavior, and scaling simulations
 - three current app surfaces: DiabeticSpace, Strandspace Studio, and Soundspace
+
+The expanded trust/provenance system, multi-tier local-model routing, personal capability profile, and accessibility adapters are **research direction**, not claims of already-shipped functionality.
 
 ---
 
@@ -71,15 +159,39 @@ A live sound and karaoke-oriented app for repeated audio workflows such as mixer
 
 ---
 
-## Core Pattern
+## What This Is Not
 
-Across all apps, the Strandspace loop is:
+Strandspace is not a vector database.
 
-1. teach or generate a construct
-2. store it as structured local memory
-3. recall it from a future prompt
-4. route to AI only when needed
-5. learn improved answers back into local memory
+It is not an LLM wrapper.
+
+It is not a claim to reproduce the human brain.
+
+It is not a replacement for large language models.
+
+Human learning and expertise inspire the design principle that repeated successful work should become cheaper to reactivate, but Strandspace should be evaluated as an engineering architecture through measurable results.
+
+---
+
+## Research Measurements
+
+The expanded thesis creates concrete measurements:
+
+- frontier escalation rate
+- local completion rate
+- context compression ratio
+- tokens per completed task
+- cost per completed task
+- latency per completed task
+- compute/energy per completed task where measurable
+- construct reactivation accuracy
+- verification failure rate
+- stale-construct detection
+- expertise formation: whether repeated verified execution reduces compute requirements without unacceptable quality loss
+
+The central empirical question is:
+
+> **Does repeated verified experience measurably reduce the computational cost of reliable task completion?**
 
 ---
 
@@ -89,38 +201,46 @@ Current scaling and benchmark details live in:
 
 - [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)
 
-The short version:
+The current evidence supports the narrower shipped architecture:
 
 - local recall is deterministic
 - focused subjects remain fast at practical local-first sizes
 - multi-subject isolation keeps unrelated domains from slowing each other down
 - larger deployments can move candidate retrieval to indexed SQL while preserving the same scoring model
 
+The new expertise, trust, and Personal Strandspace hypotheses require additional implementation and measurement.
+
 ---
 
-## Design
+## Design and White Paper
 
-Architecture details live in:
+Architecture details:
 
 - [`docs/DESIGN.md`](docs/DESIGN.md)
 
-That document covers:
+Expanded research thesis and Personal Strandspace direction:
 
-- constructs and strands
-- local recall scoring
-- routing modes
-- learn-back behavior
-- trust/readiness thresholds
-- SQLite/local-first storage
-- future indexed SQL backend path
+- [`docs/whitepaper.md`](docs/whitepaper.md)
+
+Roadmap:
+
+- [`docs/ROADMAP.md`](docs/ROADMAP.md)
 
 ---
 
 ## Falsification Conditions
 
-The Strandspace thesis weakens if local construct recall stops outperforming local LLM inference for repeated known tasks as construct count scales, or if compact prompts cannot preserve construct identity under realistic variation.
+The project should change direction if evidence shows that:
 
-The project should be evaluated by whether repeated work becomes cheaper, faster, and more reliable after the system has learned useful constructs.
+- local reuse does not produce meaningful cost or latency advantages for repeated known tasks
+- recall quality degrades unacceptably as memory grows
+- verification costs erase the savings from reuse
+- compact trusted context cannot preserve task identity
+- learn-back pollutes memory faster than it improves expertise
+- stale or contradictory knowledge cannot be detected reliably enough for responsible use
+- small/local execution cannot reliably reduce frontier escalation
+
+The architecture should be judged by measurable behavior, not analogy.
 
 ---
 
@@ -182,42 +302,18 @@ npm test
 
 ---
 
-## Current Routes
-
-Detailed API route documentation belongs in [`docs/DESIGN.md`](docs/DESIGN.md) or a future `docs/API.md`.
-
-Main app surfaces:
-
-- `/` — DiabeticSpace
-- `/studio.html` — Strandspace Studio
-- `/soundspace` — Soundspace
-
----
-
-## Roadmap
-
-See:
-
-- [`docs/ROADMAP.md`](docs/ROADMAP.md)
-
----
-
-## White Paper
-
-For the longer architecture and theory discussion, see:
-
-- [`docs/whitepaper.md`](docs/whitepaper.md)
-
----
-
 ## License and Use Protection
 
-This project is licensed under the **MIT License**.
+Strandspace is licensed under the **MIT License**.
 
-MIT allows use, copying, modification, publishing, distribution, sublicensing, and selling copies of the software, as long as the copyright notice and license text stay with substantial copies of the software.
+The user's accumulated personal intelligence should remain portable and user-owned rather than being locked to one model or provider.
 
-The software is provided **as is**, without warranty of any kind. The authors and copyright holders are not liable for claims, damages, data loss, business loss, medical/health outcomes, or other issues arising from use, modification, distribution, or inability to use the software.
+The software is provided **as is**, without warranty of any kind. Health-oriented examples in this repository are software demonstrations and personal tooling patterns, not medical advice, diagnosis, or treatment.
 
-DiabeticSpace and any health-oriented examples in this repository are software demonstrations and personal tooling patterns. They are not medical advice, diagnosis, treatment, or a replacement for guidance from a qualified medical professional.
+See [`LICENSE`](LICENSE) for the full license text.
 
-See [`LICENSE`](LICENSE) for the full MIT license text.
+---
+
+## In One Sentence
+
+**Strandspace is a local-first structured memory architecture for turning repeated verified reasoning into reusable expertise and giving agents only the intelligence and context they actually need.**
